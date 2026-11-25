@@ -206,7 +206,9 @@ def test_the_long_table_counts_each_check_as_the_check_does(store):
             rows = table[table["check_id"] == result.metric.id]
             name = f"{sid} {result.metric.id}"
             if result.checked is None:
-                assert len(rows) == 1 and rows["set"].iloc[0] == "" and rows["note"].iloc[0] == result.note, name
+                # the note of the table ends with the baseline the check read (DCMA-13 without a Must Finish By)
+                expected = result.note_with_baseline
+                assert len(rows) == 1 and rows["set"].iloc[0] == "" and rows["note"].iloc[0] == expected, name
                 continue
             outside = split(result, store.latest).counted_outside
             counted, checked = (rows["set"] == "counted").sum(), (rows["set"] == "checked").sum()

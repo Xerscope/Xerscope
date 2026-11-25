@@ -3,7 +3,7 @@ from functools import partial
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis import builtin_standards
+from xerscope.analysis import Baseline, builtin_standards
 from xerscope.analysis.baseline import EV_BASES
 from xerscope.analysis.evm import (
     EarnedSchedule,
@@ -27,23 +27,36 @@ from xerscope.analysis.evm import (
     update_and_baseline_of_code,
     update_and_previous,
     weekly_gains,
+    window_weeks,
 )
-from xerscope.analysis.explain import KPI_FORMULAS, SPI_WINDOW_READING
+from xerscope.analysis.explain import KPI_FORMULAS, SPI_WINDOW_READING, schedule_reading
 from xerscope.app import ui
-from xerscope.app.code_picker import pick_code_filter
-from xerscope.app.state import (
+from xerscope.app.baselines import (
     baseline_for,
-    baseline_warnings,
-    costs_shown,
-    csv_download,
+    baseline_for_checks,
+    origin_baseline,
+)
+from xerscope.app.cache import (
     memo,
     metric_result,
+)
+from xerscope.app.code_picker import pick_code_filter
+from xerscope.app.downloads import (
+    costs_shown,
+    csv_download,
+    sources_of,
+)
+from xerscope.app.state import (
+    RULE_ORIGIN,
+    RULE_P6_VIEW,
+    baseline_warnings,
     page_header,
     require_store,
     snapshot_picker,
-    sources_of,
 )
+from xerscope.store import SnapshotStore
 from xerscope.viz.charts import INDEX_ALERT, build_index_trend, build_scurve
+from xerscope.xer import Snapshot
 
 COST_COLUMNS = ["bac_cost", "pv_cost", "ev_cost", "spi_cost"]
 COST_MEASURES = ["BAC cost", "PV cost", "EV cost", "SPI"]  # the rows of the calculation table that read costs
@@ -68,16 +81,27 @@ ACTIVITY_COLUMNS = [
 EV_BASIS_COLUMNS = {"bl_labor_hr": "ev_labor_hr", "bl_start": "ev_start", "bl_finish": "ev_finish"}
 
 
+def cumulative_baselines(
+    store: SnapshotStore, snapshot: Snapshot, p6_view: bool
+) -> tuple[Baseline | None, Baseline | None]:
+    """Return the baseline the cumulative figures of ``snapshot`` read, and the same not relinked.
+
+    PV, EV, SPI, the Earned Schedule and the S-curve read the origin of the series (``origin_baseline``): a
+    cumulative index needs a baseline that does not move. With ``p6_view`` they read this update's own
+    baseline, P6's Planned Value of the week. The second one is for ``evm_series``, which relinks each
+    update's renumbered tasks itself.
+    """
+    if p6_view:
+        return baseline_for(snapshot), baseline_for(snapshot, link=False)
+    return origin_baseline(store, snapshot), origin_baseline(store, snapshot, link=False)
+
+
 def format_points(change: float) -> str:
     return f"{change:+.1f} pts this week"
 
 
 def format_index_change(change: float) -> str:
     return f"{change:+.2f}"
-
-
-def format_number(value: float, template: str = "{:,.0f}") -> str:
-    return "–" if pd.isna(value) else template.format(value)
 
 
 def formatted_change(row: pd.Series, previous: pd.Series | None, column: str, formatter) -> str | None:
@@ -112,14 +136,14 @@ def show_kpis(row: pd.Series, previous: pd.Series | None, costs: bool) -> None:
             *([cost_card] if costs else []),
             (
                 "SPI (labor units)",
-                format_number(row["spi"], "{:.2f}"),
+                ui.fmt_number(row["spi"], "{:.2f}"),
                 formatted_change(row, previous, "spi", format_index_change),
                 "EV / PV in labor hours; P6 column: Schedule Performance Index - Labor Units",
             ),
             ("SV", f"{row['sv_hr']:+,.0f} h", None, "EV − PV"),
             (
                 "BEI (P6 / DCMA)",
-                " / ".join(format_number(value, "{:.2f}") for value in (row["bei_p6"], row["bei_dcma"])),
+                " / ".join(ui.fmt_number(value, "{:.2f}") for value in (row["bei_p6"], row["bei_dcma"])),
                 None,
                 (
                     "P6 (P6-13): completed / every baseline task, milestones and LOE out; "
@@ -171,16 +195,22 @@ def copied_lag_text(lagging: int, behind_hr: float) -> str | None:
 
 
 def show_earned_schedule(
-    schedule: EarnedSchedule, window: pd.Series | None, since_first: pd.Series, lag: tuple[int, float]
+    schedule: EarnedSchedule,
+    window: pd.Series | None,
+    since_first: pd.Series,
+    lag: tuple[int, float],
+    weeks: pd.DataFrame,
 ) -> None:
-    """Where the update stands on its plan in time, how the last four weeks went, when the plan ends.
+    """Where the update stands on its plan in time, at what pace, and whether it ends on the planned finish.
 
-    ``lag``: ``copied_lag`` of the update, warned about under the figures.
+    Three groups of figures, one per question, then the figures put in words (``schedule_reading``) and the
+    weeks the 4 weeks' figures add up (``window_weeks``). ``lag``: ``copied_lag`` of the update, warned
+    about under the figures.
     """
     ui.section(
         "Earned Schedule",
-        "The schedule read in time: the date at which the baseline planned the hours earned now, then the "
-        "finish at the pace of the last weeks.",
+        "The schedule read in time: where the project stands on its plan, at what pace it moves, and whether it "
+        "ends on the planned finish.",
     )
     if schedule.es_date is None:
         st.caption(f"Not computed: {schedule.note}.")
@@ -189,6 +219,8 @@ def show_earned_schedule(
     spi_4w = gain_ratio(window, "ev_gain_hr", "pv_gain_hr")
     pace_4w = gain_ratio(window, "es_gain_min", "at_gain_min")
     pace_all = gain_ratio(since_first, "es_gain_min", "at_gain_min")
+    finish_4w, finish_all = schedule.finish_at(pace_4w), schedule.finish_at(pace_all)
+    st.markdown("**Where the project stands**")
     ui.kpis(
         [
             (
@@ -200,7 +232,7 @@ def show_earned_schedule(
             ),
             (
                 "Time gap",
-                "n/a — every planned hour is earned" if gap is None else f"{gap:+.0f} d",
+                "n/a — every planned hour is earned" if gap is None else f"{gap:+.0f} cal. d",
                 None,
                 "Plan reached − status date, in calendar days, weekends included; negative = behind. Compare "
                 "updates measured against the same baseline: a baseline made again starts near zero. SV is "
@@ -213,23 +245,43 @@ def show_earned_schedule(
                 "Earned schedule / actual time; 1.00 = on plan. Unlike SPI it does not come back to 1 at the "
                 "end of a late project.",
             ),
+        ],
+        formulas=KPI_FORMULAS,
+    )
+    st.markdown("**At what pace**")
+    ui.kpis(
+        [
+            ("SPI (4 weeks)", ratio_text(spi_4w), None, SPI_WINDOW_READING),
             (
-                "SPI (4 weeks)",
-                ratio_text(spi_4w),
+                "Pace (4 weeks)",
+                ratio_text(pace_4w),
                 None,
-                SPI_WINDOW_READING,
+                "Plan time gained / time elapsed over the same weeks: 1.00 = the plan's pace.",
             ),
+            (
+                "Pace (all updates)",
+                ratio_text(pace_all),
+                None,
+                "The same over every week read since the first update loaded: steadier, slower to show a change.",
+            ),
+        ],
+        formulas=KPI_FORMULAS,
+    )
+    st.caption(window_text(window))
+    st.markdown("**Does it end on the planned finish**")
+    ui.kpis(
+        [
             ("Planned finish", ui.fmt_date(schedule.plan_finish), None, "The last planned finish of the baseline."),
             (
                 "Forecast finish (4 weeks)",
-                ui.fmt_date(schedule.finish_at(pace_4w), "n/a"),
+                ui.fmt_date(finish_4w, "n/a"),
                 None,
-                "When the plan ends if what is left of it is done at the pace of the last four weeks, given "
-                "under these figures. It moves a lot from week to week: read it with the one below.",
+                "When the plan ends if what is left of it is done at the pace of the last four weeks. It moves a "
+                "lot from week to week: read it with the one below.",
             ),
             (
                 "Forecast finish (all updates)",
-                ui.fmt_date(schedule.finish_at(pace_all), "n/a"),
+                ui.fmt_date(finish_all, "n/a"),
                 None,
                 "The same at the pace of every week read since the first update loaded: steadier, slower to "
                 "show a change.",
@@ -238,20 +290,32 @@ def show_earned_schedule(
                 "TSPI (planned finish)",
                 ratio_text(schedule.tspi),
                 None,
-                "The pace needed from now on to end on the planned finish, to set against the paces given "
-                "under these figures. Up to 1.00 the date holds; from 1.00 to 1.10 it can be caught up; "
-                "above 1.10 it rarely is (Lipke). Empty once the planned finish is passed.",
+                "The pace needed from now on to end on the planned finish, to set against the paces above. Up "
+                "to 1.00 the date holds; from 1.00 to 1.10 it can be caught up; above 1.10 it rarely is (Lipke). "
+                "Empty once the planned finish is passed.",
             ),
         ],
         formulas=KPI_FORMULAS,
     )
-    st.caption(
-        f"{window_text(window)} Pace, plan time gained / time elapsed: {ratio_text(pace_4w)} over the last 4 weeks, "
-        f"{ratio_text(pace_all)} since the first update loaded."
+    st.info(
+        schedule_reading(
+            gap,
+            ui.fmt_date(schedule.es_date),
+            pace_4w,
+            pace_all,
+            ui.fmt_date(finish_4w, ""),
+            ui.fmt_date(finish_all, ""),
+            ui.fmt_date(schedule.plan_finish),
+            schedule.tspi,
+        ),
+        icon=":material/schedule:",
     )
     lag_text = copied_lag_text(*lag)
     if lag_text is not None:
         st.warning(lag_text, icon=":material/warning:")
+    if not weeks.empty:
+        with st.expander("The weeks of the 4 weeks' figures", icon=":material/table_rows:"):
+            ui.table(weeks, key="ev_window_weeks", reading="ev_window_weeks")
 
 
 def show_costs_ignored(snapshot) -> None:
@@ -298,7 +362,7 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
                 (
                     "SPI (labor units)",
                     "EV / PV",
-                    f"{earned_hours:,.1f} / {planned:,.1f} = {format_number(row['spi'], '{:.2f}')}",
+                    f"{earned_hours:,.1f} / {planned:,.1f} = {ui.fmt_number(row['spi'], '{:.2f}')}",
                     "Schedule Performance Index - Labor Units",
                 ),
                 (
@@ -354,14 +418,14 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
                 (
                     "CPI (labor units)",
                     "EV / AC, all actual hours",
-                    f"{earned_hours:,.1f} / {actual:,.1f} = {format_number(row['cpi'], '{:.2f}')}",
+                    f"{earned_hours:,.1f} / {actual:,.1f} = {ui.fmt_number(row['cpi'], '{:.2f}')}",
                     "Cost Performance Index - Labor Units",
                 ),
                 (
                     "EV / AC (baselined work)",
                     "EV / AC without the hours of tasks the baseline does not have: EV exists only for "
                     "baselined tasks, so those hours would lower the ratio",
-                    f"{earned_hours:,.1f} / {baselined_actual:,.1f} = {format_number(row['productivity'], '{:.2f}')}",
+                    f"{earned_hours:,.1f} / {baselined_actual:,.1f} = {ui.fmt_number(row['productivity'], '{:.2f}')}",
                     "not a P6 column: P6 divides by all actual units (CPI above)",
                 ),
             ],
@@ -372,10 +436,8 @@ def show_calculation(row: pd.Series, baseline, snapshot, point, costs: bool) -> 
         ui.table(
             calculation,
             key="ev_calculation",
-            overrides={
-                "formula": st.column_config.TextColumn("Formula", width="large"),
-                "this update": st.column_config.TextColumn(ui.stamp(snapshot.data_date)),
-            },
+            reading="ev_calculation",
+            overrides={"this update": st.column_config.TextColumn(ui.stamp(snapshot.data_date))},  # the date it holds
         )
         if not with_pf.empty:
             st.warning(
@@ -400,7 +462,14 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
         "Planned value from the baseline, earned value and actual hours per update, "
         "then the forecast of remaining hours.",
     )
-    as_percent = st.toggle("Show as % of BAC", value=False, key="ev_pct_toggle")
+    as_percent = st.toggle(
+        "Show as % of BAC",
+        value=False,
+        key="ev_pct_toggle",
+        help="Draws PV, EV, AC and the forecast as a share of the Budget at Completion instead of labour hours; "
+        "each update's points over its own BAC, the curves over the BAC of the update shown. "
+        "Use it to compare updates whose baselines differ in size.",
+    )
     forecast = memo(("forecast", snapshot.source, code_filter), forecast_curve, snapshot, baseline=False)
     ui.chart(
         build_scurve(
@@ -435,7 +504,7 @@ def show_charts(series: pd.DataFrame, curve: pd.DataFrame, snapshot, baseline, c
     hidden = ["bac_hr", "vac_hr", "ac_baselined_hr"] + ([] if costs else COST_COLUMNS)
     # the first update has no PV yet: its indices are missing, written as a dash
     shown, overrides = ui.numbers_as_text(series.drop(columns=hidden), INDEX_COLUMNS)
-    ui.table(shown, overrides=overrides, key="ev_updates")
+    ui.table(shown, overrides=overrides, key="ev_updates", reading="ev_updates")
 
 
 def show_activity_detail(snapshot, baseline, point, earned_values: pd.DataFrame) -> None:
@@ -444,7 +513,14 @@ def show_activity_detail(snapshot, baseline, point, earned_values: pd.DataFrame)
         values = earned_values.reset_index().rename(columns=EV_BASIS_COLUMNS)
         # the tasks BAC, PV and EV total: the baseline tasks the update holds (deleted ones below)
         activities, gone = values[values["in_snapshot"]], values[~values["in_snapshot"]]
-        ui.table(activities, columns=ACTIVITY_COLUMNS, max_height=640, key="ev_tasks")
+        ui.table(
+            activities,
+            columns=ACTIVITY_COLUMNS,
+            max_height=ui.TABLE_LONG,
+            key="ev_tasks",
+            reading="ev_tasks",
+            empty="No baseline task is in this update: the table lists the baseline tasks the update still holds.",
+        )
         st.caption(
             f"EV budget and EV finish: the hours and finish PV and EV are computed from, under the earned value "
             f"basis {EV_BASES[baseline.ev_basis]} (Baseline window); not P6's BL Project columns."
@@ -482,8 +558,20 @@ def show_activity_detail(snapshot, baseline, point, earned_values: pd.DataFrame)
 
 store = require_store()
 top = st.container()
-snapshot = snapshot_picker(store, "Update", key="ev_snap")
-baseline = baseline_for(snapshot)
+snapshot_column, view_column = st.columns([3, 1], vertical_alignment="bottom")
+with snapshot_column:
+    snapshot = snapshot_picker(store, "Update", key="ev_snap")
+with view_column:
+    p6_view = st.toggle(
+        "P6 view: the file's baseline",
+        value=False,
+        key="ev_p6_view",
+        help="Reads PV, EV, SPI, the Earned Schedule and the S-curve against this update's own baseline, as P6 "
+        "computes its Planned Value. Off, they read the origin of the series, the baseline that does not move "
+        "from one update to the next. The four weeks' window reads the plan in force each week either way.",
+    )
+baseline, series_baseline = cumulative_baselines(store, snapshot, p6_view)
+rule = RULE_P6_VIEW if p6_view else RULE_ORIGIN
 with top:
     page_header(
         "Earned value",
@@ -491,10 +579,12 @@ with top:
         snapshot,
         lead="Labor hours, computed like P6's earned value fields. Planned value follows the baseline dates, "
         "earned value follows the % complete reported in the update.",
+        baseline=baseline,
+        rule=rule,
     )
     baseline_warnings(snapshot, baseline, series=True)
 if baseline is None:
-    st.info("Choose a baseline from the sidebar's Baseline line (a loaded snapshot or a separate BL file).")
+    ui.need("Choose a baseline from the sidebar's Baseline line (a loaded snapshot or a separate BL file).")
     st.stop()
 if baseline.bac_hours <= 0:
     st.warning(
@@ -515,9 +605,10 @@ if code_filter is not None:
         st.stop()
 
 # which baseline: its label alone is not unique (two baselines of one P6 XML export with the same data
-# date); its source and the project it was read from are ("planned dates" baselines differ per update)
+# date); its source and the project it was read from are ("planned dates" baselines differ per update);
+# the switch too, so that a figure of one view is never read in the other
 identity = (baseline.label, baseline.source, baseline.snapshot.source, baseline.snapshot.project_id)
-cache_key = ("evm", *identity, baseline.ev_basis, code_filter)
+cache_key = ("evm", p6_view, *identity, baseline.ev_basis, code_filter)
 update_key = (snapshot.source, str(snapshot.data_date))
 # the update's lists (techniques not modelled, tasks not in the baseline, curves) as its KPIs computed them
 point = memo(cache_key + ("point", *update_key), ev_point, part, part_baseline)
@@ -537,20 +628,21 @@ series = memo(
     cache_key + ("series",),
     evm_series,
     store,
-    baseline_for(snapshot, link=False),  # each update linked to it on its own renumbered tasks
+    series_baseline,  # each update linked to it on its own renumbered tasks
     st.session_state.get("guid_link", False),
     code_filter,
 )
 standards = builtin_standards()
 bei_metrics = {code: standards[code][metric_id] for code, metric_id in BEI_METRIC_IDS.items()}
-# each update's BEI from the session's cache when Health or Audit computed it, not kept otherwise; on a
-# task code, computed on its tasks (the cache holds the whole project's)
+# each update's BEI, a check, against the baseline assigned in that update (as Health computes it), from the
+# session's cache when Health or Audit computed it, not kept otherwise; on a task code, computed on its
+# tasks (the cache holds the whole project's)
 bei = memo(
     ("bei", repr(bei_metrics), code_filter),
     bei_series,
     store,
     bei_metrics,
-    baseline_for,
+    baseline_for_checks,
     partial(metric_result, store=store, keep=False),
     code_filter,
     ev_basis=False,
@@ -566,7 +658,11 @@ if not costs:
 show_calculation(row, baseline, snapshot, point, costs)
 lag = memo(cache_key + ("copied_lag", *update_key), copied_lag, part, part_baseline)
 show_earned_schedule(
-    schedule, moving_window(gains, snapshot.data_date), gains_since_first(gains, snapshot.data_date), lag
+    schedule,
+    moving_window(gains, snapshot.data_date),
+    gains_since_first(gains, snapshot.data_date),
+    lag,
+    window_weeks(gains, snapshot.data_date, schedule.hours_per_day),
 )
 show_charts(series, curve, part, part_baseline, costs, code_filter)
 show_activity_detail(snapshot, baseline, point, earned_values)

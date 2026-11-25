@@ -16,13 +16,21 @@ import plotly.graph_objects as go
 # and the dark page backgrounds (WCAG 2.2 SC 1.4.11), so a chart need not be redrawn when the
 # viewer switches theme. Text, grid and axes are left to Streamlit's Plotly theme, which the
 # browser applies live (app/style.css only fades the grid). STATUS is reserved for
-# meaning (critical / warning / pass / complete / info, and the check statuses in app/ui.py)
-# and never decorates; SERIES is the categorical palette for lines and keeps clear of those
-# hues: azure, copper, teal, brass, orchid, violet. Order checked with the data-viz palette
-# validator, light (#ffffff) and dark (#070b14) surfaces: adjacent pairs >= 8 CVD delta E
-# (worst 12.6) and >= 15 normal-vision delta E (worst 16.0); the first three also all-pairs.
+# meaning (critical / warning / pass / complete / info / muted, the grey of a check that does
+# not apply, and the check statuses in app/ui.py) and never decorates; SERIES is the categorical
+# palette for lines and keeps clear of those hues: azure, copper, teal, brass, orchid, violet. Order
+# checked with the data-viz palette validator, light (#ffffff) and dark (#070b14) surfaces: adjacent
+# pairs >= 8 CVD delta E (worst 12.6) and >= 15 normal-vision delta E (worst 16.0); the first three
+# also all-pairs.
 SERIES = ["#3478e6", "#d0652a", "#2f9e8f", "#a27f1f", "#c0509a", "#7c5ce6"]
-STATUS = {"critical": "#c0392b", "warning": "#a15c00", "good": "#2e7d32", "complete": "#818e9f", "info": "#1d6a73"}
+STATUS = {
+    "critical": "#c0392b",
+    "warning": "#a15c00",
+    "good": "#2e7d32",
+    "complete": "#818e9f",
+    "info": "#1d6a73",
+    "muted": "#5b6b82",
+}
 NEUTRAL = "#7b8794"  # reference lines: data date, reporting line, index 1.0
 # Decoration (app/style.css, through CSS light-dark()), one per theme: the theme's linkColor.
 ACCENT = {"light": "#1d6a73", "dark": "#6cc0c9"}
@@ -30,12 +38,15 @@ ACCENT = {"light": "#1d6a73", "dark": "#6cc0c9"}
 TEXT = {"light": "#1c1917", "dark": "#ece9e4"}
 MIN_DATE_SPAN = pd.Timedelta(days=14)  # a date axis narrower than this is widened by DATE_PAD each side
 DATE_PAD = pd.Timedelta(days=7)
+DAY = "%Y-%m-%d"  # a date written to the day, in the labels pandas and Python build
 LINE = 1.5  # data line width, px
 # The theme's body font (app/.streamlit/config.toml, served from app/static/): the charts are
 # drawn in the page, so the font the theme loads applies to them.
 FONT_FAMILY = "Onest, sans-serif"
 FONT = dict(size=13)
 TICK = dict(size=12)
+END_LABEL_MARGIN_PX = 110  # right margin of a chart with labels at the end of its lines
+PLAIN_MARGIN_PX = 20
 INDEX_ALERT = 0.95  # performance index below this is flagged (SPI, BEI, EV / AC)
 PPC_TARGET = 80  # default PPC target, in percent
 # Weekly updates are read to the day: no time in hovers, and zooming below one day keeps
@@ -43,12 +54,32 @@ PPC_TARGET = 80  # default PPC target, in percent
 DATE_AXIS = dict(hoverformat="%Y-%m-%d", tickformatstops=[dict(dtickrange=[None, 86_400_000], value="%d %b")])
 
 
-def _with_house_style(figure: go.Figure, height: int = 380, y_title: str = "", legend: bool = True) -> go.Figure:
-    """House style: 13 px text, legend on top, room on the right for end labels. Text, grid and
-    axis colours come from the theme (st.plotly_chart's default theme="streamlit")."""
+def _with_house_style(
+    figure: go.Figure,
+    reading: str,
+    height: int = 380,
+    y_title: str = "",
+    *,
+    x_title: str = "Status date",
+    end_labels: bool = False,
+    legend: bool | None = None,
+) -> go.Figure:
+    """House style: 13 px text, legend on top, titled axes. Text, grid and axis colours come from the
+    theme (st.plotly_chart's default theme="streamlit").
+
+    ``end_labels``: the chart writes labels right of its lines, which need END_LABEL_MARGIN_PX on the
+    right. ``legend``: shown when the figure has more than one trace, unless given. ``x_title``: the
+    x axis' title, "Status date" for a trend over the updates.
+
+    ``reading`` is the key of the figure's "How to read" text (analysis/explain.py READINGS), kept in the
+    figure's layout for ``ui.chart``: viz imports nothing from analysis."""
+    right_margin_px = END_LABEL_MARGIN_PX if end_labels else PLAIN_MARGIN_PX
+    if legend is None:
+        legend = len(figure.data) > 1
     figure.update_layout(
+        meta={"reading": reading},
         height=height,
-        margin=dict(l=10, r=110, t=56, b=10),
+        margin=dict(l=10, r=right_margin_px, t=56, b=10),
         showlegend=legend,
         legend=dict(orientation="h", yref="container", y=0.995, yanchor="top", x=0, font=FONT),
         hovermode="x unified",
@@ -60,6 +91,7 @@ def _with_house_style(figure: go.Figure, height: int = 380, y_title: str = "", l
         spikethickness=1,
         spikedash="dot",
         tickfont=TICK,
+        title=x_title,
         title_font=FONT,
         **DATE_AXIS,
     )
@@ -152,34 +184,26 @@ def build_scurve(
     update_scale = 100 / updates["bac_hr"].where(updates["bac_hr"] > 0) if percent else 1.0
     unit = "% of BAC" if percent else "labor hours"
     figure = go.Figure()
+    figure.add_trace(_series_trace(curve["date"], curve["pv_cum_hr"] * curve_scale, "PV (baseline)", SERIES[0]))
     figure.add_trace(
-        go.Scatter(
-            x=curve["date"],
-            y=curve["pv_cum_hr"] * curve_scale,
-            mode="lines",
-            name="PV (baseline)",
-            line=dict(color=SERIES[0], width=LINE),
-        )
-    )
-    figure.add_trace(
-        go.Scatter(
-            x=updates["data_date"],
-            y=updates["ev_hr"] * update_scale,
+        _series_trace(
+            updates["data_date"],
+            updates["ev_hr"] * update_scale,
+            "EV (earned)",
+            SERIES[1],
             mode="lines+markers",
-            name="EV (earned)",
-            line=dict(color=SERIES[1], width=LINE),
             marker=dict(size=8),
             customdata=(updates["sv_hr"] * update_scale).to_frame().to_numpy(),
             hovertemplate="%{y:,.1f}  (SV %{customdata[0]:+,.1f})",
         )
     )
     figure.add_trace(
-        go.Scatter(
-            x=updates["data_date"],
-            y=updates["ac_hr"] * update_scale,
+        _series_trace(
+            updates["data_date"],
+            updates["ac_hr"] * update_scale,
+            "AC (actual)",
+            SERIES[2],
             mode="lines+markers",
-            name="AC (actual)",
-            line=dict(color=SERIES[2], width=LINE),
             marker=dict(size=8, symbol="square"),
         )
     )
@@ -204,7 +228,12 @@ def build_scurve(
         _add_schedule_variance(figure, at_data_date, curve_scale, data_date, percent)
     _mark_data_date(figure, data_date)
     figure.update_traces(hovertemplate="%{y:,.1f}", selector=lambda trace: trace.name != "EV (earned)")
-    return _with_house_style(figure, 500, unit)
+    return _with_house_style(figure, "scurve", 500, unit, end_labels=True)
+
+
+def _series_trace(x, y, name: str, colour: str, mode: str = "lines", **properties) -> go.Scatter:
+    """A solid line in one series colour; ``properties`` are the trace's own (marker, hover)."""
+    return go.Scatter(x=x, y=y, mode=mode, name=name, line=dict(color=colour, width=LINE), **properties)
 
 
 def _add_schedule_variance(
@@ -271,7 +300,7 @@ def build_index_trend(series: pd.DataFrame, columns: dict[str, str]) -> go.Figur
         annotation_text=f"{INDEX_ALERT:g}",
         annotation_position="bottom left",
     )
-    return _with_house_style(figure, 380, "index")
+    return _with_house_style(figure, "index_trend", 380, "index", end_labels=True)
 
 
 # --- milestones ---------------------------------------------------------------------------------
@@ -329,35 +358,45 @@ def build_mta(
         line_colour = SERIES[order.index(code) % len(SERIES)]
         shift_wd = last_shift_wd.get(code, 0.0)
         # the colour of the last move: later is red, earlier green, none when the date did not move
-        move_colour = STATUS["critical"] if shift_wd < 0 else STATUS["good"] if shift_wd > 0 else None
+        move_colour = None
+        if shift_wd < 0:
+            move_colour = STATUS["critical"]
+        elif shift_wd > 0:
+            move_colour = STATUS["good"]
         drawn = rows.loc[: rows["forecast"].last_valid_index()]  # blank forecast = hidden update: the line breaks
-        earlier_points = len(drawn) - 1
-        figure.add_trace(
-            go.Scatter(
-                x=drawn["data_date"],
-                y=drawn["forecast"].astype(object).where(drawn["forecast"].notna(), None),
-                mode="lines+markers",
-                name=f"{code} {drawn['task_name'].iloc[-1]}",
-                line=dict(color=line_colour, width=LINE),
-                marker=dict(
-                    # the last point bigger when it moved: red / orange series stay apart
-                    size=[9] * earlier_points + [13 if move_colour else 9],
-                    symbol=["diamond" if is_complete else "circle" for is_complete in drawn["is_complete"].to_numpy()],
-                    color=[line_colour] * earlier_points + [move_colour or line_colour],
-                ),
-                hovertemplate=f"{code}: " + "%{y|%Y-%m-%d}<extra></extra>",
-                cliponaxis=False,  # the first update's points sit on the left edge: drawn whole
-            )
-        )
+        figure.add_trace(_mta_trace(code, drawn, line_colour, move_colour))
         label = _mta_end_label(code, shift_wd, move_colour)
         ends.append((drawn["data_date"].iloc[-1], drawn["forecast"].iloc[-1], label))
     _add_end_labels(figure, ends, (last_date - first_date).value)
-    figure = _with_house_style(figure, 760, "Forecast date")
+    figure = _with_house_style(
+        figure, "mta", 760, "Forecast date", x_title="Reporting date (status date)", end_labels=True
+    )
     # same range and scale on both axes: the diagonal is at 45°, the plot square
     axis_range = [first_date, last_date]
-    figure.update_xaxes(title="Reporting date (status date)", range=axis_range, constrain="domain")
+    figure.update_xaxes(range=axis_range, constrain="domain")
     figure.update_yaxes(range=axis_range, scaleanchor="x", scaleratio=1, constrain="domain", **DATE_AXIS)
     return figure
+
+
+def _mta_trace(code: str, drawn: pd.DataFrame, line_colour: str, move_colour: str | None) -> go.Scatter:
+    """The line of one milestone: its forecast at each update, the last point in ``move_colour``
+    (and bigger) when the date moved in the last update."""
+    earlier_points = len(drawn) - 1
+    return go.Scatter(
+        x=drawn["data_date"],
+        y=drawn["forecast"].astype(object).where(drawn["forecast"].notna(), None),
+        mode="lines+markers",
+        name=f"{code} {drawn['task_name'].iloc[-1]}",
+        line=dict(color=line_colour, width=LINE),
+        marker=dict(
+            # the last point bigger when it moved: red / orange series stay apart
+            size=[9] * earlier_points + [13 if move_colour else 9],
+            symbol=["diamond" if is_complete else "circle" for is_complete in drawn["is_complete"].to_numpy()],
+            color=[line_colour] * earlier_points + [move_colour or line_colour],
+        ),
+        hovertemplate=f"{code}: " + "%{y|%Y-%m-%d}<extra></extra>",
+        cliponaxis=False,  # the first update's points sit on the left edge: drawn whole
+    )
 
 
 def _mta_axis_span(
@@ -402,8 +441,7 @@ def _line(history: pd.DataFrame, column: str, name: str, colour: str, **options)
 def build_activity_dates(history: pd.DataFrame) -> go.Figure:
     """Forecast start and finish of one activity in every update."""
     figure = go.Figure([_line(history, "start", "Start", SERIES[0]), _line(history, "finish", "Finish", SERIES[1])])
-    figure.update_xaxes(title="Status date")
-    figure = _with_house_style(figure, 380, "Forecast date")
+    figure = _with_house_style(figure, "activity_dates", 380, "Forecast date")
     figure.update_yaxes(**DATE_AXIS)
     low, high = history[["start", "finish"]].min().min(), history[["start", "finish"]].max().max()
     # dates that never move (a reached milestone): Plotly would zoom the axis down to milliseconds
@@ -420,15 +458,16 @@ def _widen_dates(update_axis, low, high) -> None:
 
 def build_activity_float(history: pd.DataFrame) -> go.Figure:
     """Total float of one activity in every update, zero marked as critical."""
-    figure = go.Figure(_line(history, "total_float_d", "Total float", SERIES[0], hovertemplate="%{y} d<extra></extra>"))
+    figure = go.Figure(
+        _line(history, "total_float_d", "Total float", SERIES[0], hovertemplate="%{y} wd<extra></extra>")
+    )
     figure.add_hline(
         y=0,
         line=dict(color=STATUS["critical"], width=1, dash="dot"),
         annotation_text="critical",
         annotation_position="bottom left",
     )
-    figure.update_xaxes(title="Status date")
-    return _with_house_style(figure, 380, "Working days")
+    return _with_house_style(figure, "activity_float", 380, "Working days")
 
 
 def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
@@ -448,10 +487,9 @@ def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
             "<br>%{customdata[0]}<extra></extra>",
         )
     )
-    figure.update_xaxes(title="Status date")
-    figure = _with_house_style(figure, 380, "Forecast finish", legend=False)
+    figure = _with_house_style(figure, "finish_trend", 380, "Forecast finish")
     figure.update_yaxes(**DATE_AXIS)
-    figure.update_layout(hovermode="closest", margin=dict(l=10, r=20, t=20, b=10))
+    figure.update_layout(hovermode="closest", margin_t=20)
     if len(updates):  # one update: both axes would zoom on a point
         _widen_dates(figure.update_xaxes, updates["data_date"].min(), updates["data_date"].max())
         _widen_dates(figure.update_yaxes, updates["forecast_finish"].min(), updates["forecast_finish"].max())
@@ -459,8 +497,11 @@ def build_finish_trend(summary: pd.DataFrame) -> go.Figure:
 
 
 def format_shift(shift_wd: float) -> str:
-    """A move in working days as it follows a date or a code: " (+2.5 wd)"; nothing when unknown."""
-    return "" if pd.isna(shift_wd) else f" ({round(shift_wd, 1):+g} wd)"
+    """A move in working days as it follows a date or a code: " (+2.5 wd)"; nothing when unknown.
+
+    Written as ui.SHIFT_WD_FORMAT writes it: viz does not import app.
+    """
+    return "" if pd.isna(shift_wd) else f" ({shift_wd:+.1f} wd)"
 
 
 # --- PPC ---------------------------------------------------------------------------------------
@@ -490,7 +531,7 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
     A week with nothing committed has no point, a gap in the line (a point at 0 would read as
     0 % kept); its hover says "no commitment"."""
     weeks = ppc.copy()
-    weeks["label"] = weeks["data_date"].dt.strftime("%Y-%m-%d")
+    weeks["label"] = weeks["data_date"].dt.strftime(DAY)
     has_note = [isinstance(note, str) for note in weeks["note"]]
     figure = go.Figure()
     for column, kept, committed, name, colour in (
@@ -520,20 +561,21 @@ def build_ppc(ppc: pd.DataFrame, target: float = PPC_TARGET) -> go.Figure:
         )
     critical = STATUS["critical"]
     figure.add_hline(y=target, line=dict(color=critical, width=1, dash="dot"))
-    # in the right margin: inside the plot it sits on the last point
+    # top right of the plot, above its dotted line: the right margin is only PLAIN_MARGIN_PX
     figure.add_annotation(
         x=1,
         xref="paper",
         y=target,
         text=f"target {target:g}%",
         showarrow=False,
-        xanchor="left",
-        xshift=6,
+        xanchor="right",
+        yanchor="bottom",
+        xshift=-6,
         font=dict(size=12),  # the theme's text colour; the dotted line beside it is red
     )
-    figure = _with_house_style(figure, 400, "PPC (%)", legend=True)
+    figure = _with_house_style(figure, "ppc", 400, "PPC (%)", x_title="Week ending (status date)")
     figure.update_yaxes(range=[0, 105])
-    figure.update_xaxes(title="Week ending (status date)", showspikes=False, type="category")
+    figure.update_xaxes(showspikes=False, type="category")
     return figure
 
 
@@ -564,7 +606,7 @@ def build_metric_trend(
             annotation_text=f"target {threshold_label}",
             annotation_position="top left",
         )
-    figure = _with_house_style(figure, 360, unit, legend=False)
+    figure = _with_house_style(figure, "metric_trend", 360, unit)
     figure.update_layout(hovermode="closest")
     return figure
 
@@ -577,7 +619,7 @@ def build_half_step(steps: pd.DataFrame) -> go.Figure:
     """
     stepped = steps.iloc[1:]
     colours = [STATUS["critical"] if shift < 0 else STATUS["good"] for shift in stepped["shift_wd"].fillna(0)]
-    finishes = stepped["finish"].map(lambda stamp: "–" if pd.isna(stamp) else f"{stamp:%Y-%m-%d}")
+    finishes = stepped["finish"].map(lambda stamp: "–" if pd.isna(stamp) else stamp.strftime(DAY))
     figure = go.Figure(
         go.Bar(
             x=stepped["step"],
@@ -589,9 +631,9 @@ def build_half_step(steps: pd.DataFrame) -> go.Figure:
             hovertemplate="%{x}<br>Finish once applied %{customdata[0]}<br>%{customdata[1]} change(s)<extra></extra>",
         )
     )
-    figure = _with_house_style(figure, 320, "Finish shift (wd)", legend=False)
+    figure = _with_house_style(figure, "half_step", 320, "Finish shift (wd)", x_title="")
     figure.add_hline(y=0, line_color=NEUTRAL, line_width=1)
-    figure.update_layout(margin=dict(l=10, r=20, t=30, b=10))
+    figure.update_layout(margin_t=30)
     return figure
 
 
@@ -609,8 +651,7 @@ def build_slip_trend(series: pd.DataFrame) -> go.Figure:
             _line(rows, "finish", "Finish shown", SERIES[0]),
         ]
     )
-    figure.update_xaxes(title="Status date")
-    figure = _with_house_style(figure, 380, "Finish")
+    figure = _with_house_style(figure, "slip_trend", 380, "Finish")
     figure.update_yaxes(**DATE_AXIS)
     finishes = rows[["finish", "finish_before_replanning"]]
     _widen_dates(figure.update_yaxes, finishes.min().min(), finishes.max().max())

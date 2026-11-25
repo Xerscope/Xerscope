@@ -128,6 +128,21 @@ def test_recalc_reproduces_p6_and_writes_csv(capsys, tmp_path, require_reference
     assert len(pd.read_csv(dest)) == 66
 
 
+@pytest.mark.oracle("property")
+def test_recalc_of_a_folder_writes_one_csv_per_file(capsys, tmp_path):
+    """A folder given alone holds two files: each gets its own CSV, named after it, as with two paths.
+    Counting the arguments instead of the files wrote both to the one path, the second over the first."""
+    folder = tmp_path / "updates"
+    folder.mkdir()
+    (folder / "a.xer").write_text(xer_text([todo("A")]))
+    (folder / "b.xer").write_text(xer_text([todo("B"), todo("C")]))
+    dest = tmp_path / "recalc.csv"
+    run(capsys, "recalc", folder, "--out", dest)
+    assert not dest.exists()
+    rows = {name: len(pd.read_csv(tmp_path / f"{name}_recalc.csv")) for name in ("a", "b")}
+    assert rows == {"a": 1, "b": 2}
+
+
 def test_recalc_and_check_survive_a_file_without_data_date(capsys, tmp_path):
     path = tmp_path / "nodate.xer"
     path.write_text(xer_text([todo("A")], project={"last_recalc_date": "", "plan_start_date": ""}))

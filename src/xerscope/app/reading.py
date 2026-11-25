@@ -80,6 +80,29 @@ def store_of(results: Iterable[tuple[str, Snapshot | str]]) -> tuple[SnapshotSto
         return None, [*errors, f"{exc}. Untick the others."]
 
 
+def _read_on_workers(
+    items: list[tuple[str, bytes]], choices: dict[str, str], workers: int, stopped: Callable[[], bool]
+) -> Iterator[tuple[str, Snapshot | str, dict]]:
+    """``read_update`` for every file on ``workers`` processes, as each finishes.
+
+    Ends early, with files unread, when ``stopped()`` or when the pool cannot start or breaks (no process
+    allowed, a worker killed for memory): ``read_updates`` then reads here the files not yielded.
+    """
+    pool = None
+    try:
+        pool = ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
+        futures = [pool.submit(read_update, name, data, choices.get(name)) for name, data in items]
+        for future in as_completed(futures):
+            if stopped():
+                return
+            yield future.result()
+    except (OSError, BrokenProcessPool, RuntimeError):
+        pass  # the caller reads what is left
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+
 def read_updates(
     items: list[tuple[str, bytes]], choices: dict[str, str], stopped: Callable[[], bool] = lambda: False
 ) -> Iterator[tuple[str, Snapshot | str, dict]]:
@@ -91,22 +114,9 @@ def read_updates(
     done: set[str] = set()
     workers = worker_count(len(items))
     if workers > 1:
-        pool = None
-        try:
-            pool = ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"))
-            futures = [pool.submit(read_update, name, data, choices.get(name)) for name, data in items]
-            for future in as_completed(futures):
-                if stopped():
-                    return
-                result = future.result()
-                done.add(result[0])
-                yield result
-            return
-        except (OSError, BrokenProcessPool, RuntimeError):
-            pass  # read what is left below
-        finally:
-            if pool is not None:
-                pool.shutdown(wait=False, cancel_futures=True)
+        for result in _read_on_workers(items, choices, workers, stopped):
+            done.add(result[0])
+            yield result
     for name, data in items:
         if stopped():
             return

@@ -1,0 +1,549 @@
+# Task B — security of the front, files the lenses never opened, B12 / U1 / picker framing
+
+## Status against the code
+
+What became of each item, checked against the current tree (packages of
+`docs/refactor-front-plan.md`, whose status table gives the evidence in full).
+
+| Item | Status | Evidence |
+|---|---|---|
+| B1 HTML sinks | Checked, holds | still four `st.html` calls (`session._section_title`, the `<hr class="xd-rule">` of `files_window._draw_sections`, `theme.apply_style`, `task_panel` card) and one `st.components.v2.component` (`ui.GANTT`); `grep -rn "cache_data\|cache_resource\|@st.cache" src/xerscope` → 0 |
+| SE-01 `gantt.js` sinks | Checked, holds | `tests/test_viz.py` `test_gantt_keeps_schedule_text_out_of_the_markup`, `test_gantt_script_never_parses_text_as_html_nor_calls_out` |
+| SE-02 not sandboxed | Done, option (2) (P16a) | the deny-list holds `DOMParser`, `setAttribute("on`, `javascript:`; `test_gantt_script_writes_every_text_through_one_function` pins the single `textContent` write in `element()` |
+| SE-03 CSP | Open (out of scope) | `deploy/Caddyfile` sets `frame-ancestors 'self'; object-src 'none'; base-uri 'none'`, no `script-src` |
+| SE-04 pickle between processes | Checked, holds | `app/reading.py` (`_read_on_workers`, `BrokenProcessPool` fallback) |
+| SE-05 Ask field | Checked, holds | no `llm_backend` / `QUERY_URL` under `src/`; `query.MAX_CHARS = 300` (`analysis/ask/parser.py`); `tests/test_docker.py` `test_nothing_in_src_reaches_the_network` |
+| SE-05a lexicon click | Done, options (1) and (2) | the help of the "Did you mean" buttons says "a pick is kept for review in the lexicon folder of the server" (`views/gantt.py`); `docs/deploy.md` §10 documents `suggested/`; `teach` is now in `app/loading.py` |
+| SE-06 session persistence | Checked, holds | `functools.cache` only in `theme.py` (font CSS) and `loading.py` (lexicon files) |
+| SE-07 inputs | Checked; the typed folder now read under one root | `session.folder_root`, `tests/test_folder_root.py` |
+| GX-01, GX-03 (rows, legend), GX-06 | Done (P16a) | whole-word names in `viz/gantt.js`, one `rowShell` and one `legendItem`; `.tip` shadow is `var(--shadow)`; the `box()` / diamond placement was left as is |
+| GX-02 | Done (P4b, B12) | `rowPx`, `chromePx` in the payload; `gantt.js` writes `--row` |
+| GX-04 | Open (P16b) | `drawLinks` walks every link; `resize` calls `render()` unthrottled |
+| GX-05 | Done (B12) | `openEpoch` in the payload; `gantt.js` drops `host.xsOpen` when it changes |
+| GX-07 | Checked, left | the `selectedIndex > 1` test is unchanged |
+| CS-01 to CS-04 | Done (P10) | no MTA comment left; the two button blocks share one selector list; `.st-key-ask_banner_warn` reads `var(--status-warning)`; one `@media (max-width: 640px)` |
+| CS-05 | Open | no test compares the `st-key-…` selectors of `style.css` with the widget keys |
+| CS-06 | Checked | `apply_style` and `font_fallback_css` are in `app/theme.py` |
+| UF-01, UF-06 | Done (P16a) | `code_picker._draw_code_widgets` sets `placeholder` before the call; `sets.show_steps(funnel, key)` |
+| UF-02, UF-07 | Checked, no edit (P16a) | `expected_finish_forms.py` loops on whole words; `_same_date_columns` has one comprehension per statement |
+| UF-03 | Done (P9a) | `views/activity.py` removed |
+| UF-04 | Checked | `streamlit_app.py` still draws `ui.glossary()` in the sidebar |
+| UF-05 | Open (P11a, AR-12) | `glossary.unknown_acronyms` still in the package, used by `tests/test_glossary.py` only |
+| UF-08 | Checked | fonts in `app/static/`, fallback in `theme.font_fallback_css`; `runtime_table` stays in `ui.py` |
+| B3 B12 | Done | see GX-05 |
+| B3 U1 | Done | `loading.load_series`, `loading.draw_sidebar`, `tests/test_loading.py` |
+| B3 file picker | Open | `xer/parser.py` `_Reader.run` still reads to `%E` |
+
+Line counts and line numbers below are those of the tree this note was written on, before the split of
+`state.py`; today `viz/gantt.js` is 435 lines, `app/style.css` 303, `code_picker.py` 70,
+`expected_finish_forms.py` 77, `streamlit_app.py` 63, `glossary.py` 139, `sets.py` 131,
+`xml_baselines.py` 360, and `views/activity.py` no longer exists. The table "Line numbers in the rest
+of this plan" at the top of `docs/refactor-front-plan.md` gives where each cited `state.py` function
+lives now.
+
+---
+
+Every line number below was read (`sed -n`, `cat -n`, `grep -n`) on that tree.
+Where a claim could not be verified it says so. Sources are named, never linked, as the repo does
+(`standards/*.toml` `source =`, `analysis/explain.py`, `docs/formulas.md`).
+
+Commands run and what they printed:
+
+- `uvx bandit -r src -ll` → "No issues identified", 25 035 lines scanned, 4 low findings skipped by `# nosec` (exit 0).
+- `uv run pytest tests/test_app_robustness.py tests/test_fuzz_parser.py -q` → exit 0; only warnings printed:
+  48 + 2 `Pandas4Warning` from `xer/model.py:817` (`set_index(..., verify_integrity=True)` deprecated).
+- `uvx radon cc -s` on `state.py`, `views/overview.py`: `sidebar_loader` C (17), `_chosen_items` C (13),
+  `_window` C (11), `score_section` C (17); `uvx ruff check --select C901` (max 10): `sidebar_loader` 12 > 10.
+- `uv run xerscope sample --out <scratch> --weeks 20` → 20 files, 14 KB each (synthetic series, project
+  code `PRJ-ALPHA`, generated by the repo's own `sample.py`; no real schedule).
+
+---
+
+## B1. Security of the front
+
+Correction of the task's premise: there is **no `components.html` call** in `app/` or `viz/`
+(`grep -rn "components.html\|components\.v1" src/xerscope/app src/xerscope/viz` → 0). The HTML sinks are
+four `st.html` calls and one `st.components.v2.component`:
+
+| # | Sink | What reaches the browser | Serialisation |
+|---|---|---|---|
+| 1 | `app/state.py:432` `_section_title` | two fixed strings of the window ("Files", "server folder") | `html.escape` on both |
+| 2 | `app/state.py:536` | the literal `<hr class="xd-rule">` | constant |
+| 3 | `app/ui.py:122` `apply_style` | `style.css` (repo file), CSS variables built from `viz/charts.py` constants (`ui.py:118-121`), the inlined fonts (`ui.py:75-88`, base64 of repo files) | constant text, no file data |
+| 4 | `app/task_panel.py:203` `card_html` | every label and value of the activity card, from the XER | `html.escape` on title, label and value (`task_panel.py:148-153`) |
+| 5 | `app/ui.py:57` `GANTT = st.components.v2.component(...)`, called at `app/views/gantt.py:327-342` | the rows of `viz/gantt.py:gantt_data` (activity and WBS names, codes, dates, numbers) as the component's `data=` | Streamlit serialises `data` as JSON (`streamlit/components/v2/types.py:84-93`, `bidi_component/main.py:250` `json.dumps`); the page's markup is the fixed `<div id="gantt"></div>` (`viz/gantt.py:257`) |
+
+Everything a page writes with Markdown goes through `ui.md_text` (`ui.py:341-345`: links broken, Markdown
+specials escaped), checked by `tests/test_app_robustness.py:69-96` on a crafted table name and file name.
+
+### SE-01 — gantt.js DOM sinks: checked, no issue
+
+Read in full (`viz/gantt.js`, 421 lines). Every text node is created by `el()` which sets
+`node.textContent = String(text)` (gantt.js:20-25); the only other text writes are
+`text.title = r.name` (gantt.js:244, a DOM property, not markup) and `tip.replaceChildren(el(...))`
+(gantt.js:197-198). No `innerHTML`, `insertAdjacentHTML`, `outerHTML`, `srcdoc`, `document.write`, `eval`
+(grep on the file → 0; the same list is asserted by `tests/test_viz.py:344-360`).
+
+Attribute and style sinks, and where their value comes from:
+
+- `root.style.height = D.height + "px"` (gantt.js:14): an `int` from `fitted_height` (viz/gantt.py:206).
+- `root.style.setProperty("--Normal", P.Normal)` (16), `swatch.style.background = P[cat]` (88),
+  `diamond.style.background = colour`, `bar.style.background = colour` (273, 278) where
+  `colour = P[r.category] || P.Normal` (267): `P = D.palette` is `PALETTE` (viz/gantt.py:29-34, four colour
+  constants of `viz/charts.py`), `D.categories` is `CATEGORY_ORDER` (35), and `r.category` is produced by
+  `np.select` over four fixed labels (viz/gantt.py:43-50). A value outside the four falls back to
+  `P.Normal`. No file text reaches a style string.
+- `row.style.top`, `name.style.paddingLeft`, `node.style.left/width` (237, 240, 253-254, 272): numbers
+  computed from `r.depth`, `x(t)`.
+- `path.setAttribute("d", \`M${x0},...\`)` (306): numbers only; non-finite skipped (304).
+- `body.querySelectorAll(\`[data-i="${i}"]\`)` (371): `i` is `Number(node.dataset.i)` of a value the script
+  itself wrote as `String(i)` (238, 261) → a number or `NaN`, never file text.
+- Data from `host.*` / `window.*`: `host.xsOpen` (49-50) is a `Set` of row ids the script itself stored on
+  the host element; `window.innerWidth/innerHeight` (201-202) are numbers. Nothing is read from
+  `location`, `document.cookie` or another script.
+- What goes back to Python: `setTriggerValue("picked", r.id)` / `("focus", id)` (392, 398), a row id only;
+  the page accepts it only if it names an activity actually drawn (`views/gantt.py:313-316`) or a WBS of the
+  branch (`views/gantt.py:343`).
+
+### SE-02 — the component is not sandboxed (ASVS V5 / V14 context, CWE-79 exposure surface) — Low, informational
+
+Evidence: `app/ui.py:54-57` registers a v2 component "not an iframe"; Streamlit's own docstring:
+"This is trusted component code. It executes with normal app-page DOM privileges" and the shadow root
+"is not a security boundary and does not sandbox the component's JavaScript"
+(`.venv/.../streamlit/components/v2/__init__.py:333-346`). The only barrier between schedule text and the
+page's DOM is therefore the discipline of `gantt.js` (SE-01), which `tests/test_viz.py:335-360` pins
+(`test_gantt_keeps_schedule_text_out_of_the_markup`, `test_gantt_script_never_parses_text_as_html_nor_calls_out`).
+
+- Problem: a future edit adding `innerHTML` or a template literal into markup would run with the page's
+  privileges (the Streamlit session cookie, the websocket).
+- Options: (1) keep as is, the test list is the guard (cost 0; limit: the list is a deny-list of names, a
+  `new DOMParser()` or `setAttribute("on...")` would pass); (2) extend the test with `DOMParser`,
+  `setAttribute("on`, `javascript:` and a positive check that every text write goes through `el()` or
+  `textContent` (cost: 10 lines of test; limit: still lexical); (3) move the component to an iframe
+  (components v1 / `isolate_styles` does not do it) (cost: loses the theme variables that `gantt.css:1-15`
+  reads, docstring at `ui.py:54-56` says why it was not done).
+- Choice: left to the maintainer; (2) is the one that changes no behaviour. Source: OWASP ASVS 5.0.0
+  (output encoding), CWE-79.
+- Verification: `uv run pytest tests/test_viz.py -q -k gantt`.
+
+### SE-03 — CSP of the page — Low
+
+Evidence: deployed behind Caddy, `deploy/Caddyfile:35` sets
+`Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"`, pinned by
+`tests/test_docker.py:309-331` and `:384-399`. No `script-src` / `style-src`: an injected script would not be
+blocked by CSP (Streamlit itself inlines scripts and styles; whether a `script-src` with hashes is workable
+on Streamlit 1.67 is **unverified**). On a workstation (`xerscope app`) there is no CSP at all: Streamlit
+sends none (not verified in the server code; inferred from the absence in `app/.streamlit/config.toml`).
+
+- Options: (1) leave (cost 0; the page has no injection path found, SE-01); (2) try
+  `script-src 'self' 'unsafe-inline'`-free policy with hashes in the Caddyfile on the deployed stack and
+  record the breakage (cost: one deploy run; limit: Streamlit's bundle changes per release).
+- Choice: maintainer. Verification: `uv run pytest tests/test_docker.py -q -k caddy`.
+
+### SE-04 — pickle between processes (`app/reading.py`): checked, no issue
+
+Producer / consumer: the Streamlit process pickles `(name, bytes, chosen_project)` into the pool
+(`reading.py:96-97`, `ProcessPoolExecutor` with `spawn`, `MAX_WORKERS = 2`, line 24); the worker returns
+`(name, Snapshot | str, cache dict)` which the parent unpickles (`reading.py:101`). The file's content
+cannot choose the bytes of the stream: the stream is written by the worker's own pickler over objects the
+parser built (strings, frames); the file only fills their values. The channel is a local pipe between two
+processes of the same user; an attacker on that channel is outside this threat model (single-user tool, or
+the container of `deploy/compose.yaml`). A worker killed for memory → `BrokenProcessPool` caught, fallback
+to in-process reading (`reading.py:105-114`). `streamlit_app.py:60-62` guards `__main__` so a spawned worker
+does not start the app ("Safe importing of main module", quoted in the docstring, lines 7-10).
+
+### SE-05 — Ask field, "llm_backend / XERSCOPE_QUERY_URL": not in the repository
+
+`grep -rn "llm_backend\|XERSCOPE_QUERY_URL\|QUERY_URL\|llm"` over `src`, `docs`, `deploy`, `*.toml` → 0 hits.
+The Ask field is a grammar parser with no model (comment `views/gantt.py:95-98`; `analysis/ask/`: `grammar.py`,
+`lexer.py`, `parser.py`, `clauses.py`). Nothing leaves the process: `tests/test_docker.py:734-744`
+asserts no `urllib/socket/http.client/requests/httpx/aiohttp/websocket` import under `src/`, and the compose
+network is `internal: true`. The sentence is cut at `query.MAX_CHARS = 300` in the browser and at 301 on
+the server (`views/gantt.py:99-106`, `analysis/ask/parser.py:16`), parsed by `query.parse_keywords`
+(`views/gantt.py:126-133`), `RecursionError` on nested parentheses caught (134-136). Fuzzed by
+`tests/test_fuzz_ask.py:74-78` (Hypothesis: grammar phrases, words of the demo file, noise, 60 arbitrary
+characters: read, applied, answered, never more rows than the input).
+
+**SE-05a — one thing from a session does survive it, by design — Low (rule "nothing from a file remains after the session")**
+
+`state.teach` (`state.py:179-190`) appends `(word, label, column, filter, date)` to
+`XERSCOPE_LEXICON/suggested/` on disk when the viewer clicks "Did you mean ..." (`views/gantt.py:173-177`).
+`label` is a label of the loaded file's vocabulary (a WBS name, a code value). Guards in
+`analysis/ask/suggested.py:55-95`: `clean()` with `MAX_WORD`/`MAX_LABEL`, `kind in SOURCES`, file lock,
+TOML shape check, `MAX_BYTES`, `write_private`; "never the sentence" (state.py:182). The viewer is told
+only when it was *not* recorded ("Taught for this session; not kept as a suggestion", `views/gantt.py:181-182`);
+nothing on the page says that a click writes a file on the server.
+
+- Options: (1) leave, document in `docs/deploy.md` (not checked whether it already does) (cost 0);
+  (2) one caption under the offers: "A pick is kept for review in the lexicon folder" (cost 1 line);
+  (3) make recording opt-in per deployment (`XERSCOPE_LEXICON` already does: no folder, nothing written,
+  `state.py:137-138`, 189).
+- Choice: maintainer. Verification: `uv run pytest tests/test_fuzz_ask.py tests/test_docker.py -q -k lexicon`
+  (`test_the_app_reads_the_nas_lexicon_and_writes_suggested_only`, `test_docker.py:757`).
+
+### SE-06 — session persistence: checked, with two notes
+
+All caches are in `st.session_state`, never process-wide: `_parsed` (file → Snapshot, `state.py:72-83`,
+cleared past 64 entries), `items` (the **bytes** of the chosen files, 702/715), `bl_file` (name, bytes of the
+baseline upload, 421-423), `_headers` (261-273, cleared past 256), `_file_digests` (605), `_memo`
+(`memo`, 1720-1734, LRU), `_file_baselines`, `_pmxml_index` (896), `_load_job` / `_score_job` (thread
+objects holding `items` and results, 208-219, 1775-1788), `taught` (184). `grep -rn "cache_data\|cache_resource\|@st.cache" src/xerscope` → 0:
+no cross-session cache, so no cross-user leak in a shared instance. `functools.cache` is used only for the
+lexicon files and the font CSS, which hold no session data (`state.py:141-166`, `ui.py:74-75`).
+No temp file: `grep -rn "tempfile\|NamedTemporary\|mkstemp" src/xerscope/app` → 0. Downloads are bytes handed to
+`st.download_button` (`state.py:2038-2046`), anonymised unless the sidebar toggle is off (`csv_download`,
+2078-2101; `anon_exports`, 752-760). Streamlit's `disableDataExport = true` removes the grid's own CSV/clipboard
+(`app/.streamlit/config.toml:20-22`).
+
+What survives: the tab close → the session until `server.disconnectedSessionTTL` (Streamlit default 120 s,
+`streamlit/config.py:1286-1297`; the repo does not set it; `_parse`'s docstring names it, `state.py:73-75`);
+the process → nothing but `suggested/` (SE-05a); a `LoadJob` thread (daemon, 234) keeps the file bytes
+until the read ends even if the session is gone (bounded by the read).
+
+Note 1 (memory, shared instance): 200 MB per upload (`config.toml:8`) × several files × ~1 GB parsed per
+40 MB export (`state.py:655-657`); mitigated by `XERSCOPE_DATA_LOCKED` (no upload, no folder field, 436-446)
+and `maxUploadSize = 1` on the remote (`tests/test_docker.py:302`). Checked.
+Note 2: `runtime_table` discloses `Path.cwd()`, the package path and versions (`ui.py:90-110`), only on the
+Debug page, which `debug_page()` hides on a locked instance unless `XERSCOPE_DEBUG_PAGE=1`
+(`state.py:639-645`, `streamlit_app.py:48-50`). Checked.
+
+### SE-07 — inputs: checked, one note
+
+- `file_uploader` for updates: `type=UPLOAD_TYPES` (`.xer`, `state.py:443-445`, `xer/__init__.py:18`),
+  `accept_multiple_files`, parsed by `_parse → load_snapshot` whose contract is "Snapshot or XerError"
+  (`docs/architecture.md`, "Load contract"; `tests/test_fuzz_parser.py:131-155`). The extension is a
+  Streamlit client filter; the parser does not trust it. Baseline upload: `state.py:1441`. Health CSV / TOML
+  uploads: `pd.read_csv` with `dtype={"id": str}` and `ValueError`/`UnicodeDecodeError` caught (`health.py:361-371`);
+  standard TOML through `load_uploaded_standard`, errors caught (`health.py:439-446`), fuzzed by
+  `tests/test_fuzz_parser.py:194-205`. Debug P6 export: `diagnostic.read_p6_export`, `ValueError` caught (`debug.py:294-301`).
+- Folder `text_input` (`state.py:446`): drawn only when not locked (439-446); `Path(folder).expanduser()`,
+  `is_dir()`, then `xer_files()` lists only regular `.xer` files (`state.py:569-570`, `xer/__init__.py:57-59`).
+  Files are read by the names ticked, looked up in that listing (`_read_ticked`, 590-592): no traversal
+  from a name. On a locked instance the folder is `XERSCOPE_DATA` only (440). CWE-22: checked. On a
+  workstation any readable directory can be pointed at, which is the user's own machine.
+- Ask `text_input`: SE-05.
+- `number_input`: `ppc.py:225` bounded 0-100; `debug.py:317` `min_value=0.0`; `debug.py:321` any float
+  (a P6 total typed by hand, used in a comparison only); `audit.py:50` any float into a rule parameter
+  (what `rules.py` does with an absurd value, e.g. a negative threshold, is **unverified** here; the
+  check's `status "error"` path exists, `docs/architecture.md` §5). `audit.py:56` target text → parsed
+  by the standards' target syntax; `ValueError` caught at `audit.py:201`.
+- Table filters (`ui.py:671`): `search_mask` uses `str.contains(needle, regex=False)`
+  (`analysis/task_filters.py:22-26`): no ReDoS.
+
+### Security tests that exist, and what they do not cover
+
+- `tests/test_app_robustness.py` (8 tests): literal display of crafted names (69-96), a file gone between
+  listing and read (97-137), duplicate upload names refused (138-161), an erroring check counted as error
+  (162-185), lexicon load errors shown on Debug only (203). Not covered: an upload above the cap, a
+  `.xer` whose content is PMXML or binary (the parser fuzz covers the function, not the page), a hostile
+  value in `code_values` labels reaching `selectbox`/`multiselect` labels (`code_picker.py:20-37` passes
+  file labels as options; Streamlit renders option labels as text, **unverified** for Markdown).
+- `tests/test_fuzz_parser.py`: `parse_bytes` and `build_snapshot` return or raise `XerError` on mutated
+  bytes (131-155), PMXML and TOML loaders (189-205), encodings Python cannot read (208-217). Not covered:
+  `read_header`/`load_header` on the same inputs (the picker's path), `read_pmxml_baseline` memory on a
+  multi-GB file.
+- `tests/test_fuzz_ask.py`: SE-05. Not covered: `teach` with a hostile label (guards exist, `suggested.py:64-66`).
+- `tests/test_docker.py` (50+ tests): loopback only, non-root, no outbound import (734), Caddy headers,
+  CSP, cookies, logs without secrets or project codes (332), lexicon service sealed (767), scans pinned.
+  Not covered: the running app's HTTP surface (no request is made against a started server).
+- `tests/test_viz.py:335-360`: the Gantt text-out-of-markup and sink deny-list (SE-02).
+- `tests/test_accessibility.py` + `scripts/accessibility.py`: axe-core findings triage, no browser run in tests.
+
+---
+
+## B2. Files the six lenses never opened
+
+Method: each file read whole; names checked against CONTRIBUTING "Names" (whole words, no abbreviation
+outside the P6 vocabulary); dead code by `grep -rn "\bname\b" src tests` per exported name (counts below
+are uses outside the definition).
+
+### `viz/gantt.js` (421 lines) — GX
+
+**GX-01 — single-letter and abbreviated names throughout (CONTRIBUTING Names 1-2).** `D`, `P` (6, 8),
+`el`, `cls` (20-21), `r` (40, 56, 80, 180-193, 213-216, 235-282), `b` (68), `d, t, y, m, h, min` (28-30),
+`v` (34), `cat` (85), `t0, t1, c0, c1` (120-121, 214-215), `g, t` (324-325), `p, s, x0, x1, i0, i1` (296-303),
+`k, v` (289), `gcol, tcol, ghead` (107-113), `cmp_*` (215). The Python side of the same chart was already
+brought to whole words (`viz/gantt.py`), the script was not. Fix is a rename with no behaviour change;
+proof: `tests/test_viz.py -k gantt` plus a screenshot before/after.
+
+**GX-02 — the row-size constant lives in three files.** `ROW = 26` (gantt.js:9), `ROW_PX = 26`
+(viz/gantt.py:36), `height: 26px` / `line-height: 26px` / `top: 26px` (gantt.css:35, 39, 40, 46) and
+`GRID_W = 420` (gantt.js:10) written into `--grid-w` (17) that gantt.css reads (34, 43). `CHROME_PX = 96`
+(gantt.py:37) is the sum of toolbar + header (52, gantt.css:38) + borders by comment only; nothing checks
+the three agree. Options: (1) the script writes `--row` from `D.rowPx` and the CSS reads `var(--row)`
+(cost: 4 CSS edits; limit: Python still owns the number); (2) a test that greps the three files for the
+same number (cost: 6 lines; no runtime change). Choice: maintainer.
+
+**GX-03 — duplicated DOM-building code.** `gridRow` and `timelineRow` open the same way: class with
+`r.kind` and the `sel` test, `style.top = i * ROW`, `dataset.i` (236-238 vs 259-261). The three legend
+items are the same four statements (85-91, 92-96, 97-101). `box()` (250-256) and the `diamond` branch
+(271-274) both place by `x()`. One `rowShell(kind, i, selected)` and one `legendItem(swatchClass, text)`
+would remove ~12 lines.
+
+**GX-04 — what runs per event (measured by reading, not profiled).**
+- *scroll* (402-407): throttled to one `drawWindow(false)` per animation frame; `drawWindow` returns
+  early if the row window did not move (322), else rebuilds `2 × (visible + 2×BUFFER)` rows (326-331)
+  **and `drawLinks` iterates every link of the chart** (295-309) to find those crossing the window: on a
+  15 000-activity schedule with logic links on, each new row window costs O(links). Option: index links
+  by first row once per `render()` (a `Map` from row index to links) so `drawLinks` walks only the window
+  (cost ~15 lines; limit: memory O(links)).
+- *resize* (408-409): a full `render()` per event, unthrottled: ticks, scale, vertical lines, both
+  layers, links. A drag of the window fires tens of events. Option: the same `requestAnimationFrame`
+  gate as scroll (cost 4 lines).
+- *mousemove* (377-381): `setHover` runs two `querySelectorAll` over the whole body (369, 371) when the
+  row changes, then `showTip` rebuilds the tip and calls `getBoundingClientRect` (200: a layout flush)
+  on every move, even when the row did not change. Option: rebuild the tip only on a row change,
+  position only on move.
+- *window scroll* (385): `hideTip` only, passive. Fine.
+
+**GX-05 — `host.xsOpen` keeps state across data changes with no reset (see B3, B12).** Lines 45-50.
+
+**GX-06 (css) — `.tip` uses a fixed `rgba(0,0,0,0.15)` shadow and `max-width: 360px`** (gantt.css:76-80),
+the only literal colour in a file that otherwise reads the theme; cosmetic.
+
+**GX-07 — selectedIndex scroll uses `> 1`** (gantt.js:412-416): a picked activity at index 0 or 1 is not
+scrolled to; at index 1 `(1-1)*ROW = 0` would be a no-op anyway, at 0 as well. Harmless; the comparison
+reads as off-by-one. Checked, no issue.
+
+### `app/style.css` (297 lines) — CS
+
+**CS-01 — comment with no rule (dead comment).** Line 105: "MTA: the chart box as tall as it is wide…" is
+followed directly by the Score cards block (107); the rule it described is gone.
+
+**CS-02 — two identical button blocks.** `.st-key-files_button button, .st-key-baseline_button button`
+(229-246) and `.st-key-context_banner button` (257-269) share `justify-content`, `min-height: 0`,
+`border-left: 2px solid var(--xd-line, var(--xs-hairline))`, `border-radius: 0`, the hover
+`--xd-line: var(--accent); background: color-mix(... 5%, transparent)` (238-242 vs 266-269). One shared
+class name set by Python (`key="..."`) or a comma-joined selector would remove ~10 lines.
+
+**CS-03 — hard-coded amber for the Ask warning.** `.st-key-ask_banner_warn { box-shadow: inset 3px 0 0 #a15c00 }`
+(297) is the light theme's `orangeColor` (`config.toml` `[theme.light] orangeColor = "#A15C00"`); the dark
+theme uses `#FAB219`. On the dark theme the warning bar is the light theme's amber; contrast on `#16181D`
+**unverified** (viz/charts.py STATUS should be the one source, as line 295 says). Option: write it from
+`ui.apply_style` as `--warning: light-dark(...)` like `--accent` (ui.py:118-121).
+
+**CS-04 — `@media (max-width: 640px)` written three times** (64, 248, 278); `[data-testid="stCaptionContainer"]`
+opacity handled in two places with opposite values (119 vs 187): intended (the dialog cancels the fade),
+but the second needs the first's comment to be understood.
+
+**CS-05 — selectors on Streamlit internals.** `data-testid`, `data-tag`, `stBaseButton-tertiary`,
+`st-key-…` (26-63, 82-87, 90-103, 127-150, 174-192, 284): the header comment (7-9) owns the risk ("the app
+then shows the plain theme"). A test that the keys named in CSS exist in Python (`grep "st-key-" style.css`
+vs `key="..."` in app/) would catch a silent loss on rename; none found (`grep -rn "style.css" tests` not run
+for content checks; **unverified**).
+
+**CS-06 (loading) — `apply_style` resends ~12 KB of CSS on every rerun** (`ui.py:122`, docstring says
+"takes no space"); with the fonts inlined (no config read) it is ~100 KB per run, cached process-wide
+(`ui.py:74-88`). Acceptable; the fallback path is the one `runtime_table` row "Fonts inlined as fallback"
+(ui.py:103) reports.
+
+### `app/code_picker.py` (65 lines) — UF-01
+
+One job (two widgets), names whole. Nesting fine. `_draw_code_widgets` puts a conditional expression in
+a keyword argument spanning three lines (30-32: `placeholder=... if code_type else ...`) and a conditional
+`disabled=` (35); readable, borderline with "no chained conditional expression". `pick_activity_code` is used
+by `views/gantt.py` only (src=2), `pick_code_filter` by `earned_value.py`, `ppc.py`, `debug.py` (src=6). Not
+dead. File labels (`code_type`, value labels) go to `selectbox`/`multiselect` as option strings (20-27):
+rendered as text by Streamlit; whether option labels are Markdown-parsed is **unverified** here (the
+`accept_new_options=True` path echoes the typed text as a chip).
+
+### `app/expected_finish_forms.py` (78 lines) — UF-02
+
+One job, counts only (docstring 1-6 says why it is its own module). Readability: `for code, task in
+unfinished.iterrows()` building a dict per row (41-58) is two levels deep with a conditional inside
+(45-46); `for c in constraints` (51) breaks Names 1. Used by `app/diagnostic.py` (src=2) and three tests.
+
+### `app/views/activity.py` (24 lines) — UF-03
+
+Registered as "Task history (to be removed)" (`streamlit_app.py:35`). The page is `ui.latest_names` +
+`selectbox` + `show_history` (22-24); the Gantt already shows the same `show_history` for the picked
+activity (`views/gantt.py:378`), the Milestone page reuses `latest_names`/`code_label` (`milestones.py:20, 55`),
+so removing the page removes nothing else. No test names the page (`grep -rn "activity.py\|Task history" tests`
+not run; **unverified**). Fix: delete the file and line 35; `tests/test_app.py` ("every page renders") stays.
+
+### `app/streamlit_app.py` (62 lines) — UF-04
+
+Order of what runs: `set_page_config` (28), `st.navigation` (30-52) with the Debug page gated by
+`debug_page()` (48-50), `ui.apply_style()` (55), `sidebar_loader()` (56), `ui.glossary()` (57), `pages.run()` (58).
+`sys.path.insert` at 23 inside `main()` for the uninstalled run. `ui.glossary()` draws the whole GLOSSARY
+expander in the sidebar on every page and every rerun (`ui.py:434-442`: 40 Markdown bullets), after the
+loader. Readable; the nesting is the one `st.navigation` dict.
+
+### `app/glossary.py` (127 lines) — UF-05
+
+A table and three functions. `unknown_acronyms` (119-121) has no caller in `src` (src=0, tests=4): it is
+a test helper living in the package. `spelled_out` is used (src=5). Sources are named not linked
+("DCMA-EA PAM 200.1 §3.1.2.4", "ANSI/EIA-748", "Last Planner (LCI)"): consistent with the repo rule.
+"wd" entry (108) is lower-case against `_TOKEN` (`[A-Z]{2,}|wd`, 111): intended.
+
+### `app/sets.py` (128 lines) — UF-06
+
+`show_steps` hard-codes `key="ask_funnel"` (56): a second funnel table on one page would collide. The
+`overrides={...NumberColumn(name, format="%d") for name in ("removed", "left")}` dict is written twice
+(57, 91). `result`, `snapshot` parameters untyped on four functions (62, 82, 98). `source_text` has one
+caller (`source_caption`, 39). Not dead: `show_sets` src=3, `show_funnel`/`show_removed` src=1 (health/audit).
+
+### `app/xml_baselines.py` (210 lines) — UF-07
+
+Debug tables and the `BaselineContents` comparison; every public name has one caller in `debug.py`
+(src=1) and tests (2-6 each). `PROJECT_COLUMNS` / `RESOLUTION_COLUMNS` are module constants used once
+(49, 131). Readability: `_same_date_columns` (157-184) builds a list of `Version` in a comprehension of
+five fields (165-173) then two dict comprehensions: two levels, at the limit. The default `read` lambda in
+`export_of` (126) reads a whole baseline from `data` on each `digest` call that is not cached: acceptable,
+`BaselineContents.digest` memoises (95-98).
+
+### `app/static/`, `ui.font_fallback_css`, `ui.runtime_table` — UF-08
+
+Two variable fonts (40 KB + 34 KB, OFL texts beside them) served by `enableStaticServing` at
+`app/static/` (`config.toml:9-11, 90-98`). `theme_loaded()` (`ui.py:66-72`) decides between the served
+fonts and the base64 inline (`font_fallback_css`, 74-88, `@functools.cache`), the latter ~100 KB per
+`st.html` per run. Loading risk: with the config read, no request leaves for a font host (comment,
+config.toml:9-10); without it, every rerun resends 100 KB inline (CS-06). `runtime_table` (90-110) imports
+`platform` and `streamlit` inside the function (92-94) for one call: fine for a debug block. Names whole.
+`FONT_FILES` src=1. Tests: `font_fallback_css` and `runtime_table` each appear in one test.
+
+---
+
+## B3. Framing of the three open items (choice left to the maintainer)
+
+### B12 — "Gantt reduced to 4 rows"
+
+**Problem (code evidence).** The server computes the component's height on the branches *it* opens:
+`gantt_data(... open_ids=open_row_ids(...))` (`views/gantt.py:328-336`) → `fitted_height(rows, set(open_rows), height)`
+(`viz/gantt.py:248`) = `min(height, CHROME_PX + ROW_PX * max(MIN_ROWS, visible_rows(rows, open_ids)))`
+(`viz/gantt.py:203-206`, `MIN_ROWS = 4`, line 38). While a filter is on, `open_row_ids` opens every WBS row
+(`viz/gantt.py:65`, `filtering=True`, `views/gantt.py:299`). The browser then **merges** what the page sends
+with what it kept: `const open = new Set([...(host.xsOpen || []), ...D.open]); host.xsOpen = open`
+(`gantt.js:49-50`), on an element that survives reruns (comment 45-47). After a word typed then erased in
+Ask: `filtering` is False, `open_ids = {"w:<focus>"}` → height for the focus node's direct rows (often 4
+→ `CHROME_PX + 4 × 26 = 200 px`), but `host.xsOpen` still holds every branch → `visibleRows()` in the
+browser (53-63) draws them all inside a 200 px box. The state the height was computed on and the state
+drawn are two different sets, by design of the merge.
+
+**Option 1 — height on all rows of the tree.** `fitted_height(rows, open_ids, height)` →
+`min(height, CHROME_PX + ROW_PX * max(MIN_ROWS, len(rows)))`, or pass `open_ids = every WBS id` from the
+page. Cost: one line in `viz/gantt.py:206` or `views/gantt.py:334`; the chart then takes `GANTT_HEIGHT`
+(680, `views/gantt.py:40`) on any tree of ≥ 22 rows, blank space under a short branch is back ("no blank
+space under a short tree", docstring 204-205, is given up). **Test that changes:**
+`tests/test_viz.py:456 test_gantt_height_follows_the_rows_drawn_up_to_the_cap`, lines 462-466
+(`fitted_height(rows, {"w:0"}, 680) == chrome + least * row` becomes 680 for its 42-row fixture).
+Limit: does not fix the inverse case (viewer collapses everything: a 680 px box for 4 rows).
+
+**Option 2 — the browser fixes the height.** In `render()` (`gantt.js:335-360`), after `shown = visibleRows()`,
+set `root.style.height = Math.min(D.maxHeight, CHROME + shown.length * ROW) + "px"` and send `maxHeight`
+(the cap) in the payload beside `height`. The component is in the page's DOM, not an iframe (`ui.py:54-56`),
+so the page reflows at once. Cost: ~4 lines JS, one key in `gantt_data` (`viz/gantt.py:237-249`), `CHROME`
+duplicated in JS (GX-02 gets a fourth copy unless sent as `D.chromePx`). Benefit: height follows every
+fold/unfold and the toolbar buttons (74-83). Limit: Python's `fitted_height` becomes the first-paint
+estimate only; `test_gantt_height_follows_the_rows_drawn_up_to_the_cap` stays as is; a browser test does
+not exist (no JS test runner in the repo: `grep -rn "node\|jest\|playwright" pyproject.toml` not run, **unverified**).
+
+**Option 3 (suggested by the code) — reset `host.xsOpen` when the filter state changes.** The page
+already knows `filtering` (`views/gantt.py:299`) and the Ask text (`asked`, 99); send `D.openEpoch` (e.g. a
+counter bumped in session state when `filtering` flips or `asked` changes) and in `gantt.js:49`:
+`if (host.xsEpoch !== D.openEpoch) host.xsOpen = null; host.xsEpoch = D.openEpoch;` before the merge. Cost:
+~6 lines JS + ~4 lines Python (a session key for the previous `filtering`/`asked`). Keeps "the branches
+opened by the viewer stay open across reruns" for picks and toggles (the comment's own cases, 45-47) and
+drops them exactly when the server recomputed the tree for a new filter. Limit: the server height is still
+only right for the branches it opened; a viewer who unfolds after the filter is cleared scrolls inside
+(acceptable per docstring 205). Options 2 and 3 are not exclusive.
+
+**Verification (all options).** `uv run pytest tests/test_viz.py -q -k gantt`; `uv run pytest tests/test_app.py -q`;
+then by hand on the sample series: Gantt page → type a word in Ask that matches a few tasks → erase it →
+the chart must show the focus node's rows at the height of those rows (or the cap), not 4 rows with an
+inner scroll. Record a screenshot before/after as the PR's proof (CONTRIBUTING Readable code 6).
+
+### U1 — "loading order" (`state.py` is changed only with the maintainer)
+
+**Problem.** `sidebar_loader` (`state.py:691-770`, radon C 17, ruff C901 12 > 10) does four things in one
+body: (a) the load decision, `_chosen_items()` → `_forget_previous_series()` → three branches "thread job /
+in-run read / nothing" (695-718); (b) collecting a finished job (719-727); (c) applying the per-file project
+choice (729-731); (d) drawing: the Files button (733-745), the errors (746-747), the baseline picker and the
+baseline prompt (748-750), the window (751-752), the two sidebar switches (753-770). The threads `LoadJob`
+(208-236) and `ScoreJob` (1775-1811) are each one dataclass with a `run()`: already small (radon A). The
+Overview's `score_section` (`views/overview.py:79-99`, C 17) mixes the three states (polling / button /
+held) with the cards' drawing in one function.
+
+**Proposed split (which function keeps which lines).**
+
+- `load_series() -> SnapshotStore | None` (new, pure of drawing except the progress line): lines 695-731.
+  Inside it, `_start_or_read(signature, items, gone)` for 698-718 and `_collect_finished_job()` for 719-727
+  (the `_poll_load` fragment call stays the one drawing exception, 726-727, or moves to the caller).
+  `_apply_file_choices` call stays at the end (729-731).
+- `draw_sidebar(store)` (new): lines 733-770 unchanged.
+- `sidebar_loader()` becomes two lines: `store = load_series(); draw_sidebar(store)`; `streamlit_app.py:56`
+  unchanged.
+- The in-run read's progress line (704-713) is the only drawing inside the decision; it uses `sidebar.empty()`
+  and can take the container as an argument.
+- `overview.score_section` (79-99): split into `scores_held()` (80-81, 87-88) / `scores_polled(job)` (83-91) /
+  `scores_on_button()` (92-93) and keep `ui.score_cards(...)` (94-96) in the caller.
+
+**Invariant to keep (what is drawn before the first file is read).** In order: `st.set_page_config`
+(`streamlit_app.py:28`), the navigation (30-52), `ui.apply_style()` (55: CSS and fonts), then inside
+`sidebar_loader` the `files_line = sidebar.container()` placeholder (`state.py:693`) **before** `_chosen_items()`
+reads any byte (695, which may read the folder's files, 569-592): the Files line keeps the top slot of the
+sidebar whatever the read does, and the button's label is written after the read (733-745, comment 732).
+Pages run last (`pages.run()`, 58) and stop on `require_store` while a job runs (`state.py:1591-1602`). The
+split must keep: placeholder first, read second, label third.
+
+**Test.** `load_series()` becomes testable without AppTest by injecting the session dict as the `memo`
+helpers do (`session=None` pattern, `state.py:840, 849`): given `files_source = ("upload", [(name, bytes)])`
+and `XERSCOPE_SYNC_LOAD=1` (`background_jobs()`, 128-132), it returns a store, sets `signature`, `items`,
+`errors`, and `_load_job is None`; a second call with the same source returns without re-reading
+(`_parsed` keys unchanged). The existing `tests/test_app.py` ("every page renders headless") and
+`tests/test_app_robustness.py:97-137` (files gone between listing and read) are the regression net; the
+golden pages (`tests/test_page_golden.py`, named in `review.json`'s safety net) prove "same output before and
+after" (CONTRIBUTING Readable code 6).
+
+### File picker slow to open
+
+**What `read_header` reads.** The picker calls `_header(path)` per file (`state.py:259-273`), which is
+`load_header(path)` → `read_xer(path, keep=HEADER_TABLES)` → `read_header(raw)` (`xer/__init__.py:51-54`),
+`HEADER_TABLES = {"PROJECT": None, "TASK": ("task_id", "task_code", "proj_id")}` (`xer/model.py:1506`).
+`keep` does **not** stop the read: `_Reader.run` walks every line to `%E` (`xer/parser.py:235-249`) and only
+skips splitting the `%R` lines of tables left out (`parser.py:253-255`). `path.read_bytes()` reads the whole
+file (`parser.py:321-323`). A session cache keyed `(str(path), size, mtime_ns)` already exists
+(`state.py:261-266`, cleared past 256) — so Option 2 as stated in the task is **already there** for the
+session; a new session (new tab) starts cold.
+
+**Measured on the sample series** (20 files × 14 KB, synthetic; the maintainer's real series was not
+available here): `load_header` 4.4 ms mean per file, 89 ms for the 20; of which `parse_bytes(keep=HDR)`
+0.21 ms, `parse_bytes` full 0.68 ms, **`read_header(raw)` 2.9 ms** (pandas frames for PROJECT/TASK: the
+fixed cost dominates on small files). On a synthetic scale-up of the same file (TASK/TASKPRED/TASKRSRC rows
+repeated with new ids, parser throughput only): 2.3 MB → `parse keep=HDR` 16 ms, full parse 40 ms,
+`read_header` 3 ms. Table order in the sample: PROJECT, CALENDAR, SCHEDOPTIONS, PROJWBS, RSRC, **TASK**,
+TASKPRED, TASKRSRC; TASK ends at 73 % of the file. Extrapolated (not measured) to a 40 MB export: ~280 ms
+per file for the header scan, ~5-6 s for 20 files on first open, which matches the complaint; on real
+exports TASKRSRC and TASKPRED after TASK are usually the largest tables, so stopping at the end of TASK
+saves most of the scan — consistent with the maintainer's "x5 on 20 files".
+
+**Option 1 — stop at the end of TASK (the maintainer's local, unpushed variant).** In `_Reader.run`
+(`parser.py:235-249`), end the loop when a `%T` opens a table after every `keep` table has been seen (both
+PROJECT and TASK closed). Cost: ~6 lines in the parser + the `ended` flag semantics (`RawXer.ended` is
+False when `%E` was not read, `docs/architecture.md` §1: the picker already tolerates it, `build_snapshot`
+refuses it — so the header path must set a distinct "stopped early" rather than "no %E"). Limit: a file
+whose TASK comes before PROJECT, or with two TASK tables (refused anyway, `XerError`), or where
+`last_recalc_date` is in a later table (it is PROJECT's) — none expected in P6 output but the parser then
+needs a test for each (`tests/test_parser.py`). Still reads the whole file into memory (`read_bytes`).
+
+**Option 2 — a header cache keyed on path + mtime + size, process-wide or on disk.** The session cache
+exists (`state.py:261`); the cold start is per tab. A process-wide `functools.lru_cache` would hold
+`FileHeader` (project codes, counts, data date: data from the files) across sessions, against the rule
+"nothing from a file remains after the session" and SE-06's "no cross-session cache"; a disk sidecar is
+worse. Cost: 5 lines; limit: breaks the session-only invariant → **not recommended unless the maintainer
+accepts the exception for headers on a locked instance** where every session reads the same folder anyway
+(`XERSCOPE_DATA`, `state.py:440`).
+
+**Option 3 — read the header in the background, draw the list first.** The picker draws each tick box with
+its label from `_describe_file` (`state.py:276-300`); with a `LoadJob`-like thread (or the existing
+`ProcessPoolExecutor` of `reading.py`) filling `_headers` and a `st.fragment(run_every=1.0)` like
+`_poll_load` (`state.py:245-256`), the window opens at once with "reading…" labels that fill in. Cost:
+~40 lines in `state.py` (with the maintainer); limit: more state (a job slot), and a tick before the header is
+known must still be accepted (the series order, `most_recent_first`, re-reads the header from bytes anyway,
+`state.py:200-205`). Options 1 and 3 compose; 1 is the cheapest and keeps the invariants.
+
+**Verification.** `uv run pytest tests/test_parser.py tests/test_model.py tests/test_reference.py -q` (parser
+contract: "Snapshot or XerError", `read_header` vs `build_snapshot` agreement "on the sample and reference
+files", `docs/architecture.md` §2); `tests/test_fuzz_parser.py` with `load_header` added to the fuzzed
+functions (gap noted in B1); and the timing script's two numbers (`parse keep=HDR` per MB, before/after)
+written in the PR, measured on the maintainer's series locally, never with a file name in the PR.

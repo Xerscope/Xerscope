@@ -33,9 +33,13 @@ import xerscope
 from xerscope.analysis import Baseline
 from xerscope.analysis.evm import earned, evm_series
 from xerscope.app import ui
-from xerscope.app.state import BL_FILE, BL_PLANNED, _picked_folder_baseline, anonymizers_built
+from xerscope.app.baseline_file import _picked_folder_baseline
+from xerscope.app.downloads import anonymizers_built
+from xerscope.app.session import BL_FILE, BL_PLANNED
+from xerscope.app.theme import font_fallback_css
 from xerscope.csv_safe import csv_safe
 from xerscope.store import SnapshotStore
+from xerscope.viz.gantt import CHROME_PX, ROW_PX
 from xerscope.xer import build_snapshot
 from xerscope.xer.parser import parse_text
 
@@ -43,7 +47,6 @@ APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 PAGES = [
     "views/overview.py",
     "views/gantt.py",
-    "views/activity.py",
     "views/health.py",
     "views/audit.py",
     "views/changelog.py",
@@ -181,6 +184,8 @@ def test_earned_value_renders_with_a_single_update(one_file_app):
         "Time gap",
         "SPI(t)",
         "SPI (4 weeks)",
+        "Pace (4 weeks)",
+        "Pace (all updates)",
         "Planned finish",
         "Forecast finish (4 weeks)",
         "Forecast finish (all updates)",
@@ -209,6 +214,28 @@ def _chips(at) -> list[str]:
 def _toggle(at, label: str, value: bool) -> None:
     next(toggle for toggle in at.toggle if toggle.label == label).set_value(value).run()
     _ok(at)
+
+
+@pytest.mark.oracle("characterization")
+def test_gantt_payload_carries_the_row_size_the_height_cap_and_an_epoch_that_follows_the_filters(app):
+    """The browser sizes the chart from the payload: the row height and the chrome from viz.gantt, the
+    cap from the page. The epoch tells it to drop the branches it kept: it moves when a word is typed
+    in Ask or erased, and holds when a run changes no filter."""
+    app.switch_page("views/gantt.py").run()
+    data = _gantt_data(app)
+    assert (data["rowPx"], data["chromePx"], data["maxHeight"]) == (ROW_PX, CHROME_PX, 680)
+    assert data["height"] <= data["maxHeight"]
+    start = data["openEpoch"]
+    _toggle(app, "Logic links", True)
+    assert _gantt_data(app)["openEpoch"] == start  # no filter changed
+    app.text_input[0].set_value("critical").run()
+    typed = _gantt_data(app)["openEpoch"]
+    assert typed != start
+    app.text_input[0].set_value("jalons civil").run()  # another sentence, the filters still on
+    reworded = _gantt_data(app)["openEpoch"]
+    assert reworded not in (start, typed)
+    app.text_input[0].set_value("").run()
+    assert _gantt_data(app)["openEpoch"] not in (start, typed, reworded)
 
 
 def test_gantt_wbs_choice_filters_and_options(app):
@@ -263,7 +290,7 @@ def test_gantt_wbs_choice_filters_and_options(app):
     assert any("no activity shown" in m.value and "xyzzy" in m.value for m in app.markdown)
     app.text_input[0].set_value("commiss").run()  # a word nothing holds, close to Commissioning
     _ok(app)
-    app.button(key="teach_commiss_COM · Commissioning").click().run()  # taught for the session
+    app.button(key="teach_commiss_wbs_COM · Commissioning").click().run()  # taught for the session
     _ok(app)
     assert _chips(app) == ["WBS: COM · Commissioning"]
     assert app.session_state["taught"] == [("commiss", "COM · Commissioning")]
@@ -410,13 +437,13 @@ def test_the_context_banner_states_each_setting_and_follows_its_changes(app, sto
     first = store.labels[0].split(" · ")[0]
     code = store.latest.project_code
     assert _banner(app) == (
-        f"{code} · status date {ui.fmt_date(store.latest.data_date)} · BL update {first} · "
+        f"{code} · status date {ui.fmt_date(store.latest.data_date)} · BL update {first} (origin of the series) · "
         "EV budgeted, planned dates · costs off · 8 files · 1 project"
     )
     app.selectbox(key="ev_snap").set_value(store.labels[2]).run()
     assert f"status date {ui.fmt_date(store[2].data_date)} ·" in _banner(app)
     baseline_box(app).set_value(BL_PLANNED)
-    assert " · BL planned dates · " in _banner(app)
+    assert " · BL planned dates (origin of the series) · " in _banner(app)
     baseline_box(app, "ev_basis").set_value("at_completion_current")
     assert " · EV at completion, current dates · " in _banner(app)
     app.session_state["files_open"] = False  # baseline_box leaves the window open
@@ -726,7 +753,7 @@ def test_earned_value_on_a_task_code_counts_the_tasks_of_its_values(tmp_path, mo
 def test_earned_value_shows_the_date_the_plan_is_reached_and_the_gap_in_days(tmp_path, monkeypatch):
     """Friday 03-13 17:00. Whole project, EV 120 h: the plan held them from Friday 03-06 17:00 to Monday
     03-09 08:00, the end of that stretch is the date reached: 09 Mar, 4 d 9 h before the status date,
-    shown -4 d. On CIV, EV 60 h, reached on Wednesday 03-11 at 13:00: 11 Mar, 2 d 4 h before, shown -2 d,
+    shown -4 cal. d. On CIV, EV 60 h, reached on Wednesday 03-11 at 13:00: 11 Mar, 2 d 4 h before, shown -2 cal. d,
     SPI(t) 7.5 / 10 = 0.750."""
     at = _app_on_two_disciplines(tmp_path, monkeypatch)
     at.switch_page("views/earned_value.py").run()
@@ -735,9 +762,9 @@ def test_earned_value_shows_the_date_the_plan_is_reached_and_the_gap_in_days(tmp
     def card(label: str) -> str:
         return next(metric.value for metric in at.metric if metric.label == label)
 
-    assert (card("Plan reached"), card("Time gap")) == ("09 Mar 2026", "-4 d")
+    assert (card("Plan reached"), card("Time gap")) == ("09 Mar 2026", "-4 cal. d")
     _pick_discipline(at, "ev", "CIV")
-    assert (card("Plan reached"), card("Time gap"), card("SPI(t)")) == ("11 Mar 2026", "-2 d", "0.750")
+    assert (card("Plan reached"), card("Time gap"), card("SPI(t)")) == ("11 Mar 2026", "-2 cal. d", "0.750")
 
 
 def test_earned_value_shows_the_spi_of_the_last_four_weeks_and_the_forecast_finish(tmp_path, monkeypatch):
@@ -765,10 +792,8 @@ def test_earned_value_shows_the_spi_of_the_last_four_weeks_and_the_forecast_fini
     assert card("Planned finish") == "20 Mar 2026"
     assert (card("Forecast finish (4 weeks)"), card("Forecast finish (all updates)")) == ("02 Apr 2026", "02 Apr 2026")
     # 15 days of plan gained in the 20 of the four weeks, the same since the first update: pace 0.75
-    assert (
-        "Last 4 weeks: read from the update of 27 Feb 2026, 4 updates since. Pace, plan time gained / time "
-        "elapsed: 0.75 over the last 4 weeks, 0.75 since the first update loaded."
-    ) in _caption_texts(at)
+    assert "Last 4 weeks: read from the update of 27 Feb 2026, 4 updates since." in _caption_texts(at)
+    assert (card("Pace (4 weeks)"), card("Pace (all updates)")) == ("0.75", "0.75")
     # the planned finish, 03-20, is passed: no pace holds it
     assert card("TSPI (planned finish)") == "–"
     # the update of 03-06: 7.5 of the plan's 20 days reached in 10, 12.5 left for 10: TSPI 1.25; no update
@@ -783,15 +808,15 @@ def test_the_help_of_the_spi_over_four_weeks_names_the_settings_as_the_baseline_
     """The help says how the figure is calculated and which settings it is meant for; the settings carry
     the labels of the Baseline window."""
     from xerscope.analysis.baseline import DEFAULT_EV_BASIS
-    from xerscope.app import state
+    from xerscope.app import baseline_window, session
 
     app.switch_page("views/earned_value.py").run()
     _ok(app)
     card = next(metric for metric in app.metric if metric.label == "SPI (4 weeks)")
     assert "Σ ΔEV / Σ ΔPV" in card.help and "1,260 h were earned for 1,520 planned: 0.83" in card.help
-    for label in (state.BL_EACH, state.EV_BASIS_LABEL[DEFAULT_EV_BASIS], state.BL_NONE):
+    for label in (session.BL_EACH, session.EV_BASIS_LABEL[DEFAULT_EV_BASIS], session.BL_NONE):
         assert f"*{label}*" in card.help
-    window_source = Path(state.__file__).read_text(encoding="utf-8")
+    window_source = Path(baseline_window.__file__).read_text(encoding="utf-8")  # the window's Baseline section
     for field in (
         "Baseline (BL)",
         "Earned value basis",
@@ -1037,7 +1062,7 @@ def test_a_folder_baseline_file_no_longer_in_the_folder_is_not_read(tmp_path, mo
 def test_downloads_read_the_folder_baseline_file_by_a_name_of_the_folder_only(tmp_path, monkeypatch):
     """What an anonymized download is built from (``baseline_items``): the export picked in the folder;
     nothing for a name that is not one of the folder's files, whatever path it spells."""
-    from xerscope.app.state import baseline_items
+    from xerscope.app.baseline_file import baseline_items
 
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
@@ -1050,6 +1075,74 @@ def test_downloads_read_the_folder_baseline_file_by_a_name_of_the_folder_only(tm
     assert (name, export[:]) == ("export.xml", (tmp_path / "export.xml").read_bytes())
     for name in ("", "../outside.xml", str(outside), "w1.xer"):
         assert baseline_items({**session, "bl_folder_file": name}) == [], name
+
+
+def _a_baseline_xer_in_the_baselines_subfolder(folder, name="w1.xer"):
+    """``baselines/<name>``: A planned as the export's baseline (2 to 13 March, 80 h), as its own XER."""
+    held = folder / "baselines"
+    held.mkdir()
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-13 17:00", "target_work_qty": "80"}
+    (held / name).write_text(xer_text([todo("A", **week)], data_date="2026-02-23 08:00"), encoding="utf-8")
+
+
+def test_a_baseline_xer_of_the_baselines_subfolder_is_picked_under_the_name_of_an_update(tmp_path, monkeypatch):
+    """A locked server takes no upload, and a folder cannot hold two files of one name: the baseline exported
+    as its own XER goes in the ``baselines`` subfolder, under the name of an update if need be. It is listed
+    by its place there, never read as an update, and once picked is the baseline in force: 80 h, not the 40 h
+    of the update w1.xer it shares its name with."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    _a_baseline_xer_in_the_baselines_subfolder(tmp_path)
+    monkeypatch.setenv("XERSCOPE_DATA_LOCKED", "true")
+    at = _run(tmp_path, monkeypatch)
+    _ok(at)
+    assert files_line(at) == "Files · 2 files · 1 project"  # the subfolder is not read for updates
+    baseline_box(at).set_value(BL_FILE)
+    assert baseline_box(at, "bl_folder_file").options == ["(none)", "export.xml", "baselines/w1.xer"]
+    assert baseline_box(at, "bl_folder_file").value == "export.xml"  # the only P6 XML export, as before
+    _pick_the_folder_baseline_file(at, "baselines/w1.xer")
+    assert at.button(key="baseline_button").label == "Baseline · baselines/w1.xer"
+    baseline = at.session_state["baseline"]
+    assert isinstance(baseline, Baseline) and baseline.bac_hours == 80.0
+    assert baseline.snapshot.source == "baselines/w1.xer"  # never the update's own name
+    # a name built to leave the list reads nothing
+    for name in ("baselines/../w1.xer", "baselines/gone.xer"):
+        at.session_state["bl_folder_file"] = name
+        at.run()
+        _ok(at)
+        assert at.session_state["bl_folder_file"] == "export.xml", name
+
+
+def test_the_project_read_from_a_baseline_xer_of_several_is_picked_in_the_window(tmp_path, monkeypatch):
+    """A baseline XER exported with the project it copies holds two projects: the analysed one (UPD: A1, A2)
+    and the baseline (BL: A1 only). The window offers both, the file's default first; the one picked is
+    the baseline in force, and only one of the file's own projects is taken."""
+    from file_projects import two_projects
+
+    _updates_and_a_p6_xml_export(tmp_path)
+    (tmp_path / "baselines").mkdir()
+    (tmp_path / "baselines" / "two.xer").write_text(two_projects(baseline_ids=("A1",)), encoding="utf-8")
+    at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "baselines/two.xer")
+    assert baseline_box(at, "bl_file_project").options == ["UPD", "BL"]
+    assert len(at.session_state["baseline"].frame) == 2  # the default project, UPD
+    baseline_box(at, "bl_file_project").set_value("2")
+    _ok(at)
+    assert list(at.session_state["baseline"].frame.index) == ["A1"]  # BL
+    at.session_state["bl_file_project"] = "9"  # no project of the file: its default
+    at.run()
+    _ok(at)
+    assert len(at.session_state["baseline"].frame) == 2
+
+
+def test_a_baseline_read_from_its_xer_or_from_the_p6_xml_export_is_the_same_baseline(tmp_path, monkeypatch):
+    """The same plan of A (2 to 13 March, 80 h), in the P6 XML export and as its own XER in the baselines
+    subfolder: picked as the separate baseline file, both give the same dates and hours to measure against."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    _a_baseline_xer_in_the_baselines_subfolder(tmp_path, "bl.xer")
+    from_xml = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml").session_state["baseline"]
+    from_xer = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "baselines/bl.xer").session_state["baseline"]
+    assert from_xml.bac_hours == from_xer.bac_hours == 80.0
+    columns = ["bl_start", "bl_finish"]
+    pd.testing.assert_frame_equal(from_xer.frame[columns], from_xml.frame[columns], check_index_type=False)
 
 
 def test_debug_draws_without_the_baselines_of_an_export_that_cannot_be_read(tmp_path, monkeypatch):
@@ -1065,7 +1158,7 @@ def test_debug_draws_without_the_baselines_of_an_export_that_cannot_be_read(tmp_
     _ok(at)
     assert any(error.value.startswith("Baseline not read: export") for error in at.sidebar.error)
     assert not [d for d in at.dataframe if "updates_naming_it" in d.value.columns]
-    found = next(d.value for d in at.dataframe if "found_by" in d.value.columns)
+    found = next(d.value for d in at.dataframe if "version_before" in d.value.columns)
     assert found["found_by"].tolist() == ["not found", "not found"]
 
 
@@ -1073,7 +1166,7 @@ def test_an_export_that_cannot_be_read_is_said_in_the_sidebar_when_an_update_nam
     """w2 names baseline 370; export.xml, picked as the baseline file, is cut short afterwards. The sidebar
     says the baseline was not read; the page still draws. In "Baseline in each file" the same export is
     said not read, and no update is measured against it."""
-    from xerscope.app.state import BL_EACH
+    from xerscope.app.session import BL_EACH
 
     _updates_and_a_p6_xml_export(tmp_path)
     named = {"proj_id": "20", "sum_base_proj_id": "370"}
@@ -1190,13 +1283,15 @@ def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_n
         _ok(at)
         pointers = next(d.value for d in at.dataframe if "baseline_in_file" in d.value.columns)
         listed = [d.value for d in at.dataframe if "updates_naming_it" in d.value.columns]
-        found = next(d.value for d in at.dataframe if "found_by" in d.value.columns)
+        found = next(d.value for d in at.dataframe if "version_before" in d.value.columns)
         return pointers, listed, found
 
     at = _run(tmp_path, monkeypatch)
     baseline_box(at, "bl_folder_file").set_value("")  # the folder's only export is picked by default
     pointers, listed, found = debug_tables(at)
     assert pointers["baseline_in_xml_file"].tolist() == ["–", "–"] and not listed  # blank: no P6 XML file
+    # what to look for in P6: the update's project, and 370 nowhere held, so only P6 can name it
+    assert pointers[["project", "baseline_name"]].values.tolist() == [["T", ""], ["T", ""]]
     assert found["found_by"].tolist() == ["not found", "not found"]
 
     at = _pick_the_folder_baseline_file(_run(tmp_path, monkeypatch), "export.xml")
@@ -1205,6 +1300,7 @@ def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_n
         ["w1.xer", "", False],
         ["w2.xer", "370", True],
     ]
+    assert pointers["baseline_name"].tolist() == ["", "BL-1 name (BL-1)"]  # as the export names 370
     assert listed[["object_id", "activities", "project_baseline", "updates_naming_it"]].values.tolist() == [
         ["370", 1, True, 1],
         ["371", 0, False, 0],
@@ -1344,16 +1440,16 @@ def test_the_window_reopened_after_esc_shows_the_folder_and_its_files(sample_dir
 
 def test_a_new_session_reuses_nothing_parsed_by_another(sample_dir, monkeypatch):
     """Parsed files live in their session only: once it ends, nothing of them stays in the process."""
-    from xerscope.app import state
+    from xerscope.app import session
 
     calls = []
-    real = state.load_snapshot
+    real = session.load_snapshot  # the session's parse cache calls it
 
     def counting(data, **kwargs):
         calls.append(kwargs.get("name"))
         return real(data, **kwargs)
 
-    monkeypatch.setattr(state, "load_snapshot", counting)
+    monkeypatch.setattr(session, "load_snapshot", counting)
     first = _run(sample_dir, monkeypatch)
     _ok(first)
     parsed_once = len(calls)
@@ -1935,7 +2031,7 @@ def _memo_runs(at) -> int:
 def _probe_script():
     import streamlit as st
 
-    from xerscope.app.state import memo
+    from xerscope.app.cache import memo
 
     runs = st.session_state.setdefault("runs", [])
     memo(("probe",), lambda: runs.append(1))
@@ -1945,7 +2041,7 @@ def _probe_script():
 def test_memo_recomputes_when_the_baseline_changes(store, change):
     """The cache key carries the baseline's identity: a page need not add it by hand."""
     from xerscope.analysis.baseline import Baseline
-    from xerscope.app.state import BL_PLANNED
+    from xerscope.app.session import BL_PLANNED
 
     first, second = store.labels[:2]
     at = AppTest.from_function(_probe_script, default_timeout=120)
@@ -2021,15 +2117,15 @@ def test_uploading_a_standard_with_a_builtin_id_is_refused(app):
 @pytest.fixture
 def lexicon_root(tmp_path, monkeypatch):
     """XERSCOPE_LEXICON with its three folders; the app's cached reads start and end empty."""
-    from xerscope.app import state
+    from xerscope.app import loading
 
     for folder in ("generated", "curated", "suggested"):
         (tmp_path / folder).mkdir()
     monkeypatch.setenv("XERSCOPE_LEXICON", str(tmp_path))
-    for read in (state.lexicon_and_errors, state.refusals, state.file_variants):
+    for read in (loading.lexicon_and_errors, loading.refusals, loading.file_variants):
         read.cache_clear()
     yield tmp_path
-    for read in (state.lexicon_and_errors, state.refusals, state.file_variants):
+    for read in (loading.lexicon_and_errors, loading.refusals, loading.file_variants):
         read.cache_clear()
 
 
@@ -2053,7 +2149,7 @@ def test_a_correction_lands_in_suggested_without_the_sentence_and_is_not_read_ba
     sentence = "jalons commiss en retard"
     app.switch_page("views/gantt.py").run()
     app.text_input[0].set_value(sentence).run()
-    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    app.button(key="teach_commiss_wbs_COM · Commissioning").click().run()
     _ok(app)
     assert "WBS: COM · Commissioning" in _chips(app)
     written = (lexicon_root / "suggested" / "suggestions.toml").read_text(encoding="utf-8")
@@ -2077,7 +2173,7 @@ def test_a_correction_refused_by_a_guard_says_so_without_the_word(app, lexicon_r
     full.write_bytes(b"#" * suggested.MAX_BYTES)
     app.switch_page("views/gantt.py").run()
     app.text_input[0].set_value("commiss").run()
-    app.button(key="teach_commiss_COM · Commissioning").click().run()
+    app.button(key="teach_commiss_wbs_COM · Commissioning").click().run()
     _ok(app)
     assert _chips(app) == ["WBS: COM · Commissioning"]  # taught for the session all the same
     note = [c.value for c in app.caption if "not kept as a suggestion" in c.value]
@@ -2198,7 +2294,7 @@ def test_debug_names_a_curated_file_not_utf8_or_misshaped_and_the_gantt_still_re
 
 
 def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
-    from xerscope.app import state
+    from xerscope.app import loading
 
     (lexicon_root / "generated" / "variants.toml").write_text(
         '[[group]]\ncolumn = "PROJWBS.wbs_name"\nwords = ["fondation", "fondations"]\n'
@@ -2213,11 +2309,11 @@ def test_generated_variants_are_read_less_the_curated_refusals(lexicon_root):
     (lexicon_root / "suggested" / "suggestions.toml").write_text(
         '[[group]]\ncolumn = "TASK.task_name"\nwords = ["pose", "poses"]\n', encoding="utf-8"
     )
-    assert state.file_variants() == {
+    assert loading.file_variants() == {
         "PROJWBS.wbs_name": [["beton", "betons"]],
         "TASK.task_name": [["coffrage", "coffrages"]],
     }
-    assert state.refusals() == [("PROJWBS.wbs_name", frozenset({"fondation", "fondations"}))]
+    assert loading.refusals() == [("PROJWBS.wbs_name", frozenset({"fondation", "fondations"}))]
 
 
 def test_a_lexicon_uploaded_as_a_standard_never_reaches_the_ask_field(app):
@@ -2376,7 +2472,7 @@ def test_health_all_sets_file_anonymised_holds_no_original_value(app, store, dow
 def test_health_summary_file_gains_the_notes(app, store, downloads):
     snapshot, results = _open_health(app, store, "DCMA", anonymous=False)
     summary = _csv(_download(app, downloads, "Summary (CSV)"))
-    assert list(summary.columns[-2:]) == ["flagged", "note"]
+    assert list(summary.columns[-3:]) == ["flagged", "baseline", "note"]
     for result in results:
         got = summary.loc[summary["id"] == result.metric.id, "note"].iloc[0]
         expected = result.note_with_baseline  # a note starting with +/- is CSV-guarded (csv_safe)
@@ -2561,7 +2657,7 @@ def test_every_table_of_the_debug_page_has_a_key_of_its_own():
 
     tables = [call for call in calls if isinstance(call.func, ast.Name) and call.func.id == "table"]
     table_keys = keys_of(tables)
-    assert len(tables) == 46 and len(table_keys) == 46 and len(set(table_keys)) == 46
+    assert len(tables) == 47 and len(table_keys) == 47 and len(set(table_keys)) == 47
     assert all(key.startswith("debug_") for key in table_keys)
     other_keys = keys_of(call for call in calls if call not in tables)
     assert not set(table_keys) & set(other_keys)
@@ -2684,7 +2780,7 @@ def test_a_finish_that_goes_later_reads_negative_and_red_on_every_readout(app):
     app.switch_page("views/overview.py").run()
     _ok(app)
     finish = readout("Forecast finish")
-    assert (finish.delta, finish.color) == ("-2 wd vs previous update", normal)
+    assert (finish.delta, finish.color) == ("-2.0 wd vs previous update", normal)
     assert readout("Shift since first update").value == "-15.0 wd"
     app.switch_page("views/changelog.py").run()
     _ok(app)
@@ -2696,10 +2792,12 @@ def test_a_finish_that_goes_later_reads_negative_and_red_on_every_readout(app):
     _ok(app)
     finish = readout("Forecast finish")
     assert finish.delta.startswith("-") and finish.delta.endswith(" wd vs BL") and finish.color == normal
-    app.switch_page("views/activity.py").run()
-    app.selectbox[0].set_value("M9999").run()  # the project finish milestone: it follows the forecast finish
+    app.selectbox(key="gantt_node").set_value("__project__").run()  # back to the whole project
+    app.session_state["gantt_task"] = "M9999"  # the project finish milestone: it follows the forecast finish
+    app.run()
     _ok(app)
-    finish = readout("Forecast finish")
+    finishes = [metric for metric in app.metric if metric.label == "Forecast finish"]
+    finish = finishes[-1]  # the task panel, under the node's
     assert (finish.delta, finish.color) == ("-15.0 wd since first", normal)
 
 
@@ -2789,7 +2887,7 @@ def test_runtime_block_names_what_the_app_read(app):
 
 def test_font_fallback_inlines_both_faces():
     """Without the config (no static folder served), the theme's two fonts come as data: URLs."""
-    css = ui.font_fallback_css()
+    css = font_fallback_css()
     assert css.count("data:font/woff2;base64,") == 2
     assert all(f'font-family: "{family}"' in css for family in ("Onest", "JetBrains Mono"))
 
@@ -3030,8 +3128,9 @@ def test_charts_hide_the_plotly_mode_bar(app):
 def test_health_names_each_group_once_and_offers_one_prepare_button(app):
     app.switch_page("views/health.py").run()
     _ok(app)
-    titles = [m.value for m in app.markdown if m.value.startswith("##### ")]
+    titles = [markdown.value for markdown in app.markdown if markdown.value.startswith("#### ")]
     assert titles and len(titles) == len(set(titles)), titles
+    assert len(titles) == 3, titles  # the three groups of the P6 standard: no check's formula is a heading
     assert [b.label for b in app.button].count("Prepare anonymized downloads") == 1
 
 
