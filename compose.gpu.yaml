@@ -16,7 +16,9 @@
 #   XERSCOPE_MODELS      the folder of .gguf files, mounted read-only
 #   XERSCOPE_MODEL_FILE  the .gguf to serve, in that folder
 # Optional: XERSCOPE_LLM_CTX (context tokens, 16384), XERSCOPE_LLM_KV (cache type of keys and values,
-# q8_0), XERSCOPE_LLM_MEM_LIMIT (16g).
+# q8_0), XERSCOPE_LLM_GPU_LAYERS (layers on the card, 99 = all; fewer puts the rest in RAM, for a
+# model larger than the card), XERSCOPE_LLM_CPU_MOE (a mixture-of-experts model: blocks whose experts
+# stay in RAM, 0 = none), XERSCOPE_LLM_MEM_LIMIT (the model's memory cap, 0 = none: the machine's).
 services:
   xerscope:
     environment:
@@ -35,7 +37,9 @@ services:
       - --port
       - "8080"
       - --n-gpu-layers
-      - "99"
+      - ${XERSCOPE_LLM_GPU_LAYERS:-99}  # all on the card; fewer: the rest read from RAM, slower (§12)
+      - --n-cpu-moe
+      - ${XERSCOPE_LLM_CPU_MOE:-0}  # a MoE model larger than the card: its experts in RAM
       - --ctx-size
       - ${XERSCOPE_LLM_CTX:-16384}
       - --flash-attn
@@ -59,7 +63,7 @@ services:
       - /tmp
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: ${XERSCOPE_LLM_MEM_LIMIT:-16g}
+    mem_limit: ${XERSCOPE_LLM_MEM_LIMIT:-0}  # 0: no cap but the machine's (Docker Desktop: .wslconfig, §12)
     pids_limit: 256
     restart: unless-stopped
 
@@ -80,6 +84,6 @@ services:
       - /tmp:uid=65532,gid=65532,mode=1777
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 8g
+    mem_limit: 0  # no cap but the machine's
     pids_limit: 128
 

@@ -274,11 +274,11 @@ def test_remote_load_workers_follow_the_env_file_and_default_to_one():
 
 
 def test_local_load_workers_are_sized_to_the_machine_within_a_memory_cap():
-    """The local build (compose.yaml) reads with as many workers as the cores and its memory cap allow
-    (XERSCOPE_LOAD_WORKERS=auto, app/reading.py); the cap leaves the rest of the machine to the model."""
+    """The local build (compose.yaml) reads with as many workers as the cores and the memory allow
+    (XERSCOPE_LOAD_WORKERS=auto, app/reading.py); no cap by default, XERSCOPE_MEM_LIMIT sets one."""
     app = (ROOT / "compose.yaml").read_text()
     assert re.search(r"^\s+XERSCOPE_LOAD_WORKERS: \$\{XERSCOPE_LOAD_WORKERS:-auto\}", app, re.M)
-    assert re.search(r"^\s+mem_limit: \$\{XERSCOPE_MEM_LIMIT:-16g\}", app, re.M)
+    assert re.search(r"^\s+mem_limit: \$\{XERSCOPE_MEM_LIMIT:-0\}", app, re.M)  # no cap but the machine's
     assert "- ${XERSCOPE_EXPORTS:-./exports}:/data:ro" in app  # the NAS's variable names the folder here too
 
 

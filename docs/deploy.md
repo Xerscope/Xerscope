@@ -538,6 +538,29 @@ computes nothing. `XERSCOPE_AGENT=off` in `.env` keeps the model for the study o
 build of b12005 or later (a `response_format` fix), and do not start it with MTP speculative
 decoding, which fails with a JSON schema (llama.cpp issue 30419).
 
+**Using the whole machine.** No memory cap is set by default (`mem_limit` 0): the app, the model and
+the study take what the machine gives. Under Docker Desktop that is what WSL 2 gives its virtual
+machine, half the RAM by default; to give it more, write `%UserProfile%\.wslconfig`:
+
+```
+[wsl2]
+memory=56GB
+processors=24
+```
+
+then `wsl --shutdown` and restart Docker Desktop. A model larger than the card runs with part of it
+in RAM, slower: generating a token reads the model's weights, at about 672 GB/s on the RTX 5070
+and about 102 GB/s from dual-channel DDR5-6400 (theoretical rates, not measured here).
+
+| Model | `.env` | Where | Read per token |
+|---|---|---|---|
+| a dense 9B (Q6_K, ~7 GB) | `XERSCOPE_LLM_GPU_LAYERS=99` | all on the card | ~7 GB from the card |
+| a MoE 35B with 3B active (Q4, ~20 GB) | `XERSCOPE_LLM_CPU_MOE=<blocks>` | experts in RAM | ~2 GB (the active experts) |
+| a dense 27B (Q4, ~16 GB) | `XERSCOPE_LLM_GPU_LAYERS=<layers that fit>` | the rest in RAM | ~5 GB from RAM |
+
+The instructions the agent sends (commands and columns) are the same for every question on one
+file: the server keeps that prefix cached, so after the first question it reads the question only.
+
 **Sizing for 12 GB of VRAM.** The weights and the context's cache (KV) share the card. The cache
 grows with the context: 2 × layers × KV heads × head size × bytes per value, per token. With
 `--flash-attn on` and a `q8_0` cache (the override's default, half of `f16`):

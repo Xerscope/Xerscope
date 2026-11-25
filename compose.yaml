@@ -22,7 +22,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     healthcheck:
       disable: true  # the image's healthcheck polls the app's port
-    mem_limit: ${XERSCOPE_MEM_LIMIT:-16g}
+    mem_limit: ${XERSCOPE_MEM_LIMIT:-0}  # no cap but the machine's
     restart: "no"
 
   xerscope:
@@ -50,5 +50,5 @@ services:
       - /home/nonroot:uid=65532,gid=65532,mode=700  # Streamlit then fails reading ~/.streamlit/secrets.toml
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: ${XERSCOPE_MEM_LIMIT:-16g}  # the app's share of the machine; the workers are sized to it
+    mem_limit: ${XERSCOPE_MEM_LIMIT:-0}  # 0: no cap but the machine's; the load workers are sized to what it holds
     restart: unless-stopped
