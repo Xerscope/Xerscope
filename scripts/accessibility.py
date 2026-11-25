@@ -38,8 +38,8 @@ from pathlib import Path
 
 AXE_SHA256 = "20c09fe157a8a34a30e241aaa1fcdade657734f08ab379ecfbeb7d45cc46e878"  # axe-core 4.14.0, axe.min.js
 TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
-PAGES = ["", "gantt", "tasks", "health", "audit", "changelog", "earned_value", "milestones", "ppc", "export",
-         "debug"]  # fmt: skip
+PAGES = ["", "gantt", "tasks", "health", "audit", "changelog", "forensics", "earned_value", "milestones", "ppc",
+         "export", "debug"]  # fmt: skip
 THEMES = ["light", "dark"]
 WIDTHS = {"desktop": (1440, 900), "phone": (390, 844)}
 
