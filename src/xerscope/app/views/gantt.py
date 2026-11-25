@@ -489,16 +489,18 @@ def show_breadcrumb(task_code: str) -> None:
     """The tasks opened in the panel, as P6 stored their floats and constraints in each update."""
     trail = trail_with(task_code)
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
-        st.markdown(" › ".join(f"**{ui.md_text(code)}**" if code == task_code else ui.md_text(code) for code in trail))
-        if len(trail) > 1 and st.button(
+        st.markdown(" › ".join(ui.md_text(code) for code in trail))
+        back = st.button(
             "Back",
             icon=":material/arrow_back:",
             key="gantt_trail_back",
             type="tertiary",
+            disabled=len(trail) < 2,
             help="Opens the task before this one in the breadcrumb.",
-        ):
-            st.session_state[TRAIL_KEY] = trail[:-1]
-            open_from_panel(trail[-2])
+        )
+    if back:
+        st.session_state[TRAIL_KEY] = trail[:-1]
+        open_from_panel(trail[-2])
     show_trail(store, trail, open_task=open_from_panel)
 
 
@@ -509,10 +511,8 @@ def show_chain(task_code: str) -> None:
         return
     direction, depth, driving_only = asked
     links = recalculated_links(snapshot)
-    if links is None:
+    if links is None:  # no recalculation: every link is followed, none is known to drive
         links = snapshot.relationships.assign(driving=False)
-        if driving_only:
-            st.warning("This update cannot be scheduled: no driving link is known.", icon=":material/warning:")
     codes = linked_chain(links, task_code, direction, depth, driving_only)
     which = "driving links" if driving_only else "links"
     st.session_state[FOCUS_KEY] = {"codes": codes, "label": f"{task_code} · {direction}, {depth} {which} deep"}
