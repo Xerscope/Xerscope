@@ -21,7 +21,8 @@ from conftest import P6_CORPUS_HINT, REFERENCE_HINT, missing
 from xerkit import FM, done, hours, snap, todo
 
 from xerscope.analysis import cpm
-from xerscope.xer import load_snapshot
+from xerscope.xer import build_snapshot, load_snapshot
+from xerscope.xer.parser import read_xer
 
 REF = Path(__file__).parent / "reference" / "data"
 HELD_OUT = REF / "p6-heldout" / "validation" / "held-out"
@@ -179,3 +180,57 @@ def test_p6_corpus_drives_the_same_on_stored_and_recalculated_dates(name):
     assert cases
     for path in cases:
         _assert_same_links(path)
+
+
+# --- P6's own relationship date: TASKPRED.aref ------------------------------------------------
+#
+# P6 Professional writes aref on every relationship of the Hotel, Terminal, PV and xereditor
+# exports (the P6 23.12 corpus leaves it blank). Oracle documents it for links to projects
+# outside the database only (web services, Relationship.Aref: "Adjusted Relationship Early
+# Finish"), yet on these files it holds, for every link, the start the link allows its
+# successor, written as P6 writes a finish (16:00 the evening before 08:00). A link drives
+# exactly when that start is the successor's remaining start in working time: the one
+# relationship-level value P6 exports that the driving rule can be checked against.
+
+
+def _aref_drives(path: Path) -> tuple[pd.Series, pd.Series]:
+    """Per open link (pred_code, succ_code, type): the recalculated driving flag, and whether P6's
+    aref reaches the successor's remaining start on the successor's calendar."""
+    raw = read_xer(path)
+    snapshot = build_snapshot(raw)
+    recalculated = cpm.schedule(snapshot)
+    tasks, frame = snapshot.by_code, recalculated.frame
+    code_of = dict(zip(snapshot.activities["task_id"], snapshot.activities["task_code"], strict=True))
+    axes = cpm._Axes(snapshot, *cpm._date_range(snapshot))
+    stored = {}
+    for row in raw.tables["TASKPRED"].itertuples():
+        predecessor, successor = code_of.get(row.pred_task_id), code_of.get(row.task_id)
+        if predecessor is None or successor is None or not row.aref:
+            continue
+        if tasks.at[predecessor, "is_complete"] or tasks.at[successor, "is_complete"]:
+            continue
+        start = frame.at[successor, "remaining_start"]
+        start = frame.at[successor, "es"] if pd.isna(start) else start
+        axis = axes.of(tasks.at[successor, "clndr_id"])
+        stored[(predecessor, successor, row.pred_type.removeprefix("PR_"))] = axis.work(
+            pd.Timestamp(row.aref)
+        ) >= axis.work(start)
+    p6 = pd.Series(stored, dtype=bool)
+    links = recalculated.links.set_index(["pred_code", "succ_code", "type"])["driving"]
+    p6 = p6[p6.index.isin(links.index)]  # a level-of-effort's links place it; they are not in Schedule.links
+    return links.reindex(p6.index), p6
+
+
+@pytest.mark.oracle("p6")
+@pytest.mark.parametrize("name", [*REFERENCE, "xereditor/sample.xer"])
+def test_driving_links_are_those_p6s_aref_says_set_the_successor_start(name):
+    """Measured 2026-11-25: 7,742 open links (Hotel 7,586, Terminal 84, PV 31, xereditor 41), 4,929
+    driving, every one equal; the 7 links into As Late As Possible work of Hotel included. The links
+    of the xereditor sample's level-of-effort activities are not in Schedule.links (they place the
+    LOE): P6's aref says each reaches its successor."""
+    if not (REF / name).exists():
+        missing("reference", REFERENCE_HINT)
+    recalculated, p6 = _aref_drives(REF / name)
+    assert len(p6) > 0
+    different = p6[recalculated != p6]
+    assert different.empty, different.head(10).to_dict()

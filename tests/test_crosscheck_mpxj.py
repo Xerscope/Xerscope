@@ -387,7 +387,7 @@ def _driving_unexplained(xc, path: Path) -> tuple[int, pd.DataFrame]:
     """Links compared, and the differences neither an MPXJ date nor an UNRESOLVED case explains."""
     compared = xc.driving_crosscheck(path)
     unexplained = compared[compared["reason"].isna()]
-    assert set(compared["reason"].dropna()) <= {"", "mpxj_dates", *xc.UNRESOLVED}
+    assert set(compared["reason"].dropna()) <= {"", "mpxj_dates", *xc.UNRESOLVED, *xc.P6_SETTLED}
     return len(compared), unexplained
 
 
@@ -395,7 +395,7 @@ def _driving_unexplained(xc, path: Path) -> tuple[int, pd.DataFrame]:
 @pytest.mark.parametrize("name", DRIVING_FILES)
 def test_driving_links_agree_with_mpxj_on_reference_files(xc, require_reference, name):
     """Measured 2026-11-25: Hotel 7,586 open links, 7 differences, each an As Late As Possible
-    successor (UNRESOLVED driving_alap); Terminal and PV none."""
+    successor, where P6's aref sides with xerscope (P6_SETTLED driving_alap); Terminal and PV none."""
     compared, unexplained = _driving_unexplained(xc, require_reference(name))
     assert compared > 0
     assert unexplained.empty, unexplained.head(10).to_string()
@@ -406,7 +406,7 @@ def test_driving_links_agree_with_mpxj_on_reference_files(xc, require_reference,
 def test_driving_links_agree_with_mpxj_on_the_p6_corpus(xc, name):
     """P6 23.12 held-out corpus, every case MPXJ supports: no difference left once MPXJ's own date
     differences and the UNRESOLVED cases are set aside (measured 2026-11-25 on the 30 sets: 2,399 open
-    links, 159 differences: 115 MPXJ dates, 40 driving_held_by_data_date, 4 driving_alap; MPXJ's
+    links, 159 differences: 115 MPXJ dates, 40 driving_held_by_data_date, 4 driving_alap (P6_SETTLED); MPXJ's
     scheduler stops on 12 cases with a NullPointerException, left out)."""
     from xerscope.xer import load_snapshot
 

@@ -40,13 +40,11 @@ UNRESOLVED = {
     "assignment_lag": "assignment lag on a resource-dependent activity: MPXJ leaves it out of the activity dates",
     "free_float_lead": "free float of an activity with a lead to a successor",
     "free_float_mandatory": "free float of an activity with a mandatory constraint",
-    # Driving relationships (tests/test_driving.py). P6 does not export its Driving flag, so
-    # only P6 Professional's Relationships tab settles these: read the Driving column of the
-    # predecessors of corpus H1-01 A1130 (first) and of an As Late As Possible successor (second).
+    # Driving relationships (tests/test_driving.py). P6 does not export its Driving flag and the
+    # corpus files leave TASKPRED.aref blank: P6 Professional's Relationships tab settles it, the
+    # Driving column of the predecessors of corpus H1-01 A1130.
     "driving_held_by_data_date": "a successor whose date no link reaches (the data date or its progress "
     "sets it): MPXJ marks its latest predecessor driving, xerscope none",
-    "driving_alap": "a link into an As Late As Possible activity: xerscope reads it on the early dates "
-    "and may call it driving, MPXJ never does",
 }
 
 
@@ -59,6 +57,9 @@ P6_SETTLED = {
     "lag_to_finished_successor": "lag on a link into a finished successor under Retained Logic: MPXJ drops an FS lag "
     "in the backward pass; P6 passes the full FS / FF lag back, the unexpired SS / SF lag, and nothing between "
     "two finished activities (corpus H1-08 A1020, A1050)",
+    "driving_alap": "a link into an As Late As Possible activity: MPXJ never marks it driving; P6's own "
+    "relationship date (TASKPRED.aref) reaches the successor's early start on all 7 such links of Hotel, as "
+    "xerscope reads it (tests/test_driving.py)",
     "expected_finish_edge": "an expected finish before the early start or on work with an FF / SF predecessor: "
     "MPXJ ignores it; P6 sets the remaining duration to zero, or lets a later FF / SF bound win "
     "(corpus H1-02 A1170, H4-10 A1040)",
@@ -493,7 +494,7 @@ def driving_crosscheck(path: str | Path, project_code: str | None = None) -> pd.
     A finished activity drives nothing (Oracle P6 help, Activity Network); MPXJ reads links of
     finished work on their actual dates, so they are left out. Where the flags differ, ``reason``
     says why: ``mpxj_dates`` when MPXJ placed the predecessor or the
-    successor elsewhere (a date difference, judged by ``cpm_crosscheck``), else an ``UNRESOLVED``
+    successor elsewhere (a date difference, judged by ``cpm_crosscheck``), else a ``P6_SETTLED`` or ``UNRESOLVED``
     key, else None: a difference no known case explains.
     """
     from ..analysis.cpm import _Axes, _date_range, schedule
