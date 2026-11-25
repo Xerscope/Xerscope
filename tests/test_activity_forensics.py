@@ -166,3 +166,44 @@ def test_the_series_has_one_row_per_pair_and_keeps_a_week_it_cannot_read():
     )
     broken = activity_half_step_series(SnapshotStore([first, looped]), "B")
     assert broken.loc[0, "note"].startswith("not read") and pd.isna(broken.loc[0, "finish"])
+
+
+@pytest.mark.oracle("standard")
+@pytest.mark.parametrize(("finished", "driving"), [("2026-03-06 17:00", ["A"]), ("2026-03-04 17:00", [])])
+def test_a_predecessor_that_finished_late_still_drives_its_successor(finished, driving):
+    """Status date Mon 9 March 08:00; A is finished, B (40 h, not started) follows it FS.
+
+    A finished Fri 6 17:00: no working time between A's finish and the status date, so A's link bounds
+    B's start (Mon 9 08:00) and A drives B (Oracle P6 help, Driving relationships: the successor has no
+    free float, no Start On / Finish On constraint, no actual finish; nothing excludes a finished
+    predecessor). A finished Wed 4 17:00: B waits for the status date, not for A; A drives nothing.
+    The longest path keeps its own rule: it traces unfinished work only.
+    """
+    earlier = snap([active("A", **week()), todo("B", **week())], A_THEN_B)
+    a_done = done("A", act_start_date="2026-03-02 08:00", act_end_date=finished)
+    later = snap([a_done, todo("B", **week())], A_THEN_B, data_date=WEEK_LATER)
+    assert activity_half_step(earlier, later, "B").driving_after == driving
+
+
+@pytest.mark.oracle("standard")
+@pytest.mark.parametrize(("retained", "override", "driving"), [("Y", "N", ["A"]), ("N", "Y", [])])
+def test_work_under_way_has_no_driving_predecessor_under_progress_override(retained, override, driving):
+    """B started (40 h left) out of sequence while A (40 h, not started) is still to come, A FS B.
+
+    Retained Logic: B's remaining work waits for A (Mon 2 - Fri 6), A drives B. Progress Override:
+    "network logic is ignored and the activity can progress without delay" (Oracle P6 Professional
+    help, Schedule Options, General tab): B has no driving predecessor.
+    """
+    sched = {"sched_retained_logic": retained, "sched_progress_override": override}
+    schedule_of = snap([todo("A", **week()), active("B")], A_THEN_B, sched=sched)
+    assert activity_half_step(schedule_of, schedule_of, "B").driving_after == driving
+
+
+@pytest.mark.oracle("standard")
+def test_a_finished_activity_has_no_driving_predecessor():
+    """B finished: nothing drives it any more (Oracle: a driving relationship's successor has no actual
+    finish), whatever its predecessor."""
+    finished = snap(
+        [done("A"), done("B", act_start_date="2026-02-16 08:00", act_end_date="2026-02-20 17:00")], A_THEN_B
+    )
+    assert activity_half_step(finished, finished, "B").driving_after == []

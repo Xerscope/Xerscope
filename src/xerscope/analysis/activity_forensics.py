@@ -10,9 +10,11 @@ later update, days lost negative, the convention of ``progress.activity_finish_s
 early finish of the activity in each update with the finish P6 stored for it: with a gap the shifts
 may be the engine's and not the schedule's (``is_finish_reproduced``).
 
-A driving predecessor is one whose link leaves no slack: the working time on the lag calendar between
-the date the link reads on the predecessor and the date it bounds on the activity equals the lag
-(Oracle P6 help, Relationship lag, Driving relationships). Links to other projects are not read.
+The driving predecessors are the engine's (``Schedule.driving``), the rule the longest path is traced
+with: a predecessor whose link bounds the activity's remaining start (FS, SS) or early finish (FF,
+SF), on the lag calendar of the schedule options. Here a finished predecessor counts (one that
+finished late pushed its successor), as Oracle's driving relationships do; a finished activity has
+none, and work under way has none under Progress Override, its logic being ignored.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ import pandas as pd
 from ..store import SnapshotStore
 from ..xer import Snapshot
 from .changelog import changelog
-from .cpm import H24, Schedule, schedule
+from .cpm import Schedule, schedule
 from .forensics import (
     AS_SCHEDULED,
     STEP_COLUMNS,
@@ -34,10 +36,6 @@ from .forensics import (
     replanning_shift_wd,
     step_schedules,
 )
-
-# the date a link reads on the predecessor and the date it bounds on the successor, by link type
-LINK_DATES = {"FS": ("ef", "es"), "SS": ("es", "es"), "FF": ("ef", "ef"), "SF": ("es", "ef")}
-SLACK_TOLERANCE_HR = 0.01
 
 EARLIER_UPDATE = "the earlier update"
 LATER_UPDATE = "the later update"
@@ -100,33 +98,9 @@ class ActivityHalfStep:
         return self.old_engine_gap_wd == 0.0 and self.new_engine_gap_wd == 0.0
 
 
-def driving_predecessors(snapshot: Snapshot, recomputed: Schedule, task_code: str) -> list[str]:
-    """Activity IDs whose link into ``task_code`` leaves no slack in the recalculated dates, sorted."""
-    links = snapshot.relationships
-    into_activity = links[(links["succ_code"] == task_code) & ~links["is_external"].astype(bool)]
-    return sorted({link.pred_code for link in into_activity.itertuples() if _is_driving(snapshot, recomputed, link)})
-
-
-def _is_driving(snapshot: Snapshot, recomputed: Schedule, link) -> bool:
-    frame = recomputed.frame
-    if link.pred_code not in frame.index or link.type not in LINK_DATES:
-        return False
-    predecessor_date, successor_date = LINK_DATES[link.type]
-    calendar = _lag_calendar(snapshot, recomputed, link.pred_code, link.succ_code)
-    gap_hr = calendar.work_hours(frame.loc[link.pred_code, predecessor_date], frame.loc[link.succ_code, successor_date])
-    lag_hr = 0.0 if pd.isna(link.lag_hr) else float(link.lag_hr)
-    return abs(gap_hr - lag_hr) <= SLACK_TOLERANCE_HR
-
-
-def _lag_calendar(snapshot: Snapshot, recomputed: Schedule, predecessor: str, successor: str):
-    """Return the calendar the lag of a link is counted on, per the scheduling option."""
-    option = recomputed.options.lag_calendar
-    if option == "rcal_24Hour":
-        return H24
-    if option == "rcal_ProjDefault":
-        return snapshot.calendar()
-    owner = predecessor if option == "rcal_Predecessor" else successor
-    return snapshot.calendar(_calendar_id(snapshot, owner))
+def driving_predecessors(recomputed: Schedule, task_code: str) -> list[str]:
+    """Activity IDs that drive ``task_code`` in ``recomputed``, sorted; none for a finished activity."""
+    return sorted(recomputed.driving.get(task_code, ()))
 
 
 def _calendar_id(snapshot: Snapshot, task_code: str) -> str | None:
@@ -184,8 +158,8 @@ def activity_half_step(old: Snapshot, new: Snapshot, task_code: str) -> Activity
             }
         )
         finish = step_finish
-    driving_before = driving_predecessors(old, old_schedule, task_code)
-    driving_after = driving_predecessors(new, new_schedule, task_code)
+    driving_before = driving_predecessors(old_schedule, task_code)
+    driving_after = driving_predecessors(new_schedule, task_code)
     concerned = {task_code, *driving_before, *driving_after}
     return ActivityHalfStep(
         task_code=task_code,

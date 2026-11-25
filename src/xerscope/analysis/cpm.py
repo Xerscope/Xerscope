@@ -294,6 +294,8 @@ class Schedule:
     warnings: list[str] = field(default_factory=list)
     assignments: pd.DataFrame = field(default_factory=pd.DataFrame)  # one row per open assignment
     assignment_minutes: dict[str, float] = field(default_factory=dict)  # taskrsrc_id -> remaining minutes as placed
+    # open activity -> predecessors that drive it, finished ones included: the longest path's rule (_Run)
+    driving: dict[str, tuple[str, ...]] = field(default_factory=dict)
     # the plain recalculation (file options, no delay), the one cached on the snapshot: its
     # comparison with the stored dates is cached too (compare_with_stored)
     plain: bool = False
@@ -305,6 +307,7 @@ class Schedule:
             warnings=list(self.warnings),
             assignments=self.assignments.copy(),
             assignment_minutes=dict(self.assignment_minutes),
+            driving=dict(self.driving),
         )
 
 
@@ -1870,14 +1873,16 @@ class _Run:
         enders = [code for code in self.nodes if self.early_finish[code] == self.finish]
         return [code for code in self.open_ if self._ends_project(code, enders)]
 
-    def driving_predecessors(self, code) -> list[str]:
-        """Unfinished predecessors whose link drives a date of ``code``. Work under way has none under
-        Progress Override: its logic is ignored."""
+    def driving_predecessors(self, code, finished_too: bool = False) -> list[str]:
+        """Predecessors whose link drives a date of ``code``: unfinished ones for the longest path (finished
+        work drives nothing left to do), finished ones too with ``finished_too`` (a forensic reading: work
+        that finished late this week pushed its successor). Work under way has none under Progress
+        Override: its logic is ignored (Oracle: "network logic is ignored")."""
         if self.status[code] == "TK_Active" and self.options.progressed == "progress_override":
             return []
         driving = []
         for predecessor, link_type, lag in self.preds[code]:
-            if self.status[predecessor] == "TK_Complete":
+            if self.status[predecessor] == "TK_Complete" and not finished_too:
                 continue
             bound = self.early_bound_through(predecessor, code, link_type, lag)
             if self.is_driven_by(code, link_type, bound):
@@ -2055,8 +2060,15 @@ class _Run:
             if code in self.early_start
         ]
         frame = pd.DataFrame(rows, columns=RESULT_COLS).set_index("task_code")  # no row: an empty Schedule
+        driving = {code: tuple(self.driving_predecessors(code, finished_too=True)) for code in self.open_}
         return Schedule(
-            frame, self.finish, self.options, self.warnings, self.assignment_dates(), self.assignment_minutes
+            frame,
+            self.finish,
+            self.options,
+            self.warnings,
+            self.assignment_dates(),
+            self.assignment_minutes,
+            driving=driving,
         )
 
     def _report(self) -> None:
