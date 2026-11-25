@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from xerscope.app.ui import as_dates
+from xerscope.app.table_filters import as_dates
 from xerscope.xer import RawXer, Snapshot, XerError, is_pmxml, parse_bytes
 
 # TASK columns holding a date, and the users who added and last changed the activity, with their labels in

@@ -35,7 +35,7 @@ from xerscope.analysis.rules import RULES
 from xerscope.analysis.standards import Standard, builtin_standards
 from xerscope.app.expected_finish_forms import expected_finish_forms
 from xerscope.app.recalculation_departures import departure_forms, departure_funnel, departures
-from xerscope.app.ui import as_dates
+from xerscope.app.table_filters import as_dates
 from xerscope.app.xer_columns import (
     NOT_IN_DATA_MAP,
     TASK_DATE_LABELS,

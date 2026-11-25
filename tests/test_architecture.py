@@ -106,8 +106,8 @@ APP_EDGES = {  # module -> exactly the app modules it imports
     "loading": {"baseline_warnings", "files_window", "reading", "session", "ui"},
     "downloads": {"baseline_file", "session"},
     "sets": {"downloads", "ui"},
-    "xer_columns": {"ui"},
-    "diagnostic": {"expected_finish_forms", "recalculation_departures", "ui", "xer_columns"},
+    "xer_columns": {"table_filters"},
+    "diagnostic": {"expected_finish_forms", "recalculation_departures", "table_filters", "xer_columns"},
     "state": {
         "baseline_export",
         "baseline_warnings",
