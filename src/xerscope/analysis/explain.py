@@ -914,7 +914,7 @@ READINGS: dict[str, Reading] = {
             "each constraint added, removed or changed on the task between two consecutive updates, dated by the "
             "later update's status date: the Constraints rows of the changelog."
         ),
-        source="`changelog.constraint_changes`",
+        source="xerscope changelog (`changelog.constraint_changes`)",
     ),
     "task_history": TASK_TABLES_READING,
     "export_tables": EXPORT_TABLES_READING,

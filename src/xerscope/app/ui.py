@@ -222,7 +222,7 @@ COLUMNS: dict[str, tuple[str, str, str]] = {
         ),
     ),
     "on_longest_path": (
-        "Longest path",
+        "On longest path",
         "bool",
         "P6's Longest Path column (TASK.driving_path_flag), as P6 stored it when it scheduled the update.",
     ),
