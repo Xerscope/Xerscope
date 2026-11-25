@@ -464,6 +464,7 @@ def _widen_dates(update_axis, low, high) -> None:
 LOGIC_DASH = {"task": "solid", "predecessor": "dot", "successor": "dash"}
 LOGIC_ROLE = {"task": "task", "predecessor": "pred", "successor": "succ"}
 NOT_DRIVING_OPACITY = 0.35  # a point whose link does not drive, still readable on both themes
+NEIGHBOUR_HEADINGS = [("predecessor", "Predecessors"), ("successor", "Successors")]
 
 
 def build_activity_float(logic: pd.DataFrame, shown: Sequence[str] = ()) -> go.Figure:
@@ -488,7 +489,7 @@ def build_activity_float(logic: pd.DataFrame, shown: Sequence[str] = ()) -> go.F
         annotation_position="bottom left",
     )
     figure = _with_house_style(figure, "activity_float", 380, "Working days", legend=bool(len(neighbours)))
-    figure.update_layout(hovermode="closest")
+    figure.update_layout(hovermode="x")  # the hover opens anywhere above or below a status date
     return figure
 
 
@@ -511,29 +512,38 @@ def _logic_line(rows: pd.DataFrame, role: str, colour: str, notes: Sequence[str]
             symbol=["diamond" if text else "circle" for text in constraints],
             opacity=[NOT_DRIVING_OPACITY if flag is False else 1.0 for flag in rows["driving_link"]],
         ),
-        customdata=np.stack([link, [html.escape(text) for text in constraints], notes], axis=-1) if len(rows) else None,
+        customdata=np.stack([link, [_hover_line(text) for text in constraints], notes], axis=-1) if len(rows) else None,
         hovertemplate=f"<b>{code}</b> · {LOGIC_ROLE[role]} %{{customdata[0]}}<br>%{{x|%Y-%m-%d}}: TF %{{y}} wd"
-        "<br>%{customdata[1]}%{customdata[2]}<extra></extra>",
+        "%{customdata[1]}%{customdata[2]}<extra></extra>",
     )
 
 
+def _hover_line(text: str) -> str:
+    """``text`` escaped on a hover line of its own; nothing for an empty text."""
+    return f"<br>{html.escape(text)}" if text else ""
+
+
 def _neighbour_summaries(logic: pd.DataFrame, dates: pd.Series) -> list[str]:
-    """For each status date of ``dates``: the update's predecessors then successors, one hover line each."""
+    """For each status date of ``dates``: the update's predecessors, then its successors, under a heading
+    each, one hover line per activity with its total float in working days."""
     summaries = []
     for date in dates:
-        rows = logic[(logic["data_date"] == date) & (logic["role"] != "task")]
-        lines = [_neighbour_line(row) for row in rows.itertuples()]
-        summaries.append("<br>" + "<br>".join(lines) if lines else "<br>no predecessor or successor")
+        rows = logic[logic["data_date"] == date]
+        blocks = [_role_block(rows, role, heading) for role, heading in NEIGHBOUR_HEADINGS]
+        summaries.append("".join(blocks))
     return summaries
 
 
+def _role_block(rows: pd.DataFrame, role: str, heading: str) -> str:
+    """One heading of the hover ("Predecessors") and its activities, "none" without one."""
+    lines = [_neighbour_line(row) for row in rows[rows["role"] == role].itertuples()]
+    return f"<br><br><b>{heading}</b><br>" + ("<br>".join(lines) if lines else "none")
+
+
 def _neighbour_line(row) -> str:
-    """One neighbour as a hover line, escaped: pred C3010 FS driving · TF 20.0 · its constraints."""
-    float_text = "–" if pd.isna(row.total_float_d) else f"{row.total_float_d:.1f}"
-    parts = [
-        f"{LOGIC_ROLE[row.role]} {row.task_code} {link_text(row.link_type, row.driving_link)}",
-        f"TF {float_text}",
-    ]
+    """One neighbour as a hover line, escaped: C3010 FS driving · TF 20.0 wd · its constraints."""
+    float_text = "–" if pd.isna(row.total_float_d) else f"{row.total_float_d:.1f} wd"
+    parts = [f"{row.task_code} {link_text(row.link_type, row.driving_link)}".strip(), f"TF {float_text}"]
     constraints = _constraints_text(row.primary, row.secondary)
     if constraints:
         parts.append(constraints)

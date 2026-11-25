@@ -107,7 +107,9 @@ def test_activity_charts_follow_the_history(store):
     assert [trace.name for trace in float_chart.data] == ["C3020 · task"]
     assert len(float_chart.data[0].x) == len(history)
     first_hover = float_chart.data[0].customdata[0][2]
-    assert "pred E1020 FS driving" in first_hover and "succ C3040 SS" in first_hover
+    predecessors, successors = first_hover.split("<b>Successors</b>")
+    assert "<b>Predecessors</b>" in predecessors and "E1020 FS driving · TF 20.0 wd" in predecessors
+    assert "C3040 SS driving · TF 85.0 wd" in successors
     assert float_chart.layout.yaxis.title.text == "Working days"
     picked = build_activity_float(logic, shown=["C3030"])
     assert [trace.name for trace in picked.data] == ["C3020 · task", "C3030 · succ"]
