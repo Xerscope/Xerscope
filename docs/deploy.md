@@ -521,6 +521,14 @@ the cable changes nothing in the app: that is the point.
 peaks measured in `app/reading.py`. On a 285K with 4 MB exports that is one worker per file up to
 24; the NAS keeps its `1` (§7).
 
+**The agent.** With `compose.gpu.yaml` the app runs with `XERSCOPE_AGENT=on`: a sentence the Ask
+field's grammar does not fully read goes to the model at `http://llm:8080`, which picks one command
+and one of its values (`agent/tools.py`) under a JSON schema, thinking off. xerscope runs the command
+and writes the answer; the caption under it names the command, the value and the seconds taken.
+The model computes nothing and reads no activity. `XERSCOPE_AGENT=off` in `.env` keeps the model for
+the study only. Pin a llama.cpp build of b12005 or later (a `response_format` fix), and do not start
+it with MTP speculative decoding, which fails with a JSON schema (llama.cpp issue 30419).
+
 **Sizing for 12 GB of VRAM.** The weights and the context's cache (KV) share the card. The cache
 grows with the context: 2 × layers × KV heads × head size × bytes per value, per token. With
 `--flash-attn on` and a `q8_0` cache (the override's default, half of `f16`):

@@ -8,6 +8,7 @@ from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.task_filters import branch_tasks, filtered_tasks
 from xerscope.analysis.wbs import ROOT, path_to, rollup, subtree_ids
 from xerscope.app import ui
+from xerscope.app.agent_panel import agent_enabled, show_agent_answer
 from xerscope.app.baselines import (
     baseline_for_checks,
 )
@@ -328,6 +329,7 @@ in_branch = branch_tasks(
 in_branch = in_branch.assign(category=categorise(in_branch))
 tasks = filtered_tasks(in_branch, snapshot, status, categories, search, code_type, code_ids)
 ask_funnel = None
+page_tasks = tasks  # before the sentence's filters: what the agent's commands read
 if ask is not None:  # the sentence's filters, intersected with the widgets', one funnel step each
     ask_funnel = query.apply(ask, tasks, snapshot, nodes, baseline)  # "late" reads the page's baseline
     tasks = ask_funnel.rows
@@ -362,6 +364,8 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
                 st.session_state[ASKED_TASK_KEY] = asked
         how = " · unsure reading" if ask.confidence < query.SURE else ""
         st.caption((ui.md_text(query.funnel_line(ask_funnel)) if ask_funnel.steps else "no filter") + how)
+        if agent_enabled() and (ask.ignored or not (ask_funnel.steps or ask.intent or ask.clarify)):
+            show_agent_answer(asked, store, snapshot, page_tasks, nodes, lexicon)
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]

@@ -183,7 +183,8 @@ carry no pointer logic of their own.
 | `progress.py` | series → MTA trend, PPC, progress delta | PPC = W-1 finish and start commitments, W outcome |
 | `wbs.py` | snapshot → WBS tree with roll-ups | % complete weighted by hours, else duration |
 | `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source; `READINGS`: the "How to read" text of each chart and table | read-only account of a result, shown under every check in the app; the popover of `ui.chart` and `ui.table` |
-| `query.py` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text) | picks filters the page offers, computes nothing; a bilingual keyword grammar over the file's own lexicon (`Vocabulary`: WBS, code values, resources, the words of the activity names; a search word the file does not hold is dropped and named); no model is called (`scripts/llm_study.py` measures one, outside the app). "why did A1020 slip" / "historique de A1020" set `Filter.intent` (`slip`, `history`) and `Filter.task_code` from the file's Activity IDs; `activity_answer` says the move of that activity in one sentence from `activity_forensics.activity_half_step`, the page draws its steps and the history card. `score` / `ratios` measure a parser on sentences with known filters (`tests/ask/dev.toml` tuned on, `heldout.toml` written blind; `xerscope ask-bench`, floors in `tests/test_ask_bench.py`; `--anonymize` scores on the anonymised copy of a real file, the output seeing the new codes only) |
+| `query.py` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text) | picks filters the page offers, computes nothing; a bilingual keyword grammar over the file's own lexicon (`Vocabulary`: WBS, code values, resources, the words of the activity names; a search word the file does not hold is dropped and named); no model is called here: a sentence it does not fully read goes, when `XERSCOPE_AGENT=on`, to the local agent (`agent/`). "why did A1020 slip" / "historique de A1020" set `Filter.intent` (`slip`, `history`) and `Filter.task_code` from the file's Activity IDs; `activity_answer` says the move of that activity in one sentence from `activity_forensics.activity_half_step`, the page draws its steps and the history card. `score` / `ratios` measure a parser on sentences with known filters (`tests/ask/dev.toml` tuned on, `heldout.toml` written blind; `xerscope ask-bench`, floors in `tests/test_ask_bench.py`; `--anonymize` scores on the anonymised copy of a real file, the output seeing the new codes only) |
+| `agent/` (`__init__.py`, `tools.py`, `client.py`) | a Gantt Ask sentence the grammar did not fully read → `AgentAnswer`: the command and value the local model chose (`tools.FIELDS`: find_activity, filter, activity_slip, activity_history, project_slip, path_changes, none), the values the command computed, the sentence written from them by a template, or the reason it gave none | the model chooses under a flat JSON schema with thinking off and computes nothing; the commands are `query`, `activity_forensics`, `forensics.half_step`, `longest_path.path_churn` and `store.history` on the page's update; a filter reads the user's own words; an Activity ID the update does not hold, a value not of the command or `none` gives no answer. Off unless `XERSCOPE_AGENT=on` (`compose.gpu.yaml` sets it) |
 
 Standards are data in `standards/*.toml`:
 
@@ -207,12 +208,17 @@ checks the code against it, so a change here must be made there too):
 - `store.py` imports `xer/` and `config.py`; `export.py` imports `store.py` and `config.py`;
   `anonymize.py` imports `xer/` only.
 - `analysis/` imports `xer/` and `store.py`; never `viz/`, `app/` or `verify/`.
+- `agent/` imports `analysis/`, `store.py` and `xer/`. `agent/client.py` is the only module of `src/` that
+  opens a connection, to the local model only (`ALLOWED_HOSTS`: `llm`, its name on the silo network,
+  or a loopback address; no redirect, no proxy); `tests/test_docker.py` lets no other module import
+  a network library.
 - `viz/` imports `config.py` and, from `analysis/wbs.py`, the constant `ROOT` only: it draws
   frames, it does not compute schedule results.
 - `verify/` imports `xer/`, `analysis/cpm.py` and `config.py`; `crosscheck.py` re-exports it.
   Nothing in the app depends on it.
 - `sample.py` imports `xer/`, `analysis/cpm.py` and `config.py`.
-- `app/` imports `xer/`, `store.py`, `analysis/`, `viz/`, `export.py`, `anonymize.py` and `config.py`, and is imported
+- `app/` imports `xer/`, `store.py`, `analysis/`, `viz/`, `export.py`, `anonymize.py`, `config.py` and `agent/` (inside
+  `app/agent_panel.py`'s function only, when `XERSCOPE_AGENT=on`), and is imported
   by nothing but Streamlit and `cli.py`. Pages
   compose analyses and figures (some computation still sits in the views: see
   [backlog.md](backlog.md), Structure).
@@ -406,6 +412,11 @@ Outside `analysis/`:
   unchanged, cost figures 0 as in the extract).
 - **Pages:** one file per page in `views/`. Pages compose analyses and figures; the
   Plotly figures are built in `viz/`.
+- **`agent_panel.py`:** the Ask field's agent answer, under the grammar's banner, when `XERSCOPE_AGENT=on`
+  and the grammar left a word out or read no filter: `agent.answer` once per sentence and update (memo),
+  its sentence or the reason it gave none, and a caption naming the command, the value and the seconds
+  the model took; an unreachable model is a warning, the page still draws. It imports `xerscope.agent`
+  inside its function only. Imports `cache`, `ui`.
 - **`task_panel.py`:** one activity, named by its Activity ID: its card in the update shown
   (P6 properties, resource assignments, logic) and its history across updates. Opened under
   the Gantt for the activity picked there (`task_from_row_id` accepts an `a:` row id only, and
@@ -544,6 +555,7 @@ lexicon, a grammar and an encoder, each measured.
 | `test_reference.py` | third-party stated results (MPXJ, xerlock), MPXJ crosscheck |
 | `test_weekly.py` | changelog, EV/PV, PPC, delta, WBS, MTA |
 | `test_longest_path.py` | the longest path of each update and its churn: the P6 flag, the recalculated fallback, one change per activity |
+| `test_agent.py` | the local agent with a fixed choice of the model: each command's value against the engine that computes it, the filter reading the user's words, every choice outside the lists or the file refused, the client's host list, the request it sends, a bad reply or a redirect refused, the page off and on |
 | `test_activity_forensics.py` | the half-step reading of one activity: one hand case per kind of change, absent activity, engine gap, the steps summing to the move, the series |
 | `test_forensics.py` | the half-step reading: one hand case per step, the invariants, the finish cases, the two changelog categories it needs |
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |

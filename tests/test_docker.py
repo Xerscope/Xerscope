@@ -754,10 +754,14 @@ def test_deployment_documents_immutable_image_refs_and_the_key_check():
 
 
 def test_nothing_in_src_reaches_the_network():
-    """No outbound code in src/: the deployed app and the CLI reach nothing."""
+    """No outbound code in src/ but the agent's client, which reaches the local model only (its host list is
+    pinned in tests/test_agent.py): the deployed app and the CLI reach nothing else."""
     outbound = re.compile(r"^\s*(import|from)\s+(urllib|socket|http\.client|requests|httpx|aiohttp|websocket)")
     offenders = {}
+    allowed = ROOT / "src" / "xerscope" / "agent" / "client.py"
     for path in (ROOT / "src" / "xerscope").rglob("*.py"):
+        if path == allowed:
+            continue
         lines = [n for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1) if outbound.match(line)]
         if lines:
             offenders[path.relative_to(ROOT).as_posix()] = lines

@@ -18,6 +18,12 @@
 # Optional: XERSCOPE_LLM_CTX (context tokens, 16384), XERSCOPE_LLM_KV (cache type of keys and values,
 # q8_0), XERSCOPE_LLM_MEM_LIMIT (16g).
 services:
+  xerscope:
+    environment:
+      XERSCOPE_AGENT: ${XERSCOPE_AGENT:-on}  # the Gantt Ask field asks the model what its grammar does not read
+      XERSCOPE_LLM_URL: http://llm:8080      # the model's name on the silo; the agent accepts no other host
+    depends_on: [llm]
+
   llm:
     image: ${XERSCOPE_LLM_IMAGE:?pin ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>}
     # No -hf / --hf-repo and no model URL: the server downloads nothing, it reads the file you put in the folder.
