@@ -224,6 +224,9 @@ reports are kept outside the repository; what remains open is in `docs/quality-p
 - Tables: a missing number reads as a dash; the audit sheet's target as text, its TOML block in UTF-8.
   The Files and baseline window opened by itself holds the Baseline section alone, and Done keeps the
   series. `Snapshot.file_baseline` is resolved once per snapshot (the cache key read it on every call).
+- Reader (XER-05/06): a tab or a space after the `%E` end tag, and blank names after the last column of a
+  `%F` line (tabs an editor left), no longer refuse a readable file. A file with no `%E` and a column named
+  twice before the last one are still refused.
 - Changelog: a scheduling option and its values are shown under the names of P6's Schedule Options
   dialog ("Define critical activities as: Longest Path"), not the codes of the file (`CT_DrivPath`).
 - Delay analysis: a step counts the changes it carries; a rename or a move to another WBS is counted
