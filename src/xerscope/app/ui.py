@@ -232,7 +232,9 @@ COLUMNS: dict[str, tuple[str, str, str]] = {
         (
             "P6's Driving checkbox of the Relationships tab: the link sets its successor's early date. P6 does "
             "not export it in the XER (TASKPRED has no such field), so it is recalculated by xerscope's CPM "
-            "(`cpm.Schedule.links`); blank when the update cannot be scheduled."
+            "(`cpm.Schedule.links`); blank when the update cannot be scheduled and on a level-of-effort's "
+            "links, which place the LOE. Checked against P6's own relationship date (TASKPRED.aref) on "
+            "every reference export (docs/cpm.md)."
         ),
     ),
     "primary": ("Primary constraint", "text", "TASK.cstr_type and cstr_date, under P6's name."),
