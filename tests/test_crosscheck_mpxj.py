@@ -376,6 +376,12 @@ def test_dates_that_hold_together_are_not_called_inconsistent(duration, lag):
 # --- 6. driving relationships --------------------------------------------------------------------
 
 HELD_OUT = REF / "p6-heldout" / "validation" / "held-out"
+# Corpus cases MPXJ's scheduler (pinned commit) stops on with a NullPointerException, measured
+# 2026-11-25: left out by name, so any other failure of either engine fails the test.
+MPXJ_STOPS = {
+    "H25-11", "H26-06", "H27-06", "H28-02", "H28-03", "H28-11",
+    "H28-12", "H29-05", "H30-01", "H30-04", "H30-10", "H30-12",
+}  # fmt: skip
 DRIVING_FILES = [
     "p6viewer/Hotel Project.xer",
     "p6viewer/TERMINAL BUILDING-AIRPORT.xer",
@@ -407,7 +413,7 @@ def test_driving_links_agree_with_mpxj_on_the_p6_corpus(xc, name):
     """P6 23.12 held-out corpus, every case MPXJ supports: no difference left once MPXJ's own date
     differences and the UNRESOLVED cases are set aside (measured 2026-11-25 on the 30 sets: 2,399 open
     links, 159 differences: 115 MPXJ dates, 40 driving_held_by_data_date, 4 driving_alap (P6_SETTLED); MPXJ's
-    scheduler stops on 12 cases with a NullPointerException, left out)."""
+    scheduler stops on the 12 cases of MPXJ_STOPS, left out by name)."""
     from xerscope.xer import load_snapshot
 
     if not HELD_OUT.is_dir():
@@ -415,10 +421,7 @@ def test_driving_links_agree_with_mpxj_on_the_p6_corpus(xc, name):
     for path in sorted((HELD_OUT / name / "cases").glob("*.xer")):
         if xc.mpxj_unsupported(load_snapshot(path)):
             continue
-        try:
-            compared, unexplained = _driving_unexplained(xc, path)
-        except Exception as error:  # noqa: BLE001 - MPXJ's scheduler fails on a few cases (NullPointerException)
-            if "java" not in type(error).__module__ + str(error):
-                raise
+        if path.stem in MPXJ_STOPS:
             continue
+        compared, unexplained = _driving_unexplained(xc, path)
         assert compared > 0 and unexplained.empty, (path.name, unexplained.head(10).to_string())
