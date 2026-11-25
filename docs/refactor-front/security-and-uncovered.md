@@ -1,7 +1,49 @@
 # Task B — security of the front, files the lenses never opened, B12 / U1 / picker framing
 
-Every line number below was read in this session (`sed -n`, `cat -n`, `grep -n`) on the working tree at
-the repository checkout. Nothing was modified in the repository.
+## Status against the code
+
+What became of each item, checked against the current tree (packages of
+`docs/refactor-front-plan.md`, whose status table gives the evidence in full).
+
+| Item | Status | Evidence |
+|---|---|---|
+| B1 HTML sinks | Checked, holds | still four `st.html` calls (`session._section_title`, the `<hr class="xd-rule">` of `files_window._draw_sections`, `theme.apply_style`, `task_panel` card) and one `st.components.v2.component` (`ui.GANTT`); `grep -rn "cache_data\|cache_resource\|@st.cache" src/xerscope` → 0 |
+| SE-01 `gantt.js` sinks | Checked, holds | `tests/test_viz.py` `test_gantt_keeps_schedule_text_out_of_the_markup`, `test_gantt_script_never_parses_text_as_html_nor_calls_out` |
+| SE-02 not sandboxed | Done, option (2) (P16a) | the deny-list holds `DOMParser`, `setAttribute("on`, `javascript:`; `test_gantt_script_writes_every_text_through_one_function` pins the single `textContent` write in `element()` |
+| SE-03 CSP | Open (out of scope) | `deploy/Caddyfile` sets `frame-ancestors 'self'; object-src 'none'; base-uri 'none'`, no `script-src` |
+| SE-04 pickle between processes | Checked, holds | `app/reading.py` (`_read_on_workers`, `BrokenProcessPool` fallback) |
+| SE-05 Ask field | Checked, holds | no `llm_backend` / `QUERY_URL` under `src/`; `query.MAX_CHARS = 300` (`analysis/ask/parser.py`); `tests/test_docker.py` `test_nothing_in_src_reaches_the_network` |
+| SE-05a lexicon click | Done, options (1) and (2) | the help of the "Did you mean" buttons says "a pick is kept for review in the lexicon folder of the server" (`views/gantt.py`); `docs/deploy.md` §10 documents `suggested/`; `teach` is now in `app/loading.py` |
+| SE-06 session persistence | Checked, holds | `functools.cache` only in `theme.py` (font CSS) and `loading.py` (lexicon files) |
+| SE-07 inputs | Checked; the typed folder now read under one root | `session.folder_root`, `tests/test_folder_root.py` |
+| GX-01, GX-03 (rows, legend), GX-06 | Done (P16a) | whole-word names in `viz/gantt.js`, one `rowShell` and one `legendItem`; `.tip` shadow is `var(--shadow)`; the `box()` / diamond placement was left as is |
+| GX-02 | Done (P4b, B12) | `rowPx`, `chromePx` in the payload; `gantt.js` writes `--row` |
+| GX-04 | Open (P16b) | `drawLinks` walks every link; `resize` calls `render()` unthrottled |
+| GX-05 | Done (B12) | `openEpoch` in the payload; `gantt.js` drops `host.xsOpen` when it changes |
+| GX-07 | Checked, left | the `selectedIndex > 1` test is unchanged |
+| CS-01 to CS-04 | Done (P10) | no MTA comment left; the two button blocks share one selector list; `.st-key-ask_banner_warn` reads `var(--status-warning)`; one `@media (max-width: 640px)` |
+| CS-05 | Open | no test compares the `st-key-…` selectors of `style.css` with the widget keys |
+| CS-06 | Checked | `apply_style` and `font_fallback_css` are in `app/theme.py` |
+| UF-01, UF-06 | Done (P16a) | `code_picker._draw_code_widgets` sets `placeholder` before the call; `sets.show_steps(funnel, key)` |
+| UF-02, UF-07 | Checked, no edit (P16a) | `expected_finish_forms.py` loops on whole words; `_same_date_columns` has one comprehension per statement |
+| UF-03 | Done (P9a) | `views/activity.py` removed |
+| UF-04 | Checked | `streamlit_app.py` still draws `ui.glossary()` in the sidebar |
+| UF-05 | Open (P11a, AR-12) | `glossary.unknown_acronyms` still in the package, used by `tests/test_glossary.py` only |
+| UF-08 | Checked | fonts in `app/static/`, fallback in `theme.font_fallback_css`; `runtime_table` stays in `ui.py` |
+| B3 B12 | Done | see GX-05 |
+| B3 U1 | Done | `loading.load_series`, `loading.draw_sidebar`, `tests/test_loading.py` |
+| B3 file picker | Open | `xer/parser.py` `_Reader.run` still reads to `%E` |
+
+Line counts and line numbers below are those of the tree this note was written on, before the split of
+`state.py`; today `viz/gantt.js` is 435 lines, `app/style.css` 303, `code_picker.py` 70,
+`expected_finish_forms.py` 77, `streamlit_app.py` 63, `glossary.py` 139, `sets.py` 131,
+`xml_baselines.py` 360, and `views/activity.py` no longer exists. The table "Line numbers in the rest
+of this plan" at the top of `docs/refactor-front-plan.md` gives where each cited `state.py` function
+lives now.
+
+---
+
+Every line number below was read (`sed -n`, `cat -n`, `grep -n`) on that tree.
 Where a claim could not be verified it says so. Sources are named, never linked, as the repo does
 (`standards/*.toml` `source =`, `analysis/explain.py`, `docs/formulas.md`).
 
@@ -411,7 +453,7 @@ then by hand on the sample series: Gantt page → type a word in Ask that matche
 the chart must show the focus node's rows at the height of those rows (or the cap), not 4 rows with an
 inner scroll. Record a screenshot before/after as the PR's proof (CONTRIBUTING Readable code 6).
 
-### U1 — "loading order" (with the maintainer: `state.py` is changed only with Quentin)
+### U1 — "loading order" (`state.py` is changed only with the maintainer)
 
 **Problem.** `sidebar_loader` (`state.py:691-770`, radon C 17, ruff C901 12 > 10) does four things in one
 body: (a) the load decision, `_chosen_items()` → `_forget_previous_series()` → three branches "thread job /
@@ -450,7 +492,7 @@ and `XERSCOPE_SYNC_LOAD=1` (`background_jobs()`, 128-132), it returns a store, s
 `errors`, and `_load_job is None`; a second call with the same source returns without re-reading
 (`_parsed` keys unchanged). The existing `tests/test_app.py` ("every page renders headless") and
 `tests/test_app_robustness.py:97-137` (files gone between listing and read) are the regression net; the
-golden pages (`tests/test_page_golden.py`, named in critic.json's safety net) prove "same output before and
+golden pages (`tests/test_page_golden.py`, named in `review.json`'s safety net) prove "same output before and
 after" (CONTRIBUTING Readable code 6).
 
 ### File picker slow to open
@@ -496,7 +538,7 @@ accepts the exception for headers on a locked instance** where every session rea
 its label from `_describe_file` (`state.py:276-300`); with a `LoadJob`-like thread (or the existing
 `ProcessPoolExecutor` of `reading.py`) filling `_headers` and a `st.fragment(run_every=1.0)` like
 `_poll_load` (`state.py:245-256`), the window opens at once with "reading…" labels that fill in. Cost:
-~40 lines in `state.py` (with Quentin); limit: more state (a job slot), and a tick before the header is
+~40 lines in `state.py` (with the maintainer); limit: more state (a job slot), and a tick before the header is
 known must still be accepted (the series order, `most_recent_first`, re-reads the header from bytes anyway,
 `state.py:200-205`). Options 1 and 3 compose; 1 is the cheapest and keeps the invariants.
 

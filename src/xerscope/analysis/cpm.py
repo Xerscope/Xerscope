@@ -1304,8 +1304,8 @@ class _Run:
         if not late and progress_override and status[code] == "TK_Active" and is_start_link_or_done:
             # Progress Override again: the free float of work under way runs past its own
             # start-type links (its start is an actual too) and past finished successors,
-            # to whatever is left (H2-05 A1030, H2-04 A1110; counter-examples H4-08
-            # A1010, H12-07 A1120 are open, see docs/backlog.md)
+            # to whatever is left (H2-05 A1030, H2-04 A1110; the former counter-examples
+            # H4-08 A1010, H12-07 A1120, H17-04 A1040 now agree, see docs/backlog.md)
             return False
         if status[successor] == "TK_Complete" and not self.retain:
             return self.reads_actual_dates(successor, late)

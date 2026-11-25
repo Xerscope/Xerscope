@@ -15,7 +15,7 @@ GitHub Actions ──push──▶ ghcr.io/xerscope/xerscope:<tag>, xerscope-cad
 ```
 
 Three containers from three images: Tailscale's official one, and two built here by
-`.github/workflows/image.yml`, the app and Caddy with the `rate_limit` module
+`.github/workflows/image.yml` (the last job, `publish`, of the `tests` workflow), the app and Caddy with the `rate_limit` module
 (`deploy/caddy/Dockerfile`; the stock caddy image has no such module and the NAS cannot
 build). Each build is tagged `latest` (main), `sha-<short>` (its commit) and, from a git tag
 `v0.1.0`, `0.1.0`; `latest` is the compose default for the first start, the NAS then runs a
@@ -27,10 +27,10 @@ required: the stack is a compose file.
 
 | DSM ≤ 7.1, package *Docker* | DSM 7.2+, package *Container Manager* |
 |---|---|
-| no Compose UI → one hand-made all-in-one container (tailscaled + Caddy + Streamlit under a supervisor) | **Project** = a docker-compose stack from a folder → `deploy/compose.yaml`, three official images |
+| no Compose UI → one hand-made all-in-one container (tailscaled + Caddy + Streamlit under a supervisor) | **Project** = a docker-compose stack from a folder → `deploy/compose.yaml`: Tailscale's official image, the app and `xerscope-caddy` pulled from ghcr |
 | registry login form only; `ghcr.io` rejected ("returned bad result") | a **public** ghcr package needs no login: Compose pulls `ghcr.io/xerscope/xerscope:latest` directly |
 | env vars typed in the container form (key, prefix, hash) | a **`.env`** file next to `compose.yaml` (key, login, hash, prefix, exports folder), read by Compose for its `${...}` interpolation; no other file is edited |
-| node state in `tailscale-state/node/` | official image reads the root of `tailscale-state/` → move the files once (§6) |
+| node state in a host folder | node state in the Docker named volume `tailscale-state` (`/var/lib/tailscale`): a new node with a new key, nothing moved (§6) |
 
 Caddy and Tailscale are now updated independently of the app (Dependabot bumps the
 Tailscale pin in `deploy/compose.yaml` and the caddy tags in `deploy/caddy/Dockerfile`), and the app container runs read-only, non-root, on an internal network with
@@ -38,8 +38,8 @@ no route to the internet.
 
 ## 2. Pre-flight (from your PC, once)
 
-1. **Image published.** GitHub → Actions → `image` → last run on `main` green. Package
-   list: `github.com/orgs/Xerscope/packages`.
+1. **Image published.** GitHub → Actions → `tests` → last run on `main` green, its `publish`
+   jobs (`image.yml`, one per image) included. Package list: `github.com/orgs/Xerscope/packages`.
 2. **Packages public.** Packages `xerscope` and `xerscope-caddy` → Package settings → Danger
    zone → visibility **Public**. A public image pulls anonymously; the repository is public, the image adds
    nothing to what is already readable. (A private package would need a classic PAT
@@ -108,11 +108,15 @@ folder of the repository:
 | `Caddyfile` | nothing (login and hash come from the environment) |
 | `tailscale-serve.json` | nothing |
 | `caddy/` | not used on the NAS: the Caddy image is pulled (`xerscope-caddy`), never built there |
+| `.env.example` | nothing: the template of `.env` (§6) |
+| `tailscale.trivyignore.yaml` | not used on the NAS: the CI's scan exception for the Tailscale image |
 | `lexicon/` | create it with `generated/`, `curated/` and `suggested/` in it, owned by the app's account (§10) |
 
 Add a `.env` from `.env.example` with the five values (§6). Container Manager's Environment
 fields at project creation do not feed the compose file's `${...}` interpolation: left empty,
-the build stops with `error while interpolating services.tailscale...`.
+the build stops with `error while interpolating services.caddy.environment.XERSCOPE_USER: required
+variable XERSCOPE_USER is missing a value: login for the password prompt` (the same, each with its own
+message, for `XERSCOPE_PASSWORD_HASH` and `XERSCOPE_PATH`).
 `docker` is a shared folder: restrict it to your DSM account (Control Panel → Shared
 Folder → Permissions). DSM stores the project's variables in clear too, readable by any
 DSM administrator — same confidentiality as the folder, not a vault.
@@ -140,12 +144,17 @@ standards loader the `.toml` files only. It is read at each start and listed on 
 health, Audit and Overview pages for every visitor; a wrong file is reported under the standard
 picker, the exports still load.
 
+A baseline other than an update's own comes from the same folder: one of its updates, a P6 XML
+export placed there, or the file `XERSCOPE_BASELINE` names (commented out in `deploy/compose.yaml`).
+
 The visitor reads this folder and nothing else: `XERSCOPE_DATA_LOCKED` removes the files
 window's field that takes a path and the XER uploads (exports and baseline: one parsed 40 MB export
 takes about 1 GB, so a few uploads would exhaust the app's memory cap, §7). New weeks go in
-the shared folder. The only upload left is a standard (.toml) on the Schedule health page,
-capped at 1 MB (`STREAMLIT_SERVER_MAX_UPLOAD_SIZE`); a lexicon file sent there is refused (no
-`[standard]` table) and never read by the Ask field, which reads the NAS folder only (§10).
+the shared folder. The uploads left are small text files held in the session only, each capped at
+1 MB (`STREAMLIT_SERVER_MAX_UPLOAD_SIZE`): on the Schedule health page a standard (.toml) and the
+counts of a P6 Check Schedule report (.csv), and on the Debug page, when it is on (§9), a P6
+Activities export (.csv). A lexicon file sent as a standard is refused (no `[standard]` table) and
+never read by the Ask field, which reads the NAS folder only (§10).
 A message from the browser is capped at 1 MB (`STREAMLIT_SERVER_MAX_WIDGET_STATE_SIZE`); the
 Ask sentence is cut at 300 characters by the page itself. An error shows no traceback on the page
 (`STREAMLIT_CLIENT_SHOW_ERROR_DETAILS`), only in the log.
@@ -158,7 +167,11 @@ volume, with a new key; the hostname, and so the URL, stay the same.
 
 First the **`.env`** in `docker/xerscope/`, next to `compose.yaml`: the five lines of
 `deploy/.env.example`, made on a PC and uploaded (Notepad → Save as → type "All files",
-name `".env"` with the quotes). A missing value stops the build with its name.
+name `".env"` with the quotes). A missing `XERSCOPE_USER`, `XERSCOPE_PASSWORD_HASH` or
+`XERSCOPE_PATH` stops the build with its name (§4); `TS_AUTHKEY` defaults to empty (a node
+already in the volume needs none) and `XERSCOPE_EXPORTS` to `../exports`, so check those two by eye.
+`XERSCOPE_LEXICON_DIR` defaults to `/docker/xerscope/lexicon`, which on DSM is not the project
+folder: unset, Docker creates that path owned by root instead of using the `lexicon/` of §4.
 
 ```
 TS_AUTHKEY=tskey-auth-...              # first start only (TS_AUTH_ONCE): once the node is up, delete this line and the key in the admin console
@@ -173,7 +186,7 @@ XERSCOPE_GID=<gid>
 # XERSCOPE_MEM_LIMIT=2g                     # the app's memory cap (§7)
 # XERSCOPE_LOAD_WORKERS=1                  # files read at once (§7)
 # XERSCOPE_DEBUG_PAGE=1                    # the Debug page, for a diagnosis only (§9)
-# XERSCOPE_LEXICON_DIR=/volume1/docker/xerscope/lexicon   # the Ask lexicon folder (§10)
+XERSCOPE_LEXICON_DIR=/volume1/docker/xerscope/lexicon     # the Ask lexicon folder (§4, §10): required on DSM
 ```
 
 Then Container Manager → **Project** → **Create**:
@@ -189,7 +202,8 @@ the stack. Expected after ~40 s, in Container → each container → Log:
 1. `xerscope`: `You can now view your Streamlit app`. The `/_stcore/health` check turns
    the container *Healthy*.
 2. `tailscale`: `Serve config loaded`, then `funnel` lines. No `funnel: not permitted` (ACL
-   step missed) and no `permission denied` on `/var/lib/tailscale` (§4 folder permission).
+   step missed) and no `permission denied` on `/var/lib/tailscale` (a host folder from an older
+   compose: use the named volume, §11).
    Admin console → Machines → `xerscope`, tag `xerscope`, Funnel badge.
 3. `caddy`: `serving initial configuration`. Nothing listening on the NAS: Control Panel
    → Terminal/Network show no 8080/8501; the project's networks are Docker bridges only.
@@ -247,7 +261,7 @@ curl -sI -H "Authorization: Bearer $TOKEN" -H 'Accept: application/vnd.oci.image
 # or, after a pull: docker inspect ghcr.io/xerscope/xerscope:0.1.0 --format '{{index .RepoDigests 0}}'
 ```
 
-The `image` run prints the same value (`pushing manifest for …@sha256:…`), and the GitHub
+The `publish` job of the `tests` run prints the same value (`pushing manifest for …@sha256:…`), and the GitHub
 package page (Packages → `xerscope` → the tag) shows it. Before pinning, check who built it:
 
 ```bash
@@ -257,7 +271,8 @@ docker buildx imagetools inspect ghcr.io/xerscope/xerscope@sha256:<digest> --for
 ```
 
 A release is cut on `main` by its maintainer: `CHANGELOG.md` gets the version and the date,
-then `git tag v0.1.0 && git push origin v0.1.0`; the tag runs `image.yml`, which publishes
+then `git tag v0.1.0 && git push origin v0.1.0`; the tag runs `tests`, whose last job, once
+every other passed, calls `image.yml`, which publishes
 `ghcr.io/xerscope/xerscope:0.1.0` and `xerscope-caddy:0.1.0` (and the Docker Hub copies) next
 to `latest`. Nothing but a tag on `main` publishes a version.
 
@@ -273,8 +288,9 @@ new `xerscope-caddy` image (update it as above); a Tailscale bump is the pin in
 `compose.yaml`: copy it to the NAS, Build. The `caddy-ratelimit` version in
 `deploy/caddy/Dockerfile` is bumped by hand, with the caddy tags.
 
-**Memory.** Each container has a memory and a PID cap, and its tmpfs a size
-(`deploy/compose.yaml`): past its cap the kernel kills that container alone, Docker restarts
+**Memory.** Each container has a memory and a PID cap, and every tmpfs a size
+(`deploy/compose.yaml`: `tailscale` and `caddy` 256 MB and 128 PIDs, `xerscope`
+`XERSCOPE_MEM_LIMIT` and 256 PIDs, `lexicon-init` `XERSCOPE_MEM_LIMIT` and 64 PIDs): past its cap the kernel kills that container alone, Docker restarts
 it, and the NAS keeps its RAM. The app's cap is `XERSCOPE_MEM_LIMIT`, default `2g`. Measured
 on a synthetic 43 MB export (97,121 activities): 0.95 GB at the peak of parsing, Streamlit's
 cached copy included; a DCMA check on it, 0.9 GB on its own; each further file of that size
@@ -312,8 +328,8 @@ natively:
 2. GitHub → repository → Settings → Secrets and variables → Actions: secrets
    `DOCKERHUB_USERNAME` (`<docker-hub-login>`) and `DOCKERHUB_TOKEN` (the Read & Write one);
    variable `DOCKERHUB_IMAGE_OWNER` = `<docker-hub-login>`. Actions → `tests` → the latest run
-   on main → Re-run all jobs; once it passes, `image` pushes both images to both registries
-   (`image` publishes only a commit whose `tests` run passed).
+   on main → Re-run all jobs; once it passes, its `publish` job pushes both images to both registries
+   (`image.yml` publishes only a commit whose `tests` run passed).
 3. NAS: Container Manager → Registry → Docker Hub → Settings → Edit → login + the read-only
    token → **Use**.
 4. `.env`: `XERSCOPE_IMAGE=<docker-hub-login>/xerscope:latest` and, if ghcr is out of reach
@@ -330,24 +346,28 @@ The ghcr package can stay private: only the NAS reads the Docker Hub copy.
 
 - [ ] Package public = source already public; nothing else in the image (no data, no secret: `tests/test_docker.py` pins it).
 - [ ] Tailscale key: tagged, single-use, non-ephemeral; once the node is up, delete it from the admin console and its line from `.env`, Build (`TS_AUTH_ONCE`: it is never replayed, the node lives in the volume), and `docker inspect <tailscale-container> --format '{{.Config.Env}}'` shows no `tskey-auth-` value (§6).
+- [ ] Tailscale container: userspace networking (`TS_USERSPACE`: no TUN device, no route, no DNS change on the NAS, no capability) and no diagnostic logs sent to Tailscale (`TS_NO_LOGS_NO_SUPPORT`).
 - [ ] Tailnet policy: tagged nodes reach nothing (`grants` source `autogroup:member`, §3).
 - [ ] App and Caddy images pinned by digest (`:0.1.0@sha256:…`, §7), not by `latest`; the build verified with `gh attestation verify`; the Dockerfiles' base images are pinned the same way (`Dockerfile`, `deploy/caddy/Dockerfile`).
 - [ ] Memory and PID caps on the four containers, bounded tmpfs, read-only root filesystems; no CPU quota (§7). The build output carries no `does not support memory limit`.
 - [ ] `lexicon/` (§10): owned by the app's account, mode 700; `curated/` read-only in both containers, `generated/` written by `lexicon-init` only, `suggested/` by the app only (purged by `lexicon-init` and by the app). `lexicon-init` is not started by Build (profile `lexicon`, §10).
-- [ ] The visitor cannot type a folder path nor upload an XER (`XERSCOPE_DATA_LOCKED`), sees no traceback (§5) and no Debug page (`XERSCOPE_DEBUG_PAGE` unset).
-- [ ] Caddy answers every request, 404 and 401 included, with `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'self'`, `Strict-Transport-Security` and `Permissions-Policy` (the CI job `deploy` runs the stack and checks them); no `Server` header except on the 401; downloads (`/media/*`) and the page itself (`/`, `index.html`) carry `Cache-Control: no-store`: the visitor's browser keeps the public JS chunks, never a download nor the HTML shell (the schedule data travels on the websocket and is never cached).
+- [ ] The visitor cannot type a folder path nor upload an XER (`XERSCOPE_DATA_LOCKED`), sees no traceback (§5) and no Debug page (`XERSCOPE_DEBUG_PAGE` unset). `XERSCOPE_DEBUG_PAGE=1`
+  in `.env`, then Build, puts the page back for a diagnosis: it shows whoever holds the URL how the app
+  read every loaded file (block 12, the server's runtime, stays hidden on this stack); remove the line
+  and Build again after.
+- [ ] Caddy answers every request, 404 and 401 included, with `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: frame-ancestors 'self'; object-src 'none'; base-uri 'none'`, `Strict-Transport-Security` (with `includeSubDomains`) and `Permissions-Policy`, and `Connection: close` except on a WebSocket handshake (the CI job `deploy` runs the stack and checks them); no `Server` header except on the 401; `Set-Cookie` gets `Secure`; `/_stcore/metrics` and `/_stcore/agent/*` answer 404 after the password; downloads (`/media/*`) and the page itself (`/`, `index.html`) carry `Cache-Control: no-store`: the visitor's browser keeps the public JS chunks, never a download nor the HTML shell (the schedule data travels on the websocket and is never cached).
 - [ ] `docker` shared folder readable by your account only (`.env`: key + hash in clear).
 - [ ] No `ports:` anywhere. `egress` network for tailscaled only; `internal` has no gateway: the app reaches nothing and the LAN does not reach the app.
-- [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`, loopback only) and the path, with the prefix replaced by `<prefix>` in the request line, Referer and redirect, in the access log and in the error log (global `log` block); it drops Streamlit's XSRF token (WebSocket subprotocol) and the downloaded file's name (the tables export carries the project code).
+- [ ] Caddy: `admin off`, `default_bind 127.0.0.1`; the log keeps the visitor's IP (`trusted_proxies`, loopback only) and the path, with the prefix replaced by `<prefix>` in the request line, Referer and redirect in the access log, and in the request line and Referer in the error log (global `log` block); it drops Streamlit's XSRF token and session id (WebSocket subprotocol) and the downloaded file's name (the tables export carries the project code).
 - [ ] Caddy refuses with 429, before the password check, a visitor over 300 requests a minute (per IPv4 address, per IPv6 /64; the CI job `deploy` checks it); the `caddy` container runs the `xerscope-caddy` image (§2 step 3: `list-modules` shows `rate_limit`).
 - [ ] One shared password: change it when the viewer changes; the day the viewer can install Tailscale, drop Funnel for Serve + Tailscale login.
 - [ ] Review the Caddy log now and then (Container → caddy → Log): one IP, one login, the paths you expect.
 
 ## 10. The Gantt "Ask" field
 
-The Gantt page takes a sentence ("critical not started in civil works", "jalons en retard")
+The Gantt & WBS page takes a sentence ("critical not started in civil works", "jalons en retard")
 and turns it into its own filters, a one-sentence answer and a population funnel
-(`analysis/query.py`): a keyword grammar over the file's lexicon (WBS, activity codes,
+(`analysis/query.py`, the grammar in `analysis/ask/`): a keyword grammar over the file's lexicon (WBS, activity codes,
 resources, activity-name words), the company's trade words and the files' variants, typos
 read at a lower confidence. Nothing else runs: no model, no container, no network access.
 Measured on the demo with the tests' generic lexicon (`tests/asklex.py`): 100 % of
@@ -361,11 +381,13 @@ standard upload refuses one, §5) and none can be downloaded from the app.
 `XERSCOPE_LEXICON_DIR` (default `/docker/xerscope/lexicon`; on DSM the full path,
 `/volume1/docker/xerscope/lexicon`) holds three folders, created by hand in File Station,
 owned by the `XERSCOPE_UID` account and readable by it only (Docker would create a missing
-one owned by root, and the containers could not write it):
+one owned by root, and the containers could not write it). Compose mounts it at `/lexicon` in both
+containers, and the app and the CLI read it from `XERSCOPE_LEXICON` (`/lexicon` in the `xerscope`
+service; unset, the Ask field reads no lexicon folder):
 
 | Folder | Written by | Read by the Ask field | Holds |
 |---|---|---|---|
-| `generated/` | `lexicon-init` only, when you run it | `variants.toml` only, less the refusals | `variants.toml`: the exports' variants per source column, plurals and abbreviations (`ask/generated.py`); `report.txt`: groups per column, those new since the last run, and the section "to review (one letter apart, not used)": one pair per line with its column, never read by the Ask field |
+| `generated/` | `lexicon-init` only, when you run it | `variants.toml` only, less the refusals | `variants.toml`: the exports' variants per source column, plurals and abbreviations (`analysis/ask/generated.py`); `report.txt`: groups per column, those new since the last run, and the section "to review (one letter apart, not used)": one pair per line with its column, never read by the Ask field |
 | `curated/` | you, by hand; read-only in both containers | yes | `*.toml`: trade words (`[[group]] words = ["CVC", "HVAC"]`) and refusals of generated groups (`[[refuse]] column = "PROJWBS.wbs_name"`, `words = ["fondation", "fondations"]`: the generated group holding all those words is dropped; a refusal wins over `generated/`) |
 | `suggested/` | the app only, appending | no | `suggestions.toml`: one `[[suggestion]]` per click on a "Did you mean" label: the unknown word, the label, its source column, the filter (facet, value) and the date, never the sentence asked |
 
@@ -376,10 +398,10 @@ section of `report.txt` after a run and copy each true typo into a `curated/` fi
 (`[[group]] words = ["gybsum", "gypsum"]`).
 
 A word taught by a click holds for the visitor's session at once; for every session, copy
-it into a `curated/` file. A suggestion older than 90 days whose word `curated/` does not
+it into a `curated/` file, then Build (the app reads `curated/` once per process, like `generated/`). A suggestion older than 90 days whose word `curated/` does not
 hold is purged by `lexicon-init` and by the app at its next click, under the same lock: a
 stack where `lexicon-init` is not run for months still keeps none past 90 days. `xerscope lexicon /lexicon/curated` checks the curated files (a bad
-file is named, never fatal to the app; Debug block 14 lists the load errors to every session,
+file is named and the exit code is 1, never fatal to the app; Debug block 14, wherever the Debug page is on, lists the load errors,
 each as its file and where it fails: line and column, byte (a file not saved as UTF-8), group or refusal number; never the words it holds).
 
 `lexicon-init` (`deploy/compose.yaml`) runs `xerscope lexicon build /data --out /lexicon`
@@ -407,8 +429,9 @@ suggestions are then not purged either (the app still purges them at its next cl
 and Container Manager's Build leave it out, and the app never waits for it. The app starts
 with the `generated/` the last run left (none before the first run: the Ask field then reads
 `curated/` and the variants it derives in memory from the loaded files). Run it after new
-exports have landed, before reviewing `report.txt`, or after a curated refusal, from the
-project folder:
+exports have landed, or before reviewing `report.txt`, from the project folder (a curated
+refusal needs no run: `generated/` is written unfiltered and the app drops the refused groups
+when it reads it, so a Build is enough):
 
 ```
 docker compose run --rm lexicon-init
@@ -418,9 +441,10 @@ Compose enables the profile of a service named on the command line by itself (Do
 "Using profiles with Compose"). On the NAS, Container Manager has no button for it: enable
 SSH (Control Panel → Terminal & SNMP), then `cd /volume1/docker/xerscope && sudo docker
 compose run --rm lexicon-init`, and disable SSH again. The output is one line per column
-(`<column>: <n> group(s), <k> new`), then `suggestions: <kept> kept, <purged> purged`, exit
-code 0. The app reads `generated/` once per process: Project → Action → Build to use the
-new files (on a PC, `docker compose restart xerscope`).
+(`<column>: <n> group(s), <k> new`), a total (`<n> group(s) from <k> file(s) written, <m> new`),
+the skipped line if any, then `suggestions: <kept> kept, <purged> purged`, exit code 0
+(1 when `suggestions.toml` was edited by hand into something that is not TOML: it is left as it is). The app reads `generated/` and `curated/` (trade words and refusals) once per process:
+Project → Action → Build to use the new files (on a PC, `docker compose restart xerscope`).
 
 Threat model of the folder, written from a web page. *Who writes:* anyone holding the URL and
 the password reaches the teach buttons. *What they control:* the unknown word (any text typed
@@ -452,7 +476,7 @@ misused a value when read. The backlog says what would change that measurement.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Build: `unauthorized` / `pull access denied` on ghcr | the package is private | make it public (§2 step 2), or use the Docker Hub copy (§8) |
-| `manifest unknown` | tag typo; owner must be lowercase `xerscope` | check the `image` run for that tag |
+| `manifest unknown` | tag typo; owner must be lowercase `xerscope` | check the `publish` job of that tag's `tests` run |
 | tailscale log `permission denied` `/var/lib/tailscale`, then `state "NoState", waiting` in a loop | the state is a host folder (an older compose): root without capabilities cannot write there | use the named volume of `deploy/compose.yaml` |
 | `funnel: not permitted` | ACL `nodeAttrs` missing or key not tagged | fix ACL, new tagged key, delete the `xerscope_tailscale-state` volume, Build |
 | `Serve config loaded` absent | `tailscale-serve.json` not mounted or invalid JSON | File Station → check the name; validate the JSON |
