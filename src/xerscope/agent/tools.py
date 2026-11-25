@@ -1,8 +1,11 @@
 """The commands the local model may choose, each computed by xerscope's own engines.
 
-A command reads the update the page shows (``snapshot``) and, for a move, the update before it in the
-series; it returns a few named values (``FIELDS``), never the schedule itself. The model picks one
-command and one of its fields; it computes nothing and never reads the activities.
+``query`` filters, sorts, counts and groups the activities of the update shown through
+``analysis.activity_view`` (one condition per funnel step). The others read one activity or the
+project between that update and the one before (``activity_forensics``, ``forensics.half_step``,
+``longest_path.path_churn``, ``store.history``) or delay one activity in the engine
+(``cpm.delay_impact``). A command returns a few named values (``FIELDS``); the model picks one
+command and one of its values, and computes nothing.
 """
 
 from __future__ import annotations
@@ -11,39 +14,38 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from ..analysis import query
+from ..analysis import activity_view as views
 from ..analysis.activity_forensics import activity_half_step
+from ..analysis.cpm import ScheduleError, delay_impact
 from ..analysis.forensics import half_step
 from ..analysis.longest_path import path_churn
 from ..store import SnapshotStore
 from ..xer import Snapshot
 
 FIRST = 10  # Activity IDs a list holds at most
+MAX_CONDITIONS = 6
+MAX_DELAY_DAYS = 500
 
 # command -> the values it returns, the first one the default
 FIELDS: dict[str, tuple[str, ...]] = {
-    "find_activity": ("task_code", "count", "task_codes"),
-    "filter": ("count", "task_codes"),
+    "query": ("count", "list", "groups"),
     "activity_slip": ("total_shift_wd", "finish_after", "driving_predecessors"),
     "activity_history": ("finish", "first_finish", "updates"),
     "project_slip": ("finish", "slip_wd", "replanning_wd"),
     "path_changes": ("on_path", "entered", "left_open"),
+    "simulate_delay": ("finish_move_wd", "finish_after", "float_after_d"),
     "none": ("none",),
 }
-# what the model reads of each command, and the argument it takes ("" when none)
-COMMANDS: dict[str, tuple[str, str]] = {
-    "find_activity": ("the Activity IDs whose name holds some words", "the words of the name"),
-    "filter": ("how many activities, and which, match a filter of the page (status, float, WBS, resource...)", ""),
-    "activity_slip": (
-        "how far an activity's finish moved since the update before, and what drives it",
-        "an Activity ID",
-    ),
-    "activity_history": ("an activity's finish in every update of the series", "an Activity ID"),
-    "project_slip": ("the project finish, and how far progress and replanning moved it since the update before", ""),
-    "path_changes": ("the open activities on the longest path, those that entered it, those that left it", ""),
-    "none": ("the question cannot be answered by these commands (a what-if, a fact not in the schedule)", ""),
+COMMANDS: dict[str, str] = {
+    "query": "count, list or group the activities of this update that meet conditions on the columns",
+    "activity_slip": "how far one activity's finish moved since the update before, and what drives it",
+    "activity_history": "one activity's finish in the updates of the series",
+    "project_slip": "the project finish, and how far progress and replanning moved it since the update before",
+    "path_changes": "the open activities on the longest path, those that entered it, those that left it",
+    "simulate_delay": "what a delay of some working days on one open activity would do to the project finish",
+    "none": "a question these commands cannot answer (a fact the schedule does not hold, an advice)",
 }
-ACTIVITY_COMMANDS = ("activity_slip", "activity_history")
+ACTIVITY_COMMANDS = ("activity_slip", "activity_history", "simulate_delay")
 
 
 def day(value) -> str | None:
@@ -53,17 +55,11 @@ def day(value) -> str | None:
 
 @dataclass(frozen=True)
 class Context:
-    """What the page holds.
-
-    The series, the update shown, its activities as the Gantt filters them (with their ``category``
-    column), the WBS tree and the Ask lexicon.
-    """
+    """What the page holds: the series, the update shown and its view (``activity_view``)."""
 
     store: SnapshotStore
     snapshot: Snapshot
-    tasks: pd.DataFrame
-    nodes: pd.DataFrame
-    vocab: query.Vocabulary
+    view: views.View
 
     @property
     def previous(self) -> Snapshot | None:
@@ -72,28 +68,55 @@ class Context:
 
     def has_activity(self, task_code: str) -> bool:
         """Tell whether the update shown holds that Activity ID."""
-        return task_code in set(self.snapshot.activities["task_code"].astype(str))
+        return task_code in self.view.frame.index
 
 
-def find_activity(context: Context, text: str) -> dict:
-    """Find the activities whose name holds every word of ``text`` (3 letters or more, accents folded)."""
-    words = [word for word in query.fold(text).split() if len(word) > 2]
-    names = context.snapshot.activities["task_name"].astype(str).map(query.fold)
-    hits = context.snapshot.activities[names.map(lambda name: bool(words) and all(w in name for w in words))]
-    codes = hits["task_code"].astype(str).tolist()
-    return {"count": len(codes), "task_code": codes[0] if len(codes) == 1 else None, "task_codes": codes[:FIRST]}
+def context_for(store: SnapshotStore, snapshot: Snapshot) -> Context:
+    """Build the context of ``snapshot``, its view read against the update before it."""
+    return Context(store, snapshot, views.activity_view(snapshot, store.previous(snapshot)))
 
 
-def filter_tasks(context: Context, sentence: str) -> dict:
-    """Count and list the page's activities that the Ask grammar's reading of ``sentence`` keeps."""
-    ask = query.parse_keywords(sentence, context.vocab)
-    funnel = query.apply(ask, context.tasks, context.snapshot, context.nodes, None)
-    codes = funnel.rows["task_code"].astype(str).tolist()
+@dataclass(frozen=True)
+class Choice:
+    """The model's choice, read from its JSON object: the command, the value, and what each needs."""
+
+    command: str
+    field: str
+    argument: str = ""
+    days: float = 0.0
+    query: views.Query = views.Query()
+
+
+def run(context: Context, choice: Choice) -> dict:
+    """Run the chosen command on the page's context; ``{"error": ...}`` when it cannot be read."""
+    if choice.command == "query":
+        return run_query(context, choice.query)
+    if choice.command == "activity_slip":
+        return activity_slip(context, choice.argument)
+    if choice.command == "activity_history":
+        return activity_history(context, choice.argument)
+    if choice.command == "project_slip":
+        return project_slip(context)
+    if choice.command == "path_changes":
+        return path_changes(context)
+    if choice.command == "simulate_delay":
+        return simulate_delay(context, choice.argument, choice.days)
+    return {}
+
+
+def run_query(context: Context, query: views.Query) -> dict:
+    """Count, list and group the activities of the view that the query keeps."""
+    try:
+        result = views.run(context.view, query, context.snapshot.data_date)
+    except views.QueryError as error:
+        return {"error": str(error)}
+    codes = [str(code) for code in result.funnel.rows.index]
     return {
-        "count": len(codes),
-        "task_codes": codes[:FIRST],
-        "understood": query.funnel_line(funnel) if funnel.steps else "",
-        "left_out": list(ask.ignored),
+        "count": result.count,
+        "list": [str(code) for code in result.first.index][:FIRST],
+        "groups": result.groups,
+        "conditions": [views.describe(condition) for condition in query.conditions],
+        "codes": codes,
     }
 
 
@@ -148,18 +171,20 @@ def path_changes(context: Context) -> dict:
     return {"on_path": int(row["on_path"]), "entered": int(row["entered"]), "left_open": int(row["left_open"])}
 
 
-def run(context: Context, command: str, argument: str) -> dict:
-    """Run ``command`` on the page's context, ``argument`` read as that command takes it."""
-    if command == "find_activity":
-        return find_activity(context, argument)
-    if command == "filter":
-        return filter_tasks(context, argument)
-    if command == "activity_slip":
-        return activity_slip(context, argument)
-    if command == "activity_history":
-        return activity_history(context, argument)
-    if command == "project_slip":
-        return project_slip(context)
-    if command == "path_changes":
-        return path_changes(context)
-    return {}
+def simulate_delay(context: Context, task_code: str, days: float) -> dict:
+    """Delay ``task_code`` by ``days`` working days in the engine and read the project finish and its float."""
+    if not 0 < days <= MAX_DELAY_DAYS:
+        return {"error": f"a delay is a number of working days between 1 and {MAX_DELAY_DAYS}"}
+    try:
+        impact = delay_impact(context.snapshot, task_code, days)
+    except (ValueError, ScheduleError) as error:
+        return {"error": str(error)}
+    return {
+        "finish_move_wd": impact.finish_move_wd,
+        "finish_before": day(impact.finish_before),
+        "finish_after": day(impact.finish_after),
+        "float_before_d": impact.float_before_d,
+        "float_after_d": impact.float_after_d,
+        "note": impact.note,
+        "blocking": ", ".join(impact.blocking),
+    }

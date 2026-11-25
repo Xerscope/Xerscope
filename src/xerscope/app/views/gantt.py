@@ -365,7 +365,9 @@ if ask is not None:  # the sentence's filters, intersected with the widgets', on
         how = " · unsure reading" if ask.confidence < query.SURE else ""
         st.caption((ui.md_text(query.funnel_line(ask_funnel)) if ask_funnel.steps else "no filter") + how)
         if agent_enabled() and (ask.ignored or not (ask_funnel.steps or ask.intent or ask.clarify)):
-            show_agent_answer(asked, store, snapshot, page_tasks, nodes, lexicon)
+            said = show_agent_answer(asked, store, snapshot)
+            if said is not None and said.command == "query" and not said.refused:  # the agent's rows, in the branch
+                tasks = page_tasks[page_tasks["task_code"].isin(said.codes)]
 focus = st.session_state.get(FOCUS_KEY)  # the tasks a check listed (Schedule health)
 if focus:
     tasks = tasks[tasks["task_code"].isin(focus["codes"])]

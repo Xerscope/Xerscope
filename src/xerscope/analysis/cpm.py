@@ -2495,15 +2495,78 @@ def critical_path_test(snapshot: Snapshot, delay_days: float) -> CptResult:
     if target is None:
         return CptResult(False, "no open task on the longest path: the critical path is not defined")
     code = target["task_code"]
-    delay_hours = delay_days * float(target["hours_per_day"])
     try:
-        late = schedule(snapshot, {code: delay_hours}, base=base)
+        outcome, _ = _delayed(snapshot, target, delay_days, base)
     except ScheduleError as exc:
         return _schedule_failure(exc, code)
-    outcome = _delay_outcome(snapshot, target, delay_days, base, late)
     note = _move_note(outcome) + _calendar_reading(snapshot, outcome)
     blocking: list[dict] = []
     if not outcome.passed:
         blocking, reasons = _what_stops_the_delay(snapshot, outcome)
         note += reasons
     return CptResult(outcome.passed, note, code, outcome.shift_hr, blocking)
+
+
+def _delayed(
+    snapshot: Snapshot, target: pd.Series, delay_days: float, base: Schedule
+) -> tuple[_DelayOutcome, Schedule]:
+    """``target`` delayed by ``delay_days`` working days of its calendar: the move it made, and the schedule."""
+    late = schedule(snapshot, {target["task_code"]: delay_days * float(target["hours_per_day"])}, base=base)
+    return _delay_outcome(snapshot, target, delay_days, base, late), late
+
+
+@dataclass(frozen=True)
+class DelayImpact:
+    """What ``delay_days`` more working days on one open activity do to the schedule.
+
+    The project finish before and after (its end points, as the critical path test reads it) and
+    the move in working days of the activity's calendar (later is positive here: a delay asked);
+    the activity's own total float before and after, in its working days: a float that goes
+    further below zero while the finish holds is a constraint further missed, not the project end;
+    ``reached``: the end points that finish the plan moved; ``note``: the move and what holds the
+    delay back, when something does (a mandatory date, an expected finish that absorbs it, no
+    successor on its finish); ``blocking``: those activities.
+    """
+
+    task_code: str
+    delay_days: float
+    finish_before: pd.Timestamp
+    finish_after: pd.Timestamp
+    finish_move_wd: float
+    float_before_d: float
+    float_after_d: float
+    reached: bool
+    note: str
+    blocking: tuple[str, ...]
+
+
+def delay_impact(snapshot: Snapshot, task_code: str, delay_days: float) -> DelayImpact:
+    """Delay one open activity (not a level of effort) by ``delay_days`` working days and read the move.
+
+    The engine of ``critical_path_test``, on an activity the caller names. Raises ``ScheduleError``
+    when the update cannot be scheduled and ``ValueError`` for an activity it cannot delay.
+    """
+    activities = snapshot.activities.drop_duplicates("task_code").set_index("task_code", drop=False)
+    if task_code not in activities.index:
+        raise ValueError(f"{task_code} is not an activity of this update")
+    target = activities.loc[task_code]
+    if bool(target["is_complete"]):
+        raise ValueError(f"{task_code} is finished: a delay on it changes nothing")
+    if bool(target["is_loe"]):
+        raise ValueError(f"{task_code} is a level of effort: its dates follow its links")
+    base = schedule(snapshot)
+    outcome, late = _delayed(snapshot, target, delay_days, base)
+    hours_per_day = float(target["hours_per_day"]) or 8.0
+    blocking, reasons = ([], "") if outcome.passed else _what_stops_the_delay(snapshot, outcome)
+    return DelayImpact(
+        task_code=task_code,
+        delay_days=delay_days,
+        finish_before=outcome.base_finish,
+        finish_after=outcome.delayed_finish,
+        finish_move_wd=round(outcome.shift_hr / hours_per_day, 1),
+        float_before_d=round(float(base.frame.at[task_code, "tf_hr"]) / hours_per_day, 1),
+        float_after_d=round(float(late.frame.at[task_code, "tf_hr"]) / hours_per_day, 1),
+        reached=bool(outcome.is_reached),
+        note=_move_note(outcome) + _calendar_reading(snapshot, outcome) + reasons,
+        blocking=tuple(item["task_code"] for item in blocking),
+    )

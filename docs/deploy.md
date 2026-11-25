@@ -523,11 +523,20 @@ peaks measured in `app/reading.py`. On a 285K with 4 MB exports that is one work
 
 **The agent.** With `compose.gpu.yaml` the app runs with `XERSCOPE_AGENT=on`: a sentence the Ask
 field's grammar does not fully read goes to the model at `http://llm:8080`, which picks one command
-and one of its values (`agent/tools.py`) under a JSON schema, thinking off. xerscope runs the command
-and writes the answer; the caption under it names the command, the value and the seconds taken.
-The model computes nothing and reads no activity. `XERSCOPE_AGENT=off` in `.env` keeps the model for
-the study only. Pin a llama.cpp build of b12005 or later (a `response_format` fix), and do not start
-it with MTP speculative decoding, which fails with a JSON schema (llama.cpp issue 30419).
+and one of its values (`agent/tools.py`) under a JSON schema, thinking off:
+
+| Command | Answers | Computed by |
+|---|---|---|
+| `query` | how many activities, which, or how many per value, that meet conditions on the update's columns (status, dates, floats, durations, flags, WBS, resources, each activity code type of the file, the finish moved since the update before); the Gantt draws them | `analysis/activity_view.py` |
+| `activity_slip`, `activity_history` | one activity's move since the update before and what drives it; its finish across the series | `activity_forensics`, `store.history` |
+| `project_slip`, `path_changes` | the project finish moved by progress and by replanning; the longest path's entries and exits | `forensics.half_step`, `longest_path.path_churn` |
+| `simulate_delay` | what some more working days on one open activity do to the project finish and to its own float, and what holds the delay back | `cpm.delay_impact` (the engine of the DCMA critical path test) |
+
+xerscope runs the command and writes the answer; the caption names the command, the value and the
+seconds taken. The model sees the column names and their meaning, never the activities, and
+computes nothing. `XERSCOPE_AGENT=off` in `.env` keeps the model for the study only. Pin a llama.cpp
+build of b12005 or later (a `response_format` fix), and do not start it with MTP speculative
+decoding, which fails with a JSON schema (llama.cpp issue 30419).
 
 **Sizing for 12 GB of VRAM.** The weights and the context's cache (KV) share the card. The cache
 grows with the context: 2 × layers × KV heads × head size × bytes per value, per token. With

@@ -21,13 +21,16 @@ def agent_enabled() -> bool:
     return os.environ.get(AGENT_VARIABLE, "").strip().lower() == "on"
 
 
-def show_agent_answer(asked: str, store, snapshot, tasks, nodes, lexicon) -> None:
-    """Ask the local agent once per sentence and update, and draw its answer and how it was reached."""
+def show_agent_answer(asked: str, store, snapshot):
+    """Ask the local agent once per sentence and update, draw its answer, and return it.
+
+    None when the model could not be asked. A query's activities are what the Gantt then draws.
+    """
     from xerscope import agent
     from xerscope.agent import client, tools
     from xerscope.analysis import query
 
-    context = tools.Context(store, snapshot, tasks, nodes, lexicon)
+    context = memo(("agent_view", snapshot.source), tools.context_for, store, snapshot, baseline=False, ev_basis=False)
     lang = query.language(asked)
     try:
         said = memo(
@@ -35,11 +38,11 @@ def show_agent_answer(asked: str, store, snapshot, tasks, nodes, lexicon) -> Non
         )
     except client.ModelError as error:
         st.warning(f"Local agent unavailable: {error}")
-        return
+        return None
     with st.container(border=True, key="ask_agent"):
-        if said.refused:
-            st.markdown(ui.md_text(f"Agent: no answer, {said.refused}."))
-        else:
-            st.markdown(ui.md_text(said.sentence))
-        argument = f" · {said.argument}" if said.argument and said.command != "filter" else ""
+        st.markdown(ui.md_text(said.sentence if not said.refused else f"Agent: no answer, {said.refused}."))
+        if said.command == "simulate_delay" and not said.refused:
+            st.caption(ui.md_text(said.values["note"]))
+        argument = f" · {said.choice.argument}" if said.choice.argument else ""
         st.caption(f"local agent · {said.command} · {said.field}{argument} · {said.seconds:.1f} s")
+    return said
