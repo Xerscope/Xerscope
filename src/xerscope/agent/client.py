@@ -19,7 +19,7 @@ import urllib.request
 URL_VARIABLE = "XERSCOPE_LLM_URL"
 DEFAULT_URL = "http://llm:8080"
 ALLOWED_HOSTS = ("llm", "127.0.0.1", "::1", "localhost")
-TIMEOUT_S = 60
+TIMEOUT_S = 120  # a file's first question reads the whole instructions; slower with layers in RAM
 MAX_TOKENS = 120  # one JSON object of a tool, a field and an argument
 
 

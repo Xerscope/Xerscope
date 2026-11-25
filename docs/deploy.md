@@ -576,10 +576,20 @@ A schedule of 3,000 activities is about 110k tokens per update and 2M for a seri
 holds it raw. That is why the study's raw mode is bounded (`--max-rows`) and its grounded mode
 hands the model only the figures xerscope computed.
 
-**Model to try first.** An 8B model in Q4_K_M (about 5 GB; the context's cache and the compute
-buffers fit in 12 GB with the default 16,384 tokens), then a 14B in Q4_K_M (about 9 GB: lower the
-context, or the study's `--max-rows`). The same two questions every time: does the grounded mode
-hold, and does the raw mode, which the 8B is not expected to do, hold at all.
+**Models to try (maintainer's choice, 25 November 2026).** Accuracy first, a few seconds per
+question accepted:
+
+| Role | Model | `.env` | Expected |
+|---|---|---|---|
+| main | Qwen3.8-27B, dense, Q4_K_M (~16 GB) | `XERSCOPE_LLM_GPU_LAYERS=48`, raised while `nvidia-smi` shows free VRAM | 4 to 10 s a question (estimate) |
+| challenger | Qwen3.6-35B-A3B, MoE 3B active, Q4_K_M (~20 GB) | `XERSCOPE_LLM_CPU_MOE=30`, lowered while VRAM is free | 2 to 5 s (estimate) |
+| fast reference | Qwen3.5-9B, Q6_K (~7 GB) | `XERSCOPE_LLM_GPU_LAYERS=99` | about 1 s (estimate) |
+
+A dense 27B uses all its weights at each token, a MoE about 3B of its 35B: for reading a question
+and writing a query's conditions, the dense model is expected to hold better; only a measurement
+on the maintainer's questions settles it (the one that answers more of them right; the faster
+when close). No official Qwen GGUF of the 27B was found: check the community file you pick. Do not
+enable MTP speculative decoding (llama.cpp issue 30419, fails with a JSON schema).
 
 **The commands**, from the repository root (the four variables are required, Compose stops and
 says which is missing):
