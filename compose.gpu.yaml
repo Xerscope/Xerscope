@@ -86,7 +86,7 @@ services:
     volumes:
       - ./scripts:/study/scripts:ro
       - ./tests/llm_study:/study/tests/llm_study:ro
-      - ./exports:/data:ro
+      - ${XERSCOPE_EXPORTS:-./exports}:/data:ro
       - ./study:/out
     read_only: true
     tmpfs:

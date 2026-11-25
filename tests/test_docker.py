@@ -279,6 +279,7 @@ def test_local_load_workers_are_sized_to_the_machine_within_a_memory_cap():
     app = (ROOT / "compose.yaml").read_text()
     assert re.search(r"^\s+XERSCOPE_LOAD_WORKERS: \$\{XERSCOPE_LOAD_WORKERS:-auto\}", app, re.M)
     assert re.search(r"^\s+mem_limit: \$\{XERSCOPE_MEM_LIMIT:-16g\}", app, re.M)
+    assert "- ${XERSCOPE_EXPORTS:-./exports}:/data:ro" in app  # the NAS's variable names the folder here too
 
 
 def test_remote_app_settings_reach_streamlit():

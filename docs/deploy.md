@@ -552,7 +552,7 @@ The study runs in the `study` service, on the silo, with the app's image and the
 host is not exactly `llm` or a loopback name (`127.0.0.2` is refused too; a redirect is not
 followed and no proxy is used): no external call is possible. Without `--data` it builds the
 demo series (`xerscope sample`). `run --rm study --data /data` reads your weekly exports from
-`./exports`, mounted read-only; the
+`./exports` (or the folder `XERSCOPE_EXPORTS` names, as on the NAS), mounted read-only; the
 files stay local and the report names no activity, project or file (activities are numbered by
 the order the study picked them: the open ones with the least total float). The questions are
 generic templates in `tests/llm_study/questions.toml`. `--max-rows` (400 by default, about

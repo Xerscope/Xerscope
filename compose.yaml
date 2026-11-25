@@ -1,6 +1,6 @@
 # docker compose up -d   ->  http://localhost:8501
 #
-# Your weekly XER exports go in ./exports (read-only in the container). Optional:
+# Your weekly XER exports go in ./exports, or the folder XERSCOPE_EXPORTS names (read-only). Optional:
 # ./exports/BL.xer as the baseline (uncomment XERSCOPE_BASELINE), ./standards for your
 # own TOML standards.
 services:
@@ -12,7 +12,7 @@ services:
     ports:
       - "127.0.0.1:8501:8501"
     volumes:
-      - ./exports:/data:ro
+      - ${XERSCOPE_EXPORTS:-./exports}:/data:ro  # your folder of exports, as XERSCOPE_EXPORTS on the NAS
       # - ./standards:/standards:ro
     environment:
       XERSCOPE_DATA: /data
