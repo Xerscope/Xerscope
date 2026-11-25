@@ -16,6 +16,8 @@ services:
       # - ./standards:/standards:ro
     environment:
       XERSCOPE_DATA: /data
+      # files read at once: auto = as many as the cores and the memory cap allow (docs/deploy.md §12)
+      XERSCOPE_LOAD_WORKERS: ${XERSCOPE_LOAD_WORKERS:-auto}
       # XERSCOPE_BASELINE: /data/BL.xer
       # XERSCOPE_STANDARDS: /standards
     read_only: true
@@ -24,4 +26,5 @@ services:
       - /home/nonroot:uid=65532,gid=65532,mode=700  # Streamlit then fails reading ~/.streamlit/secrets.toml
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    mem_limit: ${XERSCOPE_MEM_LIMIT:-16g}  # the app's share of the machine; the workers are sized to it
     restart: unless-stopped

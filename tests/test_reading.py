@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import xerscope
+from xerscope.app import reading
 from xerscope.app.reading import read_update, read_updates, worker_count
 from xerscope.xer import load_snapshot
 
@@ -24,20 +25,62 @@ def test_worker_count_follows_the_variable_and_never_exceeds_the_files(monkeypat
     assert worker_count(10) == 1
 
 
-@pytest.mark.parametrize("asked", ["3", "4", "16"])
-def test_worker_count_never_exceeds_two(monkeypatch, asked):
-    # two processes is the most the NAS deployment stays stable with (docs/deploy.md section 7)
+@pytest.mark.parametrize(("asked", "expected"), [("3", 3), ("4", 4), ("16", 8)])
+def test_a_number_asked_is_taken_up_to_the_cores(monkeypatch, asked, expected):
+    # the NAS asks for 1 in its compose file (docs/deploy.md section 7); a machine of 8 cores runs at most 8
     monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", asked)
-    assert worker_count(10) == 2
+    monkeypatch.setattr(reading, "usable_cores", lambda: 8)
+    assert worker_count(10) == expected
+
+
+GB, MB = 1_000_000_000, 1_000_000
+
+
+@pytest.mark.parametrize(
+    ("cores", "memory", "largest", "files", "expected"),
+    [
+        (24, 16 * GB, 4 * MB, 10, 10),  # room (16 - 0.5) GB // 252 MB = 61: the 10 files decide
+        (24, 16 * GB, 4 * MB, 30, 24),  # the 24 cores decide
+        (24, 4 * GB, 40 * MB, 10, 2),  # 3.5 GB // 1.332 GB = 2
+        (24, 2 * GB, 40 * MB, 10, 1),  # the NAS cap: 1.5 GB // 1.332 GB = 1
+        (2, 64 * GB, 4 * MB, 10, 2),
+    ],
+)
+def test_auto_takes_what_the_cores_and_the_memory_allow(monkeypatch, cores, memory, largest, files, expected):
+    """One worker may hold 1.2 x (110 MB + 25 x the largest file): 252 MB for 4 MB, 1.332 GB for 40 MB;
+    0.5 GB stays for the app."""
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "Auto")
+    monkeypatch.setattr(reading, "usable_cores", lambda: cores)
+    monkeypatch.setattr(reading, "memory_bytes", lambda: memory)
+    assert reading.worker_bytes(4 * MB) == 252_000_000 and reading.worker_bytes(40 * MB) == 1_332_000_000
+    assert worker_count(files, largest) == expected
+
+
+def test_a_number_asked_stays_within_the_memory(monkeypatch):
+    # 4 asked on a 2 GB cap reading 40 MB exports: room for one, one it is
+    monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", "4")
+    monkeypatch.setattr(reading, "usable_cores", lambda: 8)
+    monkeypatch.setattr(reading, "memory_bytes", lambda: 2 * GB)
+    assert worker_count(10, 40 * MB) == 1 and worker_count(10, 4 * MB) == 4
+
+
+def test_the_container_quota_bounds_the_cores(monkeypatch):
+    values = {"cpu.max": ["400000", "100000"], "memory.max": ["2147483648"]}
+    monkeypatch.setattr(reading, "_cgroup_value", lambda name: values[name])
+    monkeypatch.setattr("os.process_cpu_count", lambda: 24, raising=False)
+    monkeypatch.setattr("os.cpu_count", lambda: 24)
+    assert reading.usable_cores() == 4 and reading.memory_bytes() == 2147483648
+    values["cpu.max"] = ["max", "100000"]
+    assert reading.usable_cores() == 24
 
 
 @pytest.mark.parametrize("asked", ["", "0", "-1", "two", "\u00b2", "1.5"])
 def test_an_unusable_variable_falls_back_to_the_default(monkeypatch, asked):
     # "\u00b2".isdigit() is True but int() refuses it: the reading thread died on it, the series half read
     monkeypatch.setenv("XERSCOPE_LOAD_WORKERS", asked)
-    monkeypatch.setattr("os.cpu_count", lambda: 4)
+    monkeypatch.setattr(reading, "usable_cores", lambda: 4)
     assert worker_count(10) == 2
-    monkeypatch.setattr("os.cpu_count", lambda: 1)
+    monkeypatch.setattr(reading, "usable_cores", lambda: 1)
     assert worker_count(10) == 1
 
 

@@ -509,6 +509,12 @@ the cable changes nothing in the app: that is the point.
 - A `.gguf` file, downloaded by you into a folder of its own. The container downloads nothing (no
   `-hf`, no model URL) and the folder is mounted read-only.
 
+**Reading the files.** The local `compose.yaml` reads the exports with
+`XERSCOPE_LOAD_WORKERS=auto`: as many worker processes as the cores and the app's memory cap
+(`XERSCOPE_MEM_LIMIT`, 16g) allow, each counted at 1.2 × (110 MB + 25 × the largest file), the
+peaks measured in `app/reading.py`. On a 285K with 4 MB exports that is one worker per file up to
+24; the NAS keeps its `1` (§7).
+
 **Sizing for 12 GB of VRAM.** The weights and the context's cache (KV) share the card. The cache
 grows with the context: 2 × layers × KV heads × head size × bytes per value, per token. With
 `--flash-attn on` and a `q8_0` cache (the override's default, half of `f16`):

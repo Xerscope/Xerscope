@@ -273,6 +273,14 @@ def test_remote_load_workers_follow_the_env_file_and_default_to_one():
     assert re.search(r"^# XERSCOPE_LOAD_WORKERS=\d", (ROOT / "deploy" / ".env.example").read_text(), re.M)
 
 
+def test_local_load_workers_are_sized_to_the_machine_within_a_memory_cap():
+    """The local build (compose.yaml) reads with as many workers as the cores and its memory cap allow
+    (XERSCOPE_LOAD_WORKERS=auto, app/reading.py); the cap leaves the rest of the machine to the model."""
+    app = (ROOT / "compose.yaml").read_text()
+    assert re.search(r"^\s+XERSCOPE_LOAD_WORKERS: \$\{XERSCOPE_LOAD_WORKERS:-auto\}", app, re.M)
+    assert re.search(r"^\s+mem_limit: \$\{XERSCOPE_MEM_LIMIT:-16g\}", app, re.M)
+
+
 def test_remote_app_settings_reach_streamlit():
     """The remote-only settings in deploy/compose.yaml override the packaged config.toml, as the app runs."""
     import os
