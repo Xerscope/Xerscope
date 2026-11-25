@@ -1,8 +1,9 @@
 """The separate baseline file: picked in the folder, uploaded in the window, or named by XERSCOPE_BASELINE.
 
-In the folder: the P6 XML exports next to the updates, and every .xer and P6 XML file of its ``baselines``
-subfolder (``BASELINES_FOLDER``), which the updates are never read from. A baseline exported as its own
-XER can sit there under the name of an update.
+In the folder: the P6 XML exports next to the updates, its .xer files not ticked as updates (which one is
+a baseline is often known only once the series is read), and every .xer and P6 XML file of its
+``baselines`` subfolder (``BASELINES_FOLDER``), which the updates are never read from. A baseline exported
+as its own XER can sit there under the name of an update.
 """
 
 from __future__ import annotations
@@ -24,15 +25,18 @@ def _folder_baseline_names(session: MutableMapping | None = None) -> list[str]:
     """Return the baseline files of the folder the updates were read from; none when the updates were uploaded.
 
     The P6 XML exports next to the updates, by name (a P6 XML export holds a project's baselines, which its
-    XER does not), then the .xer and P6 XML files of the ``baselines`` subfolder, as "baselines/<name>":
-    the folder of the updates is read for .xer files only, not its subfolders.
+    XER does not), then the folder's .xer files left unticked, by name (a ticked one is an update of the
+    series), then the .xer and P6 XML files of the ``baselines`` subfolder, as "baselines/<name>": the
+    folder of the updates is read for .xer files only, not its subfolders.
     """
     session = st.session_state if session is None else session
     source: tuple = session.get("files_source") or ("none",)
     root = Path(source[1]).expanduser() if source[0] == "folder" else None
     if root is None or not root.is_dir():
         return []
+    ticked = set(source[2]) if len(source) > 2 else set()
     names = [path.name for path in pmxml_files(root)]
+    names += [path.name for path in xer_files(root) if path.name not in ticked]
     held = root / BASELINES_FOLDER
     if held.is_dir():
         names += [f"{BASELINES_FOLDER}/{path.name}" for path in sorted([*xer_files(held), *pmxml_files(held)])]

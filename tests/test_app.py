@@ -1143,6 +1143,27 @@ def test_a_baseline_xer_of_the_baselines_subfolder_is_picked_under_the_name_of_a
         assert at.session_state["bl_folder_file"] == "export.xml", name
 
 
+def test_an_unticked_xer_of_the_folder_is_offered_as_the_baseline_file(tmp_path, monkeypatch):
+    """Which XER of a folder is a baseline is often known only once the updates are read: the folder's .xer
+    files left unticked are offered as the baseline file, the ticked ones (the updates) are not. bl.xer,
+    unticked, plans A 2 to 13 March at 80 h; picked, it is the baseline in force, and the series keeps
+    its two updates."""
+    _updates_and_a_p6_xml_export(tmp_path)
+    week = {"early_start_date": "2026-03-02 08:00", "early_end_date": "2026-03-13 17:00", "target_work_qty": "80"}
+    (tmp_path / "z_bl.xer").write_text(xer_text([todo("A", **week)], data_date="2026-02-23 08:00"), encoding="utf-8")
+    monkeypatch.setenv("XERSCOPE_DATA", str(tmp_path))
+    monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
+    at = read_folder(AppTest.from_file(APP, default_timeout=120).run(), count=2)  # w1, w2: z_bl stays unticked
+    _ok(at)
+    assert files_line(at) == "Files · 2 files · 1 project"
+    baseline_box(at).set_value(BL_FILE)
+    assert baseline_box(at, "bl_folder_file").options == ["(none)", "export.xml", "z_bl.xer"]
+    _pick_the_folder_baseline_file(at, "z_bl.xer")
+    baseline = at.session_state["baseline"]
+    assert isinstance(baseline, Baseline) and baseline.bac_hours == 80.0
+    assert files_line(at) == "Files · 2 files · 1 project"  # the baseline did not join the series
+
+
 def test_the_project_read_from_a_baseline_xer_of_several_is_picked_in_the_window(tmp_path, monkeypatch):
     """A baseline XER exported with the project it copies holds two projects: the analysed one (UPD: A1, A2)
     and the baseline (BL: A1 only). The window offers both, the file's default first; the one picked is

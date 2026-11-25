@@ -145,8 +145,9 @@ baseline it does not export takes that baseline from the XML, so a series whose 
 changed over time is measured update by update.
 
 **Baseline files in the folder.** On a server that reads a folder (locked or not), the window offers as
-the separate baseline file the P6 XML exports next to the updates and every .xer or P6 XML file of a
-`baselines` subfolder, which is never read for updates. A baseline restored and exported as its own XER
+the separate baseline file the P6 XML exports next to the updates, the folder's .xer files left unticked
+(the ticked ones are the updates; which file is a baseline is often known only once the series is read),
+and every .xer or P6 XML file of a `baselines` subfolder, which is never read for updates. A baseline restored and exported as its own XER
 goes there, under the name of an update if need be (`baselines/2026-06-12.xer`); it is listed and named
 by that place. Only a name of that list is taken: no path is typed. Measured against, an XER and a P6 XML
 of the same plan give the same baseline; only a P6 XML can be looked in update by update, an XER of a
