@@ -448,7 +448,7 @@ or from the `verify/` modules themselves (`shapes`, `p6_corpus`, `mpxj_reader`).
   and `baseline_warnings` reads `cache`. `files_window` reads `baseline_window`, `session` and `ui`; `loading` reads
   `baseline_warnings`, `files_window`, `reading`, `session` and `ui`; `downloads` reads `baseline_file` and
   `session`; `sets` reads `downloads` and `ui`; `diagnostic` reads `expected_finish_forms`,
-  `recalculation_departures` and `ui`; `state` reads the baseline domain, `downloads`, `loading`, `session` and
+  `recalculation_departures` and `table_filters` (`as_dates`, so `pv-compare` loads no Streamlit); `state` reads the baseline domain, `downloads`, `loading`, `session` and
   `ui`; `streamlit_app` reads `loading`, `session`, `theme` and `ui`. `state` is read by the pages only. No module reads
   a page and no page reads another. A new module or a new edge is written here and in `APP_EDGES` in the
   same change.
