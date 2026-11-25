@@ -294,6 +294,7 @@ class Schedule:
     warnings: list[str] = field(default_factory=list)
     assignments: pd.DataFrame = field(default_factory=pd.DataFrame)  # one row per open assignment
     assignment_minutes: dict[str, float] = field(default_factory=dict)  # taskrsrc_id -> remaining minutes as placed
+    links: pd.DataFrame = field(default_factory=pd.DataFrame)  # one row per relationship: LINK_COLS
     # the plain recalculation (file options, no delay), the one cached on the snapshot: its
     # comparison with the stored dates is cached too (compare_with_stored)
     plain: bool = False
@@ -305,6 +306,7 @@ class Schedule:
             warnings=list(self.warnings),
             assignments=self.assignments.copy(),
             assignment_minutes=dict(self.assignment_minutes),
+            links=self.links.copy(),
         )
 
 
@@ -1871,18 +1873,35 @@ class _Run:
         return [code for code in self.open_ if self._ends_project(code, enders)]
 
     def driving_predecessors(self, code) -> list[str]:
-        """Unfinished predecessors whose link drives a date of ``code``. Work under way has none under
-        Progress Override: its logic is ignored."""
+        """Unfinished predecessors whose link drives a date of ``code``."""
+        return [
+            predecessor
+            for predecessor, link_type, lag in self.preds[code]
+            if self.is_driving_link(predecessor, code, link_type, lag)
+        ]
+
+    def is_driving_link(self, predecessor: str, code: str, link_type: str, lag: float) -> bool:
+        """True when the link from ``predecessor`` drives a date of ``code`` (Oracle, web services
+        Relationship.Driving: "this relationship determines the early dates for the successor activity").
+        A finished predecessor drives nothing, nor does any link into finished work; work under way has
+        no driving link under Progress Override: its logic is ignored."""
+        if self.status[predecessor] == "TK_Complete" or self.status[code] == "TK_Complete":
+            return False
         if self.status[code] == "TK_Active" and self.options.progressed == "progress_override":
-            return []
-        driving = []
-        for predecessor, link_type, lag in self.preds[code]:
-            if self.status[predecessor] == "TK_Complete":
-                continue
-            bound = self.early_bound_through(predecessor, code, link_type, lag)
-            if self.is_driven_by(code, link_type, bound):
-                driving.append(predecessor)
-        return driving
+            return False
+        if predecessor not in self.early_finish or code not in self.early_finish:
+            return False
+        bound = self.early_bound_through(predecessor, code, link_type, lag)
+        return self.is_driven_by(code, link_type, bound)
+
+    def driving_links(self) -> pd.DataFrame:
+        """Every relationship of the run (LINK_COLS) and whether it drives its successor."""
+        rows = []
+        for code, links in self.preds.items():
+            for predecessor, link_type, lag in links:
+                driving = self.is_driving_link(predecessor, code, link_type, lag)
+                rows.append({"pred_code": predecessor, "succ_code": code, "type": link_type, "driving": driving})
+        return pd.DataFrame(rows, columns=LINK_COLS)
 
     def early_bound_through(self, predecessor: str, code: str, link_type: str, lag: float) -> pd.Timestamp:
         """Earliest date a link from an unfinished predecessor allows ``code``: the predecessor's early
@@ -1895,10 +1914,20 @@ class _Run:
 
     def is_driven_by(self, code, link_type: str, bound: pd.Timestamp) -> bool:
         """True when the date a link allows is not before the date of ``code`` it bounds, its remaining
-        start (FS, SS) or its early finish (FF, SF), in working time of its calendar."""
+        start (FS, SS) or its early finish (FF, SF), in working time of its calendar. Past a mandatory date
+        the link is overridden: the constraint sets the date (Oracle, P6 help: the longest path "is broken
+        when activity dates are driven by constraints"; corpus H10-04 A1310, Mandatory Finish)."""
         own_instant = self.remaining_start[code] if link_type in ("FS", "SS") else self.early_finish[code]
         axis = self.cal_ax[code]
+        if axis.work(bound) > axis.work(own_instant) and self.is_pinned(code):
+            return False
         return axis.work(bound) >= axis.work(own_instant)
+
+    def is_pinned(self, code) -> bool:
+        """True when a mandatory start or finish sets the early dates of ``code``, not yet started."""
+        if self.status[code] != "TK_NotStart":
+            return False
+        return any(constraint_type in MANDATORY for constraint_type, _ in self.constraints(code))
 
     def is_loe_driving_one_of(self, loe, longest: set[str]) -> bool:
         """True when a link from the unfinished LOE drives a date of one of the ``longest`` activities."""
@@ -2056,7 +2085,13 @@ class _Run:
         ]
         frame = pd.DataFrame(rows, columns=RESULT_COLS).set_index("task_code")  # no row: an empty Schedule
         return Schedule(
-            frame, self.finish, self.options, self.warnings, self.assignment_dates(), self.assignment_minutes
+            frame,
+            self.finish,
+            self.options,
+            self.warnings,
+            self.assignment_dates(),
+            self.assignment_minutes,
+            links=self.driving_links(),
         )
 
     def _report(self) -> None:
@@ -2078,6 +2113,7 @@ class _Run:
             )
 
 
+LINK_COLS = ["pred_code", "succ_code", "type", "driving"]
 ASSIGNMENT_COLS = ["taskrsrc_id", "task_code", "rsrc", "driving", "restart", "reend", "rem_late_start", "rem_late_end"]
 
 

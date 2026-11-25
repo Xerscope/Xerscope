@@ -371,3 +371,54 @@ def test_dates_that_hold_together_are_not_called_inconsistent(duration, lag):
         ]
     )
     assert mpxj_inconsistent(snap, cmp) == set()
+
+
+# --- 6. driving relationships --------------------------------------------------------------------
+
+HELD_OUT = REF / "p6-heldout" / "validation" / "held-out"
+DRIVING_FILES = [
+    "p6viewer/Hotel Project.xer",
+    "p6viewer/TERMINAL BUILDING-AIRPORT.xer",
+    "pv/20-kW-residential-pv-p6.xer",
+]
+
+
+def _driving_unexplained(xc, path: Path) -> tuple[int, pd.DataFrame]:
+    """Links compared, and the differences neither an MPXJ date nor an UNRESOLVED case explains."""
+    compared = xc.driving_crosscheck(path)
+    unexplained = compared[compared["reason"].isna()]
+    assert set(compared["reason"].dropna()) <= {"", "mpxj_dates", *xc.UNRESOLVED}
+    return len(compared), unexplained
+
+
+@pytest.mark.oracle("mpxj")
+@pytest.mark.parametrize("name", DRIVING_FILES)
+def test_driving_links_agree_with_mpxj_on_reference_files(xc, require_reference, name):
+    """Measured 2026-11-25: Hotel 7,586 open links, 7 differences, each an As Late As Possible
+    successor (UNRESOLVED driving_alap); Terminal and PV none."""
+    compared, unexplained = _driving_unexplained(xc, require_reference(name))
+    assert compared > 0
+    assert unexplained.empty, unexplained.head(10).to_string()
+
+
+@pytest.mark.oracle("mpxj")
+@pytest.mark.parametrize("name", [f"H{number}" for number in range(1, 31)])
+def test_driving_links_agree_with_mpxj_on_the_p6_corpus(xc, name):
+    """P6 23.12 held-out corpus, every case MPXJ supports: no difference left once MPXJ's own date
+    differences and the UNRESOLVED cases are set aside (measured 2026-11-25 on the 30 sets: 2,399 open
+    links, 159 differences: 115 MPXJ dates, 40 driving_held_by_data_date, 4 driving_alap; MPXJ's
+    scheduler stops on 12 cases with a NullPointerException, left out)."""
+    from xerscope.xer import load_snapshot
+
+    if not HELD_OUT.is_dir():
+        missing("p6-corpus", "uv run python tests/reference/fetch_p6_heldout.py")
+    for path in sorted((HELD_OUT / name / "cases").glob("*.xer")):
+        if xc.mpxj_unsupported(load_snapshot(path)):
+            continue
+        try:
+            compared, unexplained = _driving_unexplained(xc, path)
+        except Exception as error:  # noqa: BLE001 - MPXJ's scheduler fails on a few cases (NullPointerException)
+            if "java" not in type(error).__module__ + str(error):
+                raise
+            continue
+        assert compared > 0 and unexplained.empty, (path.name, unexplained.head(10).to_string())
