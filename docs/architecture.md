@@ -451,7 +451,8 @@ or from the `verify/` modules themselves (`shapes`, `p6_corpus`, `mpxj_reader`).
   `recalculation_departures` and `table_filters` (`as_dates`, so `pv-compare` loads no Streamlit); `state` reads the baseline domain, `downloads`, `loading`, `session` and
   `ui`; `streamlit_app` reads `loading`, `session`, `theme` and `ui`. `state` is read by the pages only. No module reads
   a page and no page reads another. A new module or a new edge is written here and in `APP_EDGES` in the
-  same change.
+  same change. A module of a sub-package of `app/` (a folder with an `__init__.py`; `views/` has none) is
+  named with its package, `baseline.baselines`; the test reads every form of import, relative included.
 - **`.streamlit/config.toml`:** the light and dark themes (warm neutrals, petrol accent) and server settings
   (localhost only). `xerscope app` runs Streamlit from the app folder, so it applies
   wherever the command is started.
