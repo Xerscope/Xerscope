@@ -121,32 +121,32 @@ def test_an_id_that_is_not_a_number_has_no_version_around_it():
 
 
 def test_a_version_of_the_same_status_date_added_once_the_project_of_the_update_was_is_kept():
-    """An update of Sunday 16 August 08:00 whose project was added on 2 August 14:04. Kept: the version of
-    16 August added on the 18th, and the update's own project. Left out: the version added before the
+    """An update of Sunday 15 March 08:00 whose project was added on 1 March 09:00. Kept: the version of
+    15 March added on the 17th, and the update's own project. Left out: the version added before the
     project, the one of another day, the one whose baseline the export does not hold."""
     versions = [
-        Version("5812", "2026-08-16 08:00", "2026-08-18 06:51", "5813"),
-        Version("5778", "2026-08-16 08:00", "2026-08-02 14:04", "5779"),  # the project of the update itself
-        Version("5700", "2026-08-16 08:00", "2026-08-01 09:00", "5701"),  # added before the project: no copy of it
-        Version("5837", "2026-08-23 08:00", "2026-08-25 06:40", "5838"),  # another status date
-        Version("5891", "2026-08-16 17:00", "2026-08-19 13:46", ""),  # names no baseline the export holds
+        Version("420", "2026-03-15 08:00", "2026-03-17 09:00", "421"),
+        Version("410", "2026-03-15 08:00", "2026-03-01 09:00", "411"),  # the project of the update itself
+        Version("400", "2026-03-15 08:00", "2026-02-28 09:00", "401"),  # added before the project: no copy of it
+        Version("430", "2026-03-22 08:00", "2026-03-24 09:00", "431"),  # another status date
+        Version("440", "2026-03-15 17:00", "2026-03-18 09:00", ""),  # names no baseline the export holds
     ]
-    kept = versions_of_the_same_date("2026-08-16 08:00", "2026-08-02 14:04", versions)
-    assert [version.object_id for version in kept] == ["5812", "5778"]
-    assert [version.baseline_id for version in kept] == ["5813", "5779"]
+    kept = versions_of_the_same_date("2026-03-15 08:00", "2026-03-01 09:00", versions)
+    assert [version.object_id for version in kept] == ["420", "410"]
+    assert [version.baseline_id for version in kept] == ["421", "411"]
 
 
 def test_the_same_day_at_another_hour_is_the_same_status_date():
-    version = Version("5812", "2026-08-16 00:00", "2026-08-18 06:51", "5813")
-    assert versions_of_the_same_date("2026-08-16 08:00", "2026-08-02 14:04", [version]) == [version]
+    version = Version("420", "2026-03-15 00:00", "2026-03-17 09:00", "421")
+    assert versions_of_the_same_date("2026-03-15 08:00", "2026-03-01 09:00", [version]) == [version]
 
 
 @pytest.mark.parametrize(
     "status_date, project_added, version",
     [
-        ("", "2026-08-02 14:04", Version("5812", "", "2026-08-18 06:51", "5813")),  # no status date on either
-        ("2026-08-16 08:00", "", Version("5812", "2026-08-16 08:00", "2026-08-18 06:51", "5813")),  # project undated
-        ("2026-08-16 08:00", "2026-08-02 14:04", Version("5812", "2026-08-16 08:00", "", "5813")),  # version undated
+        ("", "2026-03-01 09:00", Version("420", "", "2026-03-17 09:00", "421")),  # no status date on either
+        ("2026-03-15 08:00", "", Version("420", "2026-03-15 08:00", "2026-03-17 09:00", "421")),  # project undated
+        ("2026-03-15 08:00", "2026-03-01 09:00", Version("420", "2026-03-15 08:00", "", "421")),  # version undated
     ],
 )
 def test_without_a_date_to_compare_no_version_is_kept(status_date, project_added, version):
