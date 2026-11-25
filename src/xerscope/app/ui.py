@@ -221,6 +221,22 @@ COLUMNS: dict[str, tuple[str, str, str]] = {
             "(docs/formulas.md §1.3)."
         ),
     ),
+    "on_longest_path": (
+        "Longest path",
+        "bool",
+        "P6's Longest Path column (TASK.driving_path_flag), as P6 stored it when it scheduled the update.",
+    ),
+    "driving_link": (
+        "Driving",
+        "bool",
+        (
+            "P6's Driving checkbox of the Relationships tab: the link sets its successor's early date. P6 does "
+            "not export it in the XER (TASKPRED has no such field), so it is recalculated by xerscope's CPM "
+            "(`cpm.Schedule.links`); blank when the update cannot be scheduled."
+        ),
+    ),
+    "primary": ("Primary constraint", "text", "TASK.cstr_type and cstr_date, under P6's name."),
+    "secondary": ("Secondary constraint", "text", "TASK.cstr_type2 and cstr_date2, under P6's name."),
     "is_critical": (
         "Critical",
         "bool",

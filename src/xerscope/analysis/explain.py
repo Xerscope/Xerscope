@@ -901,6 +901,21 @@ READINGS: dict[str, Reading] = {
     ),
     "task_resources": TASK_TABLES_READING,
     "task_logic": TASK_TABLES_READING,
+    "task_trail": Reading(
+        how=(
+            "one row per task opened from this panel, in the order they were opened; one column per update: "
+            "P6's total float (TF) and free float (FF) in working days, then the primary / secondary constraint "
+            "with its date. Select a row to open that task."
+        ),
+        source="P6 TASK (total_float_hr_cnt, free_float_hr_cnt, cstr_type, cstr_date, cstr_type2, cstr_date2)",
+    ),
+    "task_constraints": Reading(
+        how=(
+            "each constraint added, removed or changed on the task between two consecutive updates, dated by the "
+            "later update's status date: the Constraints rows of the changelog."
+        ),
+        source="`changelog.constraint_changes`",
+    ),
     "task_history": TASK_TABLES_READING,
     "export_tables": EXPORT_TABLES_READING,
     "export_fact_activity": EXPORT_TABLES_READING,
