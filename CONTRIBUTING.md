@@ -27,6 +27,8 @@ before touching `analysis/cpm.py` or `xer/calendar.py`, and
 
 ## Rules
 
+Every standard the project applies, and what enforces it, is listed in [docs/quality-standards.md](docs/quality-standards.md).
+
 1. **No real schedule enters the repository.** Real `.xer` files, their activity names,
    project codes, company names and file paths are never committed, quoted in docs,
    tests, issues, pull requests or commit messages. Tests build their files in code

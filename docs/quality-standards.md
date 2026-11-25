@@ -1,0 +1,66 @@
+# Quality standards applied in xerscope
+
+One page that lists every standard the project applies, with what enforces it. The rules themselves live where
+they are cited: [CONTRIBUTING.md](../CONTRIBUTING.md) (rules, readable code, names, verification, docstrings,
+commits), [docs/standards.md](standards.md) (the schedule standards), [docs/adr/](adr/README.md) (decisions),
+[SECURITY.md](../SECURITY.md). This page adds no rule: when it and those files differ, they win.
+
+## Correctness of the numbers
+
+| Standard | Applies to | Enforced by |
+|---|---|---|
+| Oracle Primavera P6 Professional 24 and 26.8 help (26.8 is the reference where they differ), P6 EPPM help | calculation behaviour, P6 Check Schedule | `docs/cpm.md`, `docs/standards.md`, `crosscheck.UNRESOLVED`; P6 reference files and held-out corpus (`tests/test_p6_heldout.py`, `FLOORS`) |
+| DCMA 14-Point Assessment (EA PAM 200.1) and DCMA DECM v8.0 | the DCMA and DECM checks | `standards/*.toml` `source` fields, hand-made `xerkit` schedules per behaviour |
+| EIA-748 (NDIA intent guide), DoD EVMSIG | earned value terms | `docs/formulas.md`, `analysis/explain.py` |
+| Earned Schedule (Lipke) | ES, SPI(t), IEAC(t), TSPI | `docs/formulas.md`, `tests/test_earned_schedule.py` (an extension, not an EVMS metric) |
+| AACE RP 29R-03 | delay analysis (half-step) | `analysis/forensics.py` docstrings |
+| Last Planner System (PPC) | PPC and lookahead | `analysis/progress.py` docstrings |
+| Evidence hierarchy (ADR-0008): maintainer's decision > official text > P6 observed > MPXJ > hand calculation | every expected value | `@pytest.mark.oracle(...)`, `scripts/oracle_report.py`; the `values` workflow (`ID: old -> new — source`) |
+| No real schedule in the repository (ADR-0014) | code, tests, docs, commits | CI job `lint` refuses any tracked `.xer`, `.parquet`, `.xls(x)` or `.csv` (`tests.yml`, pinned by `tests/test_docker.py`); `tests/reference/sources.py` (public files, pinned by checksum, never vendored) |
+
+## Tests
+
+| Standard | Enforced by |
+|---|---|
+| ISO/IEC/IEEE 29119-4 test design techniques (partitions, boundary values, combinatorial, decision tables, state transitions, metamorphic, requirements) | named in the test docstrings; CONTRIBUTING.md, Verification |
+| Expected values written blind, from the source and a hand calculation, never adjusted to the code | review; CONTRIBUTING.md |
+| Characterization (golden) files: every standard's result, every page | `tests/test_characterization.py`, `tests/test_page_golden.py` (ADR-0011) |
+| Property-based fuzzing of the XER boundary | Hypothesis (`tests/test_fuzz_parser.py`); hand-written property tests of the engine (`tests/test_cpm_properties.py`) |
+| Mutation testing, share of killed mutants never down | `mutmut`, `scripts/mutation.py --check tests/mutation_baseline.json`, weekly `mutation` workflow (ADR-0013) |
+| Independent cross-check of the CPM engine | MPXJ (`tests/test_crosscheck_mpxj.py`, Java 21 and 25 in CI) |
+
+## Code
+
+| Standard | Enforced by |
+|---|---|
+| PEP 8 (layout, names), PEP 257 (docstrings), PEP 20 | `ruff` rules `E F W B I UP SIM C4 PIE RET PLE PLW PLR0124 PLC0206 D N A`, `ruff format` (job `lint`) |
+| Readable code and names (CONTRIBUTING.md, validated 2026-11-14) | review; `tests/test_docstrings.py` (12 lines at most, `LONG` and `MAX_DEBT` only shrink) |
+| Maintainability: radon MI rank A, cyclomatic and cognitive complexity at most 15, no structural clone, mypy errors, deptry, import contracts from `LAYERS` | `scripts/fitness.py --check tests/fitness_baseline.json` (ratchet, ADR-0012), `scripts/duplication.py` |
+| Layered architecture, one-way data flow (ADR-0001) | `tests/test_architecture.py` |
+| A refactor only moves code | `scripts/same_code.py origin/main` |
+| Architecture decision records | `docs/adr/` (format in its README) |
+
+## Security and supply chain
+
+| Standard | Enforced by |
+|---|---|
+| OWASP ASVS 5.0.0 | `SECURITY.md` scope; `tests/test_docker.py`, `csv_safe.py` and its tests, the anonymised downloads (ADR-0015, 0023) |
+| CWE-20 (input validation), CWE-79 (XSS), CWE-1236 (CSV formula injection) | the parser keeps strings, the model types them (ADR-0002); `csv_safe.py` |
+| SLSA provenance, pinned supply chain (lock file, Actions by SHA, images by digest) | `image.yml`, `uv.lock`, Dependabot with cooldown (ADR-0026, 0027) |
+| Static and dependency scanning | CodeQL, Bandit, pip-audit, Trivy (daily), OpenSSF Scorecard (ADR-0028) |
+| Hardened container (non-root, read-only root, loopback) | `tests/test_docker.py` (ADR-0024, 0025) |
+
+## Accessibility
+
+| Standard | Enforced by |
+|---|---|
+| WCAG 2.2 A and AA | axe-core 4.14.0 on every page, weekly `accessibility` workflow; `tests/test_accessibility.py` (ADR-0030) |
+
+## Process
+
+| Standard | Enforced by |
+|---|---|
+| Problem / Options / Choice / Verification before a technical change | CONTRIBUTING.md; the decision becomes an ADR |
+| One subject per pull request, squash merge, template | `.github/pull_request_template.md`, `CODEOWNERS` |
+| Author identity and no tool attribution | `attribution` workflow |
+| Moved values justified | `values` workflow |
