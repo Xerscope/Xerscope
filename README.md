@@ -332,6 +332,7 @@ Step by step on a Synology NAS (DSM 7.4, Container Manager), checks and troubles
 | [docs/deploy.md](docs/deploy.md) | the remote deployment on a NAS, the Gantt "Ask" field's lexicon |
 | [docs/backlog.md](docs/backlog.md) | what is known to be wrong, unproven or missing |
 | [docs/adr/](docs/adr/README.md) | architecture decision records |
+| [docs/structure-proposal.md](docs/structure-proposal.md) | proposed, not applied: sub-packages and file splits of `src/xerscope` and `tests/`, with the pull request plan |
 | [docs/quality-plan.md](docs/quality-plan.md) | the global audit's findings and the work items it set, one pull request each |
 | [docs/refactor-front-plan.md](docs/refactor-front-plan.md) | the plan of the front refactoring (`app/`, `viz/`), package by package |
 | [docs/refactor-front/](docs/refactor-front/executor-brief.md) | its working files: the brief of an executor or reviewer, the review findings, the redesign and security notes |

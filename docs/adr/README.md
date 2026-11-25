@@ -66,3 +66,7 @@ A technical change presented as Problem / Options / Choice / Verification (CONTR
 | [ADR-0028](0028-security-scanning-trivy-codeql-scorecard-audit.md) | Continuous security scanning: Trivy on images, CodeQL, OpenSSF Scorecard, pip-audit and bandit | Accepted | 2026-10-29 |
 | [ADR-0029](0029-typed-folder-read-under-one-root.md) | A folder typed in the Files window is read only under one root | Accepted | 2026-11-20 |
 | [ADR-0030](0030-accessible-self-contained-ui.md) | Accessible, self-contained UI: WCAG 2.2 AA checked in a browser, self-hosted fonts, status colours reserved | Accepted | 2026-11-03 |
+
+## Pending
+
+[docs/structure-proposal.md](../structure-proposal.md) proposes sub-packages and file splits of `src/xerscope` and `tests/`. It is not applied; once the maintainer settles its open questions, the decision is recorded here as a new record.
