@@ -284,7 +284,7 @@ MPXJ_LINK_TYPES = {"FINISH_START": "FS", "START_START": "SS", "FINISH_FINISH": "
 def mpxj_driving_links(path: str | Path, project_code: str | None = None) -> pd.DataFrame:
     """Return every relationship between two activities of ``path``, MPXJ's driving flag on each.
 
-    ``Relation.getDriving`` is set by PrimaveraScheduler on its forward pass.
+    MPXJ's Relation.getDriving, set by its PrimaveraScheduler on the forward pass.
     """
     rows = []
     for mpxj_task in _scheduled_project(path, project_code).getTasks():
