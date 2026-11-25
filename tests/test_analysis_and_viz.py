@@ -26,7 +26,7 @@ from xerscope.viz.charts import (
     STATUS,
     TEXT,
     build_activity_dates,
-    build_activity_logic_float,
+    build_activity_float,
 )
 
 
@@ -95,19 +95,22 @@ def test_gantt_compare_with_no_common_tasks(store):
 
 
 def test_activity_charts_follow_the_history(store):
-    """The float chart draws the task first (one point per update holding it), then one line per direct
-    predecessor and successor, named with its role."""
+    """The float chart draws the task alone, one point per update holding it; each point's hover lists
+    that update's predecessors and successors. A neighbour picked is drawn too, named with its role."""
     code = "C3020"  # demo: predecessors C3010, E1020; successors C3030, C3040
     history = store.history
     history = history[history["task_code"] == code].sort_values("data_date")
     dates = build_activity_dates(history)
-    float_chart = build_activity_logic_float(logic_by_update(store, code))
+    logic = logic_by_update(store, code)
+    float_chart = build_activity_float(logic)
     assert [trace.name for trace in dates.data] == ["Start", "Finish"]
-    names = [trace.name for trace in float_chart.data]
-    assert names[0] == "C3020 · task"
-    assert {"C3010 · pred", "E1020 · pred", "C3030 · succ", "C3040 · succ"} <= set(names[1:])
+    assert [trace.name for trace in float_chart.data] == ["C3020 · task"]
     assert len(float_chart.data[0].x) == len(history)
+    first_hover = float_chart.data[0].customdata[0][2]
+    assert "pred E1020 FS driving" in first_hover and "succ C3040 SS" in first_hover
     assert float_chart.layout.yaxis.title.text == "Working days"
+    picked = build_activity_float(logic, shown=["C3030"])
+    assert [trace.name for trace in picked.data] == ["C3020 · task", "C3030 · succ"]
 
 
 def test_fmt_date_shows_a_dash_for_missing_dates():

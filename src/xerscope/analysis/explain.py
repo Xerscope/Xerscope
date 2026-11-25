@@ -575,20 +575,29 @@ READINGS: dict[str, Reading] = {
         ),
         source="xerscope (`store.history`); P6 fields Start / Finish as docs/architecture.md defines them.",
     ),
-    "activity_logic_float": Reading(
+    "activity_float": Reading(
         how=(
-            "x = status date, y = total float in working days; the task's line is thick and solid, each direct "
-            "predecessor dotted, each successor dashed, drawn in the updates whose relationships link it. A faded "
-            "point: that link does not drive in that update (recalculated by the CPM: the XER does not export "
-            "P6's Driving flag); a diamond: the activity carries a constraint, named in the hover. A red dotted "
-            'line at 0 labelled "critical".'
+            "x = status date, y = total float in working days of the task's calendar; a red dotted line at 0 "
+            'labelled "critical". The hover of each point lists that update\'s predecessors and successors: link '
+            "type, driving (recalculated by the CPM: the XER does not export P6's Driving flag), total float and "
+            "constraints. A neighbour picked in Show on the chart is drawn too, dotted (predecessor) or dashed "
+            "(successor), in the updates whose relationships link it; a faded point: its link does not drive "
+            "there; a diamond: the activity carries a constraint."
         ),
         meaning=(
-            "the float of the work around the task, update after update: a predecessor whose float falls with "
-            "the task's is likely what pushes it; a constraint that appears where a line breaks may explain it."
+            "float is the delay the task can take without moving the project finish (or its Must Finish By); "
+            "negative float = the project is already late against that date. A predecessor whose float falls "
+            "with the task's is likely what pushes it."
         ),
-        conclude="compare the lines at each status date; open a neighbour from Logic to follow it further.",
-        source="P6 TASK (total_float_hr_cnt, cstr_type, cstr_type2) and TASKPRED of each update; xerscope CPM",
+        conclude=(
+            "≤ 0 d is critical (`config.py:12`; P6 Define critical activities, read by "
+            "`explain.critical_definition`); > 44 wd is high float for DCMA 14-Point, item 6 (`dcma.toml:70`), and "
+            "P6 Check Schedule Large Float (`p6.toml:86`)."
+        ),
+        source=(
+            "DCMA 14-Point Assessment, items 6 and 7; P6 Professional Check Schedule report (Large Float, Negative "
+            "Float); P6 TASKPRED of each update."
+        ),
     ),
     "finish_trend": Reading(
         how=(

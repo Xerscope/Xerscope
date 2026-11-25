@@ -7,6 +7,9 @@ markers, recessive grid, legend + direct end labels for a few series.
 
 from __future__ import annotations
 
+import html
+from collections.abc import Sequence
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -456,45 +459,47 @@ def _widen_dates(update_axis, low, high) -> None:
         update_axis(range=[low - DATE_PAD, high + DATE_PAD])
 
 
-# How each kind of line of the float chart is drawn: the task, then its neighbours (the roles of
+# How each kind of line of the float chart is drawn: the task, then the neighbours picked (the roles of
 # analysis.activity_trail.logic_by_update, written here as text: viz does not import that module).
 LOGIC_DASH = {"task": "solid", "predecessor": "dot", "successor": "dash"}
 LOGIC_ROLE = {"task": "task", "predecessor": "pred", "successor": "succ"}
 NOT_DRIVING_OPACITY = 0.35  # a point whose link does not drive, still readable on both themes
 
 
-def build_activity_logic_float(logic: pd.DataFrame) -> go.Figure:
-    """Total float of one activity and of its direct predecessors and successors, in every update.
+def build_activity_float(logic: pd.DataFrame, shown: Sequence[str] = ()) -> go.Figure:
+    """Total float of one activity in every update, zero marked as critical.
 
-    ``logic``: rows of ``activity_trail.logic_by_update``. One line per neighbour and role; a neighbour
-    is drawn in the updates whose relationships link it. A faded point: the link does not drive that
-    update; a diamond: the activity carries a constraint there (named in the hover).
+    ``logic``: rows of ``activity_trail.logic_by_update``. The hover of each point of the task lists that
+    update's predecessors and successors (link, driving, total float, constraints). ``shown``: Activity
+    IDs of neighbours drawn as lines too, in the updates whose relationships link them; a faded point:
+    the link does not drive there; a diamond: the activity carries a constraint.
     """
     figure = go.Figure()
-    neighbours = logic[logic["role"] != "task"].drop_duplicates(["role", "task_code"])
-    lines = [("task", logic.loc[logic["role"] == "task", "task_code"].iloc[0])] if len(logic) else []
-    lines += list(zip(neighbours["role"], neighbours["task_code"], strict=True))
-    for number, (role, code) in enumerate(lines):
-        rows = logic[(logic["role"] == role) & (logic["task_code"] == code)].sort_values("data_date")
-        figure.add_trace(_logic_line(rows, role, code, SERIES[number % len(SERIES)]))
+    task = logic[logic["role"] == "task"].sort_values("data_date")
+    figure.add_trace(_logic_line(task, "task", SERIES[0], _neighbour_summaries(logic, task["data_date"])))
+    neighbours = logic[(logic["role"] != "task") & logic["task_code"].isin(shown)]
+    for number, (role, code) in enumerate(neighbours[["role", "task_code"]].drop_duplicates().itertuples(index=False)):
+        rows = neighbours[(neighbours["role"] == role) & (neighbours["task_code"] == code)].sort_values("data_date")
+        figure.add_trace(_logic_line(rows, role, SERIES[(number + 1) % len(SERIES)]))
     figure.add_hline(
         y=0,
         line=dict(color=STATUS["critical"], width=1, dash="dot"),
         annotation_text="critical",
         annotation_position="bottom left",
     )
-    figure = _with_house_style(figure, "activity_logic_float", 420, "Working days", legend=True)
+    figure = _with_house_style(figure, "activity_float", 380, "Working days", legend=bool(len(neighbours)))
     figure.update_layout(hovermode="closest")
     return figure
 
 
-def _logic_line(rows: pd.DataFrame, role: str, code: str, colour: str) -> go.Scatter:
-    """One activity's total float across the updates, as ``build_activity_logic_float`` draws it."""
+def _logic_line(rows: pd.DataFrame, role: str, colour: str, notes: Sequence[str] | None = None) -> go.Scatter:
+    """One activity's total float across the updates; ``notes``: a hover line per point, after the float."""
+    code = html.escape(str(rows["task_code"].iloc[0])) if len(rows) else ""
     constraints = [
-        _constraints_text(primary, secondary)
-        for primary, secondary in zip(rows["primary"], rows["secondary"], strict=True)
+        _constraints_text(first, second) for first, second in zip(rows["primary"], rows["secondary"], strict=True)
     ]
-    driving = rows["driving_link"].map({True: "driving", False: "not driving"}).fillna("")
+    link = [link_text(kind, driving) for kind, driving in zip(rows["link_type"], rows["driving_link"], strict=True)]
+    notes = list(notes) if notes is not None else [""] * len(rows)
     return go.Scatter(
         x=rows["data_date"],
         y=rows["total_float_d"],
@@ -506,10 +511,40 @@ def _logic_line(rows: pd.DataFrame, role: str, code: str, colour: str) -> go.Sca
             symbol=["diamond" if text else "circle" for text in constraints],
             opacity=[NOT_DRIVING_OPACITY if flag is False else 1.0 for flag in rows["driving_link"]],
         ),
-        customdata=np.stack([rows["link_type"].fillna(""), driving, constraints], axis=-1),
-        hovertemplate=f"{code} · {LOGIC_ROLE[role]}"
-        + " %{customdata[0]} %{customdata[1]}<br>%{x|%Y-%m-%d}: TF %{y} wd<br>%{customdata[2]}<extra></extra>",
+        customdata=np.stack([link, [html.escape(text) for text in constraints], notes], axis=-1) if len(rows) else None,
+        hovertemplate=f"<b>{code}</b> · {LOGIC_ROLE[role]} %{{customdata[0]}}<br>%{{x|%Y-%m-%d}}: TF %{{y}} wd"
+        "<br>%{customdata[1]}%{customdata[2]}<extra></extra>",
     )
+
+
+def _neighbour_summaries(logic: pd.DataFrame, dates: pd.Series) -> list[str]:
+    """For each status date of ``dates``: the update's predecessors then successors, one hover line each."""
+    summaries = []
+    for date in dates:
+        rows = logic[(logic["data_date"] == date) & (logic["role"] != "task")]
+        lines = [_neighbour_line(row) for row in rows.itertuples()]
+        summaries.append("<br>" + "<br>".join(lines) if lines else "<br>no predecessor or successor")
+    return summaries
+
+
+def _neighbour_line(row) -> str:
+    """One neighbour as a hover line, escaped: pred C3010 FS driving · TF 20.0 · its constraints."""
+    float_text = "–" if pd.isna(row.total_float_d) else f"{row.total_float_d:.1f}"
+    parts = [
+        f"{LOGIC_ROLE[row.role]} {row.task_code} {link_text(row.link_type, row.driving_link)}",
+        f"TF {float_text}",
+    ]
+    constraints = _constraints_text(row.primary, row.secondary)
+    if constraints:
+        parts.append(constraints)
+    return html.escape(" · ".join(parts))
+
+
+def link_text(link_type, driving) -> str:
+    """The link as one update holds it ("FS driving", "SS"); "" on the task's own row."""
+    if not isinstance(link_type, str):
+        return ""
+    return f"{link_type} driving" if driving is True else link_type
 
 
 def _constraints_text(primary, secondary) -> str:

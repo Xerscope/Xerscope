@@ -29,7 +29,7 @@ from xerscope.analysis.cpm import ScheduleError, schedule
 from xerscope.analysis.progress import activity_finish_shift
 from xerscope.app import ui
 from xerscope.config import DATETIME_FMT
-from xerscope.viz.charts import build_activity_dates, build_activity_logic_float
+from xerscope.viz.charts import build_activity_dates, build_activity_float, link_text
 from xerscope.xer.model import CONSTRAINT, PCT_COMPLETE_TYPE, RSRC_TYPE, TASK_TYPE
 
 # The panel's yes / no reads model.HARD_CONSTRAINTS, the DCMA-05 set (Start on, Start on or before, Finish
@@ -40,6 +40,7 @@ ROW_PREFIX = "a:"  # Gantt row id of an activity (viz/gantt.py); "w:" is a WBS r
 MAX_ID = 200  # characters: longer than any Activity ID P6 stores, shorter than a forged payload
 
 ROLE_ORDER = {TASK: 0, PREDECESSOR: 1, SUCCESSOR: 2}  # rows of Logic by update: the task, then its neighbours
+ROLE_LABEL = {PREDECESSOR: "predecessor", SUCCESSOR: "successor"}
 CHAIN_DIRECTIONS = {UPSTREAM: "Predecessors", DOWNSTREAM: "Successors", BOTH: "Both"}
 CHAIN_DEPTH = 3  # links followed by default: a reader's usual look around a task, a few dozen tasks at most
 CHAIN_MAX_DEPTH = 10
@@ -307,6 +308,21 @@ def show_trail(store, trail: list[str], open_task: Callable[[str], None]) -> Non
     ui.table(matrix.reset_index(), key="task_trail", reading="task_trail", open_task=open_task)
 
 
+def pick_neighbours(logic: pd.DataFrame, task_code: str) -> list[str]:
+    """The predecessors and successors, of any update, the viewer picks to draw beside the task's float."""
+    neighbours = logic[logic["role"] != TASK].drop_duplicates("task_code")
+    labels = dict(zip(neighbours["task_code"], neighbours["role"].map(ROLE_LABEL), strict=True))
+    return st.multiselect(
+        "Show on the chart",
+        list(labels),
+        format_func=lambda code: f"{code} · {labels[code]}",
+        key=f"task_float_shown:{task_code}",
+        placeholder="Predecessors and successors to draw",
+        help="Hover a point of the task for that update's predecessors and successors; pick one here to draw "
+        "its total float too (dotted: predecessor, dashed: successor; faded where the link does not drive).",
+    )
+
+
 def show_logic_by_update(logic: pd.DataFrame) -> None:
     """The task and its direct neighbours, a column per status date: the link as that update holds it
     (type, driving), P6's total and free float, the constraints. A blank cell: not linked that update."""
@@ -323,15 +339,8 @@ def show_logic_by_update(logic: pd.DataFrame) -> None:
 
 
 def _logic_cell(row) -> str:
-    link = _link_text(row.link_type, row.driving_link)
+    link = link_text(row.link_type, row.driving_link)
     return f"{link} · {_trail_cell(row)}" if link else _trail_cell(row)
-
-
-def _link_text(link_type, driving) -> str:
-    """The link as one update holds it ("FS driving", "SS"); "" on the task's own row."""
-    if not isinstance(link_type, str):
-        return ""
-    return f"{link_type} driving" if driving is True else link_type
 
 
 def _trail_cell(row) -> str:
@@ -368,12 +377,16 @@ def show_history(store, task_code: str) -> None:
         ]
     )
     logic = logic_by_update(store, task_code)
-    ui.section("Total float with predecessors and successors (working days)")
-    ui.chart(build_activity_logic_float(logic))
+    dates_column, float_column = st.columns(2, gap="large")
+    with dates_column:
+        ui.section("Forecast start and finish")
+        ui.chart(build_activity_dates(history))
+    with float_column:
+        ui.section("Total float (working days)")
+        shown = pick_neighbours(logic, task_code)
+        ui.chart(build_activity_float(logic, shown))
     ui.section("Logic by update")
     show_logic_by_update(logic)
-    ui.section("Forecast start and finish")
-    ui.chart(build_activity_dates(history))
     ui.section("By update")
     ui.table(history, columns=HISTORY_COLUMNS, key="task_history", reading="task_history")
     ui.section("Constraint changes")
