@@ -19,8 +19,8 @@ conformité, ni certification, ni homologation. Lorsqu'il cite un document de r�
 indique la position des fichiers livrés par rapport à ce document et s'en tient là.
 
 Trois mentions de statut ont un sens fixe. *Non fourni* : le dépôt ne contient rien sur ce point.
-*Non établi* : les fichiers ne permettent pas de trancher. *Laissé à l'hébergeur* : la décision ou
-le réglage vous revient.
+*Non établi* : les fichiers ne permettent pas de trancher. *À la charge de l'exploitant* : la
+décision ou le réglage vous revient.
 
 ### Options de déploiement et état de leurs tests
 
@@ -134,7 +134,7 @@ de Caddy conserve leur adresse IP, et le fichier des suggestions conserve les mo
 ont cliqué.
 
 Pour votre registre, deux points découlent des fichiers livrés. La finalité du traitement est
-laissée à l'hébergeur : le logiciel lit les exports et dessine les rapports nommés dans la
+à la charge de l'exploitant : le logiciel lit les exports et dessine les rapports nommés dans la
 présentation du système, et rien d'autre. Quant aux personnes qui peuvent voir les données
 personnelles, toute personne qui peut ouvrir l'application voit les mêmes pages, car l'application
 n'a pas de rôle. L'administrateur de l'hôte peut lire le dossier des exports, le dossier du lexique
@@ -213,17 +213,17 @@ chaque thème.
 
 | Thème, tel qu'imprimé | Où |
 |---|---|
-| « Contextes métier et réglementaire, nature et sensibilité des données et traitements » | Présentation du système ; cette section. Sensibilité : laissé à l'hébergeur |
+| « Contextes métier et réglementaire, nature et sensibilité des données et traitements » | Présentation du système ; cette section. Sensibilité : à la charge de l'exploitant |
 | « Identification, authentification et gestion des droits d'accès » | Comptes, authentification, sessions et secrets |
 | « Cloisonnement réseau, système et stockage » | Architecture ; Durcissement des conteneurs |
 | « Chiffrement des données en transit et au repos » | En transit : Architecture (TLS). Au repos : non fourni, les fichiers livrés ne chiffrent rien |
-| « Filtrage des flux » | Matrice de flux. Le filtrage lui-même : laissé à l'hébergeur |
+| « Filtrage des flux » | Matrice de flux. Le filtrage lui-même : à la charge de l'exploitant |
 | « Accès à distance (nomadisme numérique, tiers) » | Architecture, option C. Accès du fournisseur : aucun livré |
 | « Administration (dont la gestion des comptes à privilèges et DevSecOps) » | Comptes ; Origine et intégrité |
 | « Maintien en condition de sécurité (MCS) » | Origine et intégrité ; Procédures |
 | « Interconnexions (dont celle à Internet) » | Matrice de flux |
 | « Protection contre les codes malveillants » | Non fourni |
-| « Sécurité physique, contrôle d'accès et vidéoprotection » | Laissé à l'hébergeur |
+| « Sécurité physique, contrôle d'accès et vidéoprotection » | À la charge de l'exploitant |
 | « Continuité et reprise d'activité (dont les sauvegardes) » | Procédures (sauvegarde et restauration) |
 | « Supervision de sécurité (journalisation, détection, traitement des incidents) » | Journalisation. Détection et traitement des incidents : non fourni |
 
@@ -497,7 +497,7 @@ service Docker, aux fichiers du déploiement et au dossier des exports.
 | Utilisateur du conteneur de l'application | `USER nonroot` (65532) dans l'image ; `user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"` dans l'option C | Lit le dossier des exports ; écrit dans `suggested/` ; `lexicon-init` écrit aussi dans `generated/` | Le dossier des exports doit être lisible par cet uid |
 | Utilisateur du conteneur `caddy` | Pas de clé `user:` | L'utilisateur par défaut de l'image, avec `NET_BIND_SERVICE` pour seule capability | Root dans l'image d'origine : non établi |
 | Utilisateur du conteneur `tailscale` | Pas de clé `user:` | L'utilisateur par défaut de l'image, sans aucune capability | Root d'après le commentaire du fichier : non établi |
-| Compte de l'hôte qui exécute Docker | Votre hôte | Ceux de Docker | Laissé à l'hébergeur |
+| Compte de l'hôte qui exécute Docker | Votre hôte | Ceux de Docker | À la charge de l'exploitant |
 | Administrateur du tailnet | Console d'administration de Tailscale | Politique, clés, nœuds | Compte tiers, option C uniquement |
 | Compte du fournisseur | Aucun | Aucun | Le fournisseur n'a besoin d'aucun accès distant et les fichiers livrés n'en ouvrent aucun |
 
@@ -561,9 +561,10 @@ manque. Le tableau 15 liste les secrets.
 | Clé d'anonymisation | Aucune | Mémoire de session, `secrets.token_bytes(32)` | Une par session |
 
 Le fichier `deploy/.env` contient ces valeurs en clair, et `.gitignore` le tient hors de git. Sa
-protection repose sur les permissions du dossier : laissé à l'hébergeur. Caddy lit ses trois valeurs
-à la création de son conteneur. Le contexte de construction de l'image de l'application se limite à
-`pyproject.toml`, `uv.lock`, `README.md` et `src/` : l'image ne contient donc ni export ni secret.
+protection repose sur les permissions du dossier : à la charge de l'exploitant. Caddy lit ses trois
+valeurs à la création de son conteneur. Le contexte de construction de l'image de l'application se
+limite à `pyproject.toml`, `uv.lock`, `README.md` et `src/` : l'image ne contient donc ni export ni
+secret.
 
 ### Réglages lus par l'application
 
@@ -634,12 +635,12 @@ Le tableau 18 donne la position de chaque fichier. Les titres sont ceux du docum
 |---|---|---|
 | R1 « Isoler les systèmes sensibles de fichiers de l'hôte » | Appliquée : pas de clé `privileged:`. Le seul montage est `./exports:/data:ro` | Appliquée : pas de clé `privileged:`. Aucun montage de `/`, `/dev`, `/proc`, `/sys` ni du socket Docker (tableau 8) |
 | R2 « Restreindre l'accès aux périphériques de l'hôte » | Sans objet : pas de clé `devices:` | Sans objet : pas de clé `devices:`. `TS_USERSPACE: "true"` ne nécessite aucun périphérique TUN |
-| R3 « Interdire la connexion du conteneur au réseau bridge docker0 » | Laissé à l'hébergeur (service Docker). Le service rejoint le réseau de projet que Compose crée | Laissé à l'hébergeur. Chaque service nomme ses réseaux, `network_mode: service:tailscale` ou `network_mode: none` |
+| R3 « Interdire la connexion du conteneur au réseau bridge docker0 » | À la charge de l'exploitant (service Docker). Le service rejoint le réseau de projet que Compose crée | À la charge de l'exploitant. Chaque service nomme ses réseaux, `network_mode: service:tailscale` ou `network_mode: none` |
 | R4 « Isoler l'interface réseau de l'hôte » | Appliquée : pas de `network_mode: host` | Appliquée : pas de réseau d'hôte (figé par `tests/test_docker.py`) |
 | R5 « Créer un réseau dédié pour chaque connexion » | Appliquée par le comportement par défaut de Compose : pas de clé `networks:`, un seul réseau de projet dessert donc l'unique service et son unique port publié | Partiellement appliquée : `egress` et `internal` sont dédiés, mais `caddy` partage l'espace de noms réseau de `tailscale`, ces deux-là ne sont donc pas séparés |
 | R6 « Dédier des namespaces PID, IPC et UTS pour chaque conteneur » | Appliquée : pas de clé `pid:`, `ipc:` ni `uts:` | Appliquée : pas de clé `pid:`, `ipc:` ni `uts:` |
-| R7 « Dédier un namespace USER ID pour chaque conteneur » | Laissé à l'hébergeur (service Docker) | Laissé à l'hébergeur. L'uid qui lit le dossier des exports change en cas de remappage |
-| R7+ « Restreindre la création des Namespace USER ID à l'utilisateur root » | Laissé à l'hébergeur (réglage du noyau) | Laissé à l'hébergeur |
+| R7 « Dédier un namespace USER ID pour chaque conteneur » | À la charge de l'exploitant (service Docker) | À la charge de l'exploitant. L'uid qui lit le dossier des exports change en cas de remappage |
+| R7+ « Restreindre la création des Namespace USER ID à l'utilisateur root » | À la charge de l'exploitant (réglage du noyau) | À la charge de l'exploitant |
 | R7- « Restreindre le partage du Namespace USER ID de l'hôte » | Sans objet : pas de clé `userns_mode:` | Sans objet : pas de clé `userns_mode:` |
 | R8 « Interdire l'utilisation des capabilities » | Appliquée : `cap_drop: [ALL]` | Appliquée pour `tailscale`, `xerscope` et `lexicon-init` : `cap_drop: [ALL]`. Non appliquée pour `caddy` : voir R8- |
 | R8- « Limiter l'utilisation des capabilities » | Sans objet | Utilisée par `caddy` : `cap_drop: [ALL]` et `cap_add: [NET_BIND_SERVICE]`. La raison donnée par le fichier : le binaire porte cette capability de fichier et le noyau refuse de l'exécuter avec un ensemble limite (bounding set) vide. Caddy écoute sur 8080. La liste des 19 capabilities « sensibles » du document ne contient pas `CAP_NET_BIND_SERVICE`. De cette capability, il dit que l'application « doit être configurée sur des ports non priviligiés », ce qui est le cas de Caddy (8080) |
@@ -651,8 +652,8 @@ Le tableau 18 donne la position de chaque fichier. Les titres sont ceux du docum
 | R12- - « Limiter l'écriture de l'espace de stockage de l'ensemble des conteneurs » | Sans objet | Sans objet |
 | R13 « Créer un système de stockage pour les données non persistantes » | Partiellement appliquée : tmpfs sur `/tmp` (`mode=1777`) et `/home/nonroot` (`mode=700`), appartenant à 65532, sans taille | Partiellement appliquée : sept tmpfs, chacun avec une taille. Un mode n'est défini que sur les deux de `xerscope` |
 | R14 « Créer un système de stockage pour les données persistantes ou partagées » | Appliquée pour la partie en lecture seule : `./exports:/data:ro`. Aucun montage inscriptible | Partiellement appliquée : les montages en lecture seule portent `:ro`. Les montages inscriptibles (`tailscale-state`, `generated/`, `suggested/`) n'ont pas de limite de taille. L'application cesse d'enregistrer des suggestions à 256 Ko |
-| R15 « Restreindre l'accès aux répertoires et aux fichiers sensibles » | Appliquée par la liste des montages. Permissions des fichiers : laissé à l'hébergeur | Appliquée par la liste des montages et par l'uid de `XERSCOPE_UID`. Permissions sur `deploy/.env`, les exports et le dossier du lexique : laissé à l'hébergeur |
-| R16 « Exporter les journaux avec Docker » | Laissé à l'hébergeur (service Docker). Pas de clé `logging:` | Laissé à l'hébergeur. Pas de clé `logging:`, par un choix énoncé dans l'en-tête du fichier |
+| R15 « Restreindre l'accès aux répertoires et aux fichiers sensibles » | Appliquée par la liste des montages. Permissions des fichiers : à la charge de l'exploitant | Appliquée par la liste des montages et par l'uid de `XERSCOPE_UID`. Permissions sur `deploy/.env`, les exports et le dossier du lexique : à la charge de l'exploitant |
+| R16 « Exporter les journaux avec Docker » | À la charge de l'exploitant (service Docker). Pas de clé `logging:` | À la charge de l'exploitant. Pas de clé `logging:`, par un choix énoncé dans l'en-tête du fichier |
 | R16- « Exporter les journaux depuis l'intérieur du conteneur » | Non appliquée : pas d'exportateur dans l'image | Non appliquée : aucun exportateur dans les conteneurs |
 
 Les deux fichiers Compose définissent aussi `security_opt: ["no-new-privileges:true"]` sur chaque
@@ -1065,10 +1066,10 @@ options A et B n'ont aucun journal d'accès.
 
 Ni le `Dockerfile` ni les fichiers Compose ne définissent `TZ` ou des paramètres régionaux. Les
 horodatages qu'écrit le code propre à xerscope sont en UTC. La source de temps des horodatages n'est
-pas fournie : aucun fichier livré ne configure une horloge ni sa synchronisation, ce qui est laissé
-à l'hébergeur. Aucun des deux fichiers Compose n'a de clé `logging:` : la taille et la rotation des
-journaux sont donc celles par défaut du service Docker. L'export vers une autre machine et la durée
-de conservation sont laissés à l'hébergeur.
+pas fournie : aucun fichier livré ne configure une horloge ni sa synchronisation, ce qui est à la
+charge de l'exploitant. Aucun des deux fichiers Compose n'a de clé `logging:` : la taille et la
+rotation des journaux sont donc celles par défaut du service Docker. L'export vers une autre machine
+et la durée de conservation sont à la charge de l'exploitant.
 
 ## Écarts connus et risques résiduels
 
@@ -1078,7 +1079,7 @@ est un élément d'entrée pour votre plan d'action, non un engagement du fourni
 
 **Tableau 24.** Écarts connus et risques résiduels
 
-| Écart | Conséquence | Ce que l'hébergeur peut faire |
+| Écart | Conséquence | Ce que l'exploitant peut faire |
 |---|---|---|
 | L'option D n'est pas livrée et n'est pas testée : les tests du projet figent l'agencement Funnel et ne couvrent pas un fichier adapté | Un déploiement interne derrière votre mandataire est votre propre intégration | Construisez-la à partir des éléments réutilisables et testez-la |
 | Pas de gestion des utilisateurs : un identifiant partagé dans l'option C, aucun dans A et B | Aucun lecteur n'est distingué. Aucun ne peut être révoqué seul | Authentifiez devant l'application avec votre fournisseur d'identité |
@@ -1108,7 +1109,7 @@ est un élément d'entrée pour votre plan d'action, non un engagement du fourni
 | Aucun test du projet n'exécute de bout en bout les procédures Docker de ce guide, ne démarre `lexicon-init` dans son conteneur ni ne démarre la pile sans le dossier `XERSCOPE_LEXICON_DIR` | Une étape peut se comporter différemment sur votre moteur | Faites un essai à blanc de chaque procédure sur un hôte de test |
 | Le contenu de l'image de l'application (ni shell, ni gestionnaire de paquets, uid 65532) est énoncé d'après le `Dockerfile` | Ces propriétés reposent sur l'image de base | Inspectez l'image que vous récupérez ou construisez |
 | Aucun test du projet ne restaure la pile. Emplacement de la clé TLS non établi | Une pile restaurée peut être un nouveau nœud | Faites un essai à blanc de restauration |
-| Les conteneurs partagent le noyau de l'hôte. Aucun des deux fichiers Compose ne définit d'option seccomp, AppArmor ou SELinux, et le remappage de l'espace de noms utilisateur est laissé à l'hébergeur | L'isolation entre un conteneur et l'hôte repose sur le noyau et sur les valeurs par défaut du service Docker | Durcissez l'hôte et tenez son noyau à jour des correctifs |
+| Les conteneurs partagent le noyau de l'hôte. Aucun des deux fichiers Compose ne définit d'option seccomp, AppArmor ou SELinux, et le remappage de l'espace de noms utilisateur est à la charge de l'exploitant | L'isolation entre un conteneur et l'hôte repose sur le noyau et sur les valeurs par défaut du service Docker | Durcissez l'hôte et tenez son noyau à jour des correctifs |
 | L'état de maintenance des composants tiers n'est pas fourni | Un composant peut atteindre sa fin de support sans avis du fournisseur | Suivez la politique de support de chaque éditeur |
 | Politique de mots de passe non imposée. Le coût documenté de l'empreinte est 10 | La robustesse de l'identifiant repose sur le mot de passe que vous choisissez | Générez un mot de passe long |
 | Engagements du fournisseur limités à `SECURITY.md`. La licence n'accorde rien | Pas de délai de correction, pas de notification, pas de date de fin de support | Fixez-les dans un contrat |

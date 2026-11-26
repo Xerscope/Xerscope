@@ -9,7 +9,7 @@ comprend huit parties :
 - [À propos de ce guide](#à-propos-de-ce-guide)
 - [Concepts](#concepts)
 - [Premiers pas](#premiers-pas)
-- [Tâches](#tâches)
+- [Guides pratiques](#guides-pratiques)
 - [Référence](#référence)
 - [Dépannage](#dépannage)
 - [Limites](#limites)
@@ -461,7 +461,7 @@ fichiers, passez à
 [Charger des fichiers et choisir la Baseline](#charger-des-fichiers-et-choisir-la-baseline) de ce
 guide.
 
-## Tâches
+## Guides pratiques
 
 Chaque guide de cette partie vise un objectif. Les commandes utilisent la série de démonstration
 de [Premiers pas](#premiers-pas) de ce guide, si bien que chacune s'exécute telle quelle depuis le
