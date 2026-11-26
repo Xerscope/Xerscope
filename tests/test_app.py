@@ -2734,7 +2734,7 @@ def test_table_column_filters_keep_the_matching_rows(app):
     assert len(task_table()) == len(everything)
 
 
-def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, store):
+def test_gantt_panel_keeps_the_picked_activity_when_the_filters_hide_it(app, store):
     app.switch_page("views/gantt.py").run()
     _ok(app)
     assert not any(
@@ -2748,8 +2748,47 @@ def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, stor
     assert app.selectbox(key="gantt_task_pick").value == "C3020"
     app.text_input[1].set_value("no task has this name").run()  # the Gantt search leaves C3020 out
     _ok(app)
-    assert not any({"data_date", "original_d"} <= set(d.value.columns) for d in app.dataframe)
+    # the panel stays on C3020, opened from the chart or from a row of the panel, and says it is not drawn
+    assert any({"data_date", "original_d"} <= set(d.value.columns) for d in app.dataframe)
     assert any("C3020" in caption.value and "not drawn" in caption.value for caption in app.caption)
+
+
+def _panel_table(app, columns: set[str]) -> pd.DataFrame:
+    return next(d.value for d in app.dataframe if columns <= set(d.value.columns))
+
+
+def _trail(app, store) -> pd.DataFrame:
+    """The breadcrumb matrix: a column per status date, headed as the panel writes a date."""
+    return _panel_table(app, {"task_code", f"{store.first.data_date:%d %b %Y}"})
+
+
+def test_gantt_panel_drills_through_logic_breadcrumb_constraints_and_chain(app, store):
+    """C3020 on the demo: its Logic rows carry the driving flag (recalculated: the XER has none) and the
+    other task's longest path flag and float; opening a predecessor adds it to the breadcrumb, a matrix
+    with a column per update; Back returns; the chain button draws the chain alone in the Gantt."""
+    app.switch_page("views/gantt.py").run()
+    app.session_state["gantt_task"] = "C3020"
+    app.run()
+    _ok(app)
+    logic = _panel_table(app, {"relationship", "driving_link", "on_longest_path", "total_float_d"})
+    predecessor = logic.loc[logic["relationship"] == "Predecessor", "task_code"].iloc[0]
+    trail = _trail(app, store)
+    assert trail["task_code"].tolist() == ["C3020"]
+    assert len(trail.columns) == 1 + len(store)  # Task ID, then one column per update
+    assert trail.iloc[0, 1].startswith("TF ")
+    # the demo changes no constraint (tests/test_activity_trail.py covers a change): the panel says so
+    assert any("No constraint added" in caption.value for caption in app.caption)
+    app.session_state["gantt_task"] = predecessor  # what a Logic row's button stores
+    app.run()
+    _ok(app)
+    assert _trail(app, store)["task_code"].tolist() == ["C3020", predecessor]
+    app.button(key="gantt_trail_back").click().run()
+    _ok(app)
+    assert app.session_state["gantt_task"] == "C3020"
+    app.button(key="task_chain_show").click().run()
+    _ok(app)
+    focus = app.session_state["gantt_focus"]
+    assert focus["codes"][0] == "C3020" and predecessor in focus["codes"]
 
 
 def test_gantt_a_click_in_the_chart_picks_an_activity_drawn_only(app):

@@ -242,6 +242,14 @@ def _date_and_float_changes(new: Snapshot, previous: pd.DataFrame, current: pd.D
     return changes
 
 
+def constraint_changes(old: Snapshot, new: Snapshot, task_codes: list[str]) -> pd.DataFrame:
+    """The changelog's Constraints rows (primary and secondary: added, removed, changed) of the
+    activities ``task_codes`` present in both updates; the same rows ``changelog`` lists for them."""
+    common = [code for code in task_codes if code in old.by_code.index and code in new.by_code.index]
+    previous, current = old.by_code.loc[common], new.by_code.loc[common]
+    return _to_frame(_constraint_changes(previous, current), previous, current)
+
+
 def _constraint_changes(previous: pd.DataFrame, current: pd.DataFrame) -> list:
     changes = []
     for type_column, date_column, label in [

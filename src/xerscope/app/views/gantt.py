@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import query
+from xerscope.analysis.activity_trail import linked_chain
 from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.task_filters import branch_tasks, filtered_tasks
 from xerscope.analysis.wbs import ROOT, path_to, rollup, subtree_ids
@@ -33,7 +34,14 @@ from xerscope.app.state import (
     require_store,
     snapshot_picker,
 )
-from xerscope.app.task_panel import show_card, show_history, task_from_row_id
+from xerscope.app.task_panel import (
+    chain_request,
+    recalculated_links,
+    show_card,
+    show_history,
+    show_trail,
+    task_from_row_id,
+)
 from xerscope.viz import categorise, gantt_data, gantt_rows
 from xerscope.viz.gantt import CATEGORY_ORDER, open_row_ids
 from xerscope.xer.model import STATUS
@@ -49,6 +57,8 @@ PICK_KEY = "gantt_task_pick"  # that list
 ASK_KEY = "gantt_ask"  # a sentence turned into filters (analysis/query.py), added to the widgets above
 DROPPED_KEY = "gantt_ask_dropped"  # (sentence, [labels taken off with their × button])
 CHOSEN_KEY = "gantt_ask_chosen"  # {"text": sentence, "chosen": {word: value}}: answers to Filter.clarify
+TRAIL_KEY = "gantt_trail"  # the Activity IDs opened in the task panel, in order: the breadcrumb
+TRAIL_MAX = 12  # tasks kept in the breadcrumb, the oldest dropped first
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
 GANTT_HEIGHT = 680  # px at most (viz.gantt.fitted_height: less for a short tree); the chart scrolls inside
 
@@ -445,23 +455,85 @@ def show_task_picker(picked: str | None) -> None:
         help="The task whose card (P6 properties, assignments, logic) and history are shown under the chart. "
         "Click a bar or a row in the chart, or pick a Task ID here.",
     )
-    if st.session_state.get(TASK_KEY) and not picked:
-        st.caption(f"Task {ui.md_text(st.session_state[TASK_KEY])} is not drawn with the filters above.")
+
+
+def shown_task(picked: str | None) -> str | None:
+    """The task whose panel is drawn: the one picked in the chart, else the one opened from the panel
+    (a row of Logic or of the breadcrumb) when this update has it, though the filters hide it."""
+    if picked:
+        return picked
+    held = st.session_state.get(TASK_KEY)
+    return held if held in set(snapshot.activities["task_code"]) else None
+
+
+def trail_with(task_code: str) -> list[str]:
+    """The breadcrumb once ``task_code`` is opened: back to it when it is already there, else after the
+    others; the TRAIL_MAX latest kept."""
+    trail = list(st.session_state.get(TRAIL_KEY, []))
+    trail = trail[: trail.index(task_code) + 1] if task_code in trail else [*trail, task_code]
+    st.session_state[TRAIL_KEY] = trail[-TRAIL_MAX:]
+    return st.session_state[TRAIL_KEY]
+
+
+def open_from_panel(task_code: str) -> None:
+    """A row of Logic or of the breadcrumb opens its task in the panel, whatever the filters draw."""
+    st.session_state[TASK_KEY] = task_code
+    st.rerun()  # scope "fragment" is refused when the whole page runs, as on the first run
+
+
+def show_breadcrumb(task_code: str) -> None:
+    """The tasks opened in the panel, as P6 stored their floats and constraints in each update."""
+    trail = trail_with(task_code)
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.markdown(" › ".join(ui.md_text(code) for code in trail))
+        back = st.button(
+            "Back",
+            icon=":material/arrow_back:",
+            key="gantt_trail_back",
+            type="tertiary",
+            disabled=len(trail) < 2,
+            help="Opens the task before this one in the breadcrumb.",
+        )
+    if back:
+        st.session_state[TRAIL_KEY] = trail[:-1]
+        open_from_panel(trail[-2])
+    show_trail(store, trail, open_task=open_from_panel)
+
+
+def show_chain(task_code: str) -> None:
+    """The chain controls; asked, the Gantt draws the chain alone (the focus a Schedule health check sets)."""
+    asked = chain_request(task_code)
+    if asked is None:
+        return
+    direction, depth, driving_only = asked
+    links = recalculated_links(snapshot)
+    if links is None:  # no recalculation: every link is followed, none is known to drive
+        links = snapshot.relationships.assign(driving=False)
+    codes = linked_chain(links, task_code, direction, depth, driving_only)
+    which = "driving links" if driving_only else "links"
+    st.session_state[FOCUS_KEY] = {"codes": codes, "label": f"{task_code} · {direction}, {depth} {which} deep"}
+    st.rerun(scope="app")
 
 
 @st.fragment
 def chart_and_task() -> None:
-    """The chart, the Task list and the picked activity's card, on the rows the widgets above kept.
-    Picking an activity (a click in the chart, the list) runs this part alone: the page above and
-    the sidebar are not drawn again."""
+    """The chart, the Task list and the panel of the task picked, on the rows the widgets above kept.
+    Picking an activity (a click in the chart, the list, a row of the panel) runs this part alone: the
+    page above and the sidebar are not drawn again."""
     picked = picked_task()
     show_chart(picked)
     show_task_picker(picked)
-    if picked:
+    shown = shown_task(picked)
+    if shown:
         with st.container(border=True):
-            show_card(snapshot, picked)
+            if shown != picked:
+                st.caption(f"Task {ui.md_text(shown)} is not drawn in the chart with the filters above.")
+            ui.section("Tasks opened, by update")
+            show_breadcrumb(shown)
+            show_card(snapshot, shown, open_task=open_from_panel)
+            show_chain(shown)
             ui.section("History across updates")
-            show_history(store, picked)
+            show_history(store, shown)
 
 
 chart_and_task()

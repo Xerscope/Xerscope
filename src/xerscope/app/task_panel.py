@@ -8,14 +8,28 @@ back from the browser but that ID.
 from __future__ import annotations
 
 import html
+from collections.abc import Callable
 
 import pandas as pd
 import streamlit as st
 
+from xerscope.analysis.activity_trail import (
+    BOTH,
+    DOWNSTREAM,
+    PREDECESSOR,
+    SUCCESSOR,
+    TASK,
+    UPSTREAM,
+    constraint_history,
+    driving_flags,
+    logic_by_update,
+    trail_by_update,
+)
+from xerscope.analysis.cpm import ScheduleError, schedule
 from xerscope.analysis.progress import activity_finish_shift
 from xerscope.app import ui
 from xerscope.config import DATETIME_FMT
-from xerscope.viz.charts import build_activity_dates, build_activity_float
+from xerscope.viz.charts import build_activity_dates, build_activity_float, link_text
 from xerscope.xer.model import CONSTRAINT, PCT_COMPLETE_TYPE, RSRC_TYPE, TASK_TYPE
 
 # The panel's yes / no reads model.HARD_CONSTRAINTS, the DCMA-05 set (Start on, Start on or before, Finish
@@ -24,6 +38,12 @@ HARD_CONSTRAINT_LABEL = "Hard constraint (DCMA-05 set)"
 
 ROW_PREFIX = "a:"  # Gantt row id of an activity (viz/gantt.py); "w:" is a WBS row
 MAX_ID = 200  # characters: longer than any Activity ID P6 stores, shorter than a forged payload
+
+ROLE_ORDER = {TASK: 0, PREDECESSOR: 1, SUCCESSOR: 2}  # rows of Logic by update: the task, then its neighbours
+ROLE_LABEL = {PREDECESSOR: "predecessor", SUCCESSOR: "successor"}
+CHAIN_DIRECTIONS = {UPSTREAM: "Predecessors", DOWNSTREAM: "Successors", BOTH: "Both"}
+CHAIN_DEPTH = 3  # links followed by default: a reader's usual look around a task, a few dozen tasks at most
+CHAIN_MAX_DEPTH = 10
 
 HISTORY_COLUMNS = [
     "data_date",
@@ -169,21 +189,39 @@ def resources(snapshot, task_code: str) -> pd.DataFrame:
     )
 
 
+def recalculated_links(snapshot) -> pd.DataFrame | None:
+    """Every relationship with its driving flag as the recalculation gives it (``cpm.Schedule.links``);
+    None when the update cannot be scheduled. P6 does not export its own (TASKPRED has no such field)."""
+    try:
+        return schedule(snapshot).links
+    except ScheduleError:
+        return None
+
+
 def logic(snapshot, task_code: str) -> pd.DataFrame:
-    """Predecessors then successors of the activity: the other Activity ID, link type, lag."""
+    """Predecessors then successors of the activity: the other Activity ID, link type, lag, whether the
+    link drives, and the other activity's longest path flag, total float and dates as P6 stored them."""
     links = snapshot.relationships
-    names = dict(zip(snapshot.activities["task_code"], snapshot.activities["task_name"], strict=False))
+    tasks = snapshot.by_code
+    driving = driving_flags(snapshot)
     frames = []
     for side, mine, other in (("Predecessor", "succ_code", "pred_code"), ("Successor", "pred_code", "succ_code")):
         rows = links[links[mine] == task_code]
+        keys = zip(rows["pred_code"], rows["succ_code"], rows["type"], strict=True)
+        others = rows[other]
         frames.append(
             pd.DataFrame(
                 {
                     "relationship": side,
-                    "task_code": rows[other],
-                    "task_name": rows[other].map(names),
+                    "task_code": others,
+                    "task_name": others.map(tasks["task_name"]),
                     "link type": rows["type"],
                     "lag_d": rows["lag_d"],
+                    "driving_link": [driving.get(key) for key in keys],
+                    "on_longest_path": others.map(tasks["on_longest_path"]),
+                    "total_float_d": others.map(tasks["total_float_d"]),
+                    "start": others.map(tasks["start"]),
+                    "finish": others.map(tasks["finish"]),
                     "external": rows["is_external"],
                 }
             )
@@ -191,7 +229,8 @@ def logic(snapshot, task_code: str) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-def show_card(snapshot, task_code: str) -> None:
+def show_card(snapshot, task_code: str, open_task: Callable[[str], None] | None = None) -> None:
+    """The activity's card, its resources and its logic; ``open_task`` makes a Logic row open its task."""
     rows = task_rows(snapshot, task_code)
     if len(rows) != 1:
         st.warning(
@@ -215,7 +254,100 @@ def show_card(snapshot, task_code: str) -> None:
         if links.empty:
             st.caption("No relationship.")
         else:
-            ui.table(links, key="task_logic", reading="task_logic")
+            ui.table(links, key=f"task_logic:{task_code}", reading="task_logic", open_task=open_task)
+
+
+def chain_request(task_code: str) -> tuple[str, int, bool] | None:
+    """The chain of linked tasks the viewer asks to see in the Gantt: (direction, depth, driving only),
+    None until the button is pressed."""
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+        direction = st.segmented_control(
+            "Chain",
+            list(CHAIN_DIRECTIONS),
+            default=BOTH,
+            format_func=CHAIN_DIRECTIONS.get,
+            key="task_chain_direction",
+            help="Which side of the task to follow: its predecessors, its successors, or each side.",
+        )
+        depth = st.number_input(
+            "Links deep",
+            min_value=1,
+            max_value=CHAIN_MAX_DEPTH,
+            value=CHAIN_DEPTH,
+            key="task_chain_depth",
+            help="How many relationships to follow from the task.",
+        )
+        driving_only = st.toggle(
+            "Driving links only",
+            key="task_chain_driving",
+            help="Follow only the links that set their successor's date (P6's Driving checkbox, recalculated "
+            "by the CPM because the XER does not export it).",
+        )
+        asked = st.button(
+            "Show the chain in the Gantt",
+            icon=":material/account_tree:",
+            key="task_chain_show",
+            help=f"Draws only {ui.md_text(task_code)} and the tasks linked to it; Show all draws everything again.",
+        )
+    return (direction or BOTH, int(depth), driving_only) if asked else None
+
+
+def show_trail(store, trail: list[str], open_task: Callable[[str], None]) -> None:
+    """The tasks visited, one row each, a column per update: total float, free float and constraints."""
+    by_update = trail_by_update(store, trail)
+    if by_update.empty:
+        return
+    # one column per status date (a store holds one update per data date): short headers, in date order
+    cells = by_update.assign(
+        cell=[_trail_cell(row) for row in by_update.itertuples()],
+        status_date=by_update["data_date"].map(ui.fmt_date),
+    )
+    matrix = cells.pivot(index="task_code", columns="status_date", values="cell")
+    order = sorted(set(cells["status_date"]), key=dict(zip(cells["status_date"], cells["data_date"], strict=True)).get)
+    matrix = matrix.reindex(index=[code for code in trail if code in matrix.index], columns=order)
+    ui.table(matrix.reset_index(), key="task_trail", reading="task_trail", open_task=open_task)
+
+
+def pick_neighbours(logic: pd.DataFrame, task_code: str) -> list[str]:
+    """The predecessors and successors, of any update, the viewer picks to draw beside the task's float."""
+    neighbours = logic[logic["role"] != TASK].drop_duplicates("task_code")
+    labels = dict(zip(neighbours["task_code"], neighbours["role"].map(ROLE_LABEL), strict=True))
+    return st.multiselect(
+        "Show on the chart",
+        list(labels),
+        format_func=lambda code: f"{code} · {labels[code]}",
+        key=f"task_float_shown:{task_code}",
+        placeholder="Predecessors and successors to draw",
+        help="Hover a point of the task for that update's predecessors and successors; pick one here to draw "
+        "its total float too (dotted: predecessor, dashed: successor; faded where the link does not drive).",
+    )
+
+
+def show_logic_by_update(logic: pd.DataFrame) -> None:
+    """The task and its direct neighbours, a column per status date: the link as that update holds it
+    (type, driving), P6's total and free float, the constraints. A blank cell: not linked that update."""
+    cells = logic.assign(
+        cell=[_logic_cell(row) for row in logic.itertuples()],
+        status_date=logic["data_date"].map(ui.fmt_date),
+    )
+    matrix = cells.pivot_table(index=["role", "task_code"], columns="status_date", values="cell", aggfunc="first")
+    order = sorted(set(cells["status_date"]), key=dict(zip(cells["status_date"], cells["data_date"], strict=True)).get)
+    rows = logic[["role", "task_code"]].drop_duplicates()
+    rows = rows.sort_values("role", key=lambda roles: roles.map(ROLE_ORDER), kind="stable")
+    matrix = matrix.reindex(index=pd.MultiIndex.from_frame(rows), columns=order)
+    ui.table(matrix.reset_index(), key="task_logic_by_update", reading="task_logic_by_update")
+
+
+def _logic_cell(row) -> str:
+    link = link_text(row.link_type, row.driving_link)
+    return f"{link} · {_trail_cell(row)}" if link else _trail_cell(row)
+
+
+def _trail_cell(row) -> str:
+    total = ui.fmt_number(row.total_float_d, "{:.1f}")
+    free = ui.fmt_number(row.free_float_d, "{:.1f}")
+    constraints = " / ".join(text for text in (row.primary, row.secondary) if isinstance(text, str)) or "–"
+    return f"TF {total} · FF {free} · {constraints}"
 
 
 # --- history ----------------------------------------------------------------------------
@@ -244,12 +376,23 @@ def show_history(store, task_code: str) -> None:
             ("% complete", ui.fmt_number(last["pct_complete"], "{:.0f} %")),
         ]
     )
+    logic = logic_by_update(store, task_code)
     dates_column, float_column = st.columns(2, gap="large")
     with dates_column:
         ui.section("Forecast start and finish")
         ui.chart(build_activity_dates(history))
     with float_column:
         ui.section("Total float (working days)")
-        ui.chart(build_activity_float(history))
+        shown = pick_neighbours(logic, task_code)
+        ui.chart(build_activity_float(logic, shown))
+    ui.section("Logic by update")
+    show_logic_by_update(logic)
     ui.section("By update")
     ui.table(history, columns=HISTORY_COLUMNS, key="task_history", reading="task_history")
+    ui.section("Constraint changes")
+    ui.table(
+        constraint_history(store, task_code),
+        key="task_constraints",
+        reading="task_constraints",
+        empty="No constraint added, removed or changed on this task from one update to the next.",
+    )
