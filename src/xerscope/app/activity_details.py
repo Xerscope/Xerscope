@@ -1,7 +1,8 @@
-"""One task in one update: its card, resources and logic, as P6's Activity Details shows them.
+"""One task in one update: its card, resources and relationships, as P6's Activity Details shows them.
 
-Shared by the Gantt's task panel. Every value is read from the snapshot; card text is escaped. The driving
-flag of a relationship is recalculated by the CPM: P6 does not export it (TASKPRED has no such field).
+Shared by the Gantt's task panel (``show_card``) and the Tasks page (``show_activity_details``, P6's
+tabs). Every value is read from the snapshot; card text is escaped. The driving flag of a relationship is
+recalculated by the CPM: P6 does not export it (TASKPRED has no such field).
 """
 
 from __future__ import annotations
@@ -21,6 +22,9 @@ from xerscope.xer.model import PCT_COMPLETE_TYPE, RSRC_TYPE, TASK_TYPE
 # The panel's yes / no reads model.HARD_CONSTRAINTS, the DCMA-05 set (Start on, Start on or before, Finish
 # on, Finish on or before, Mandatory start / finish); P6-02 counts a narrower set. The label says which.
 HARD_CONSTRAINT_LABEL = "Hard constraint (DCMA-05 set)"
+
+RELATIONSHIP_SIDES = ("Predecessor", "Successor")  # the values of logic()'s "relationship" column
+RELATIONSHIP_TITLES = ("Predecessors", "Successors")
 
 
 # --- identity card ----------------------------------------------------------------------
@@ -160,8 +164,8 @@ def recalculated_links(snapshot) -> pd.DataFrame | None:
 def logic(snapshot, task_code: str) -> pd.DataFrame:
     """Return the activity's predecessors, then its successors.
 
-    The other Activity ID, link type, lag, whether the link drives, and the other activity's longest path
-    flag, total float and dates as P6 stored them.
+    The other Activity ID, link type, lag, whether the link drives, and the other activity's status,
+    longest path flag, total float and dates as P6 stored them.
     """
     links = snapshot.relationships
     tasks = snapshot.by_code
@@ -180,6 +184,7 @@ def logic(snapshot, task_code: str) -> pd.DataFrame:
                     "link type": rows["type"],
                     "lag_d": rows["lag_d"],
                     "driving_link": [driving.get(key) for key in keys],
+                    "status": others.map(tasks["status"]),
                     "on_longest_path": others.map(tasks["on_longest_path"]),
                     "total_float_d": others.map(tasks["total_float_d"]),
                     "start": others.map(tasks["start"]),
@@ -192,28 +197,85 @@ def logic(snapshot, task_code: str) -> pd.DataFrame:
 
 
 def show_card(snapshot, task_code: str, open_task: Callable[[str], None] | None = None) -> None:
-    """Show the activity's card, its resources and its logic; ``open_task`` makes a Logic row open its task."""
+    """Show the activity's card, its resources and its relationships.
+
+    ``open_task`` makes a relationship row open its task.
+    """
     rows = task_rows(snapshot, task_code)
     if len(rows) != 1:
-        st.warning(
-            f"Task ID {ui.md_text(task_code)} is on {len(rows)} rows of this update: no card is drawn, "
-            "a Task ID names one task of a project.",
-            icon=":material/warning:",
-        )
+        _warn_repeated(task_code, len(rows))
         return
     st.html(card_html(card_sections(snapshot, rows.iloc[0])))
-    resource_column, logic_column = st.columns(2, gap="large")
-    with resource_column:
-        ui.section("Resources")
-        assigned = resources(snapshot, task_code)
-        if assigned.empty:
-            st.caption("No resource assignment.")
-        else:
-            ui.table(assigned, key="task_resources", reading="task_resources")
-    with logic_column:
-        ui.section("Logic")
-        links = logic(snapshot, task_code)
-        if links.empty:
-            st.caption("No relationship.")
-        else:
-            ui.table(links, key=f"task_logic:{task_code}", reading="task_logic", open_task=open_task)
+    ui.section("Resources")
+    show_resources(snapshot, task_code)
+    show_relationships(snapshot, task_code, open_task=open_task)
+
+
+def _warn_repeated(task_code: str, count: int) -> None:
+    st.warning(
+        f"Task ID {ui.md_text(task_code)} is on {count} rows of this update: no card is drawn, "
+        "a Task ID names one task of a project.",
+        icon=":material/warning:",
+    )
+
+
+def show_resources(snapshot, task_code: str) -> None:
+    """Show the activity's resource assignments, or a line saying it has none."""
+    assigned = resources(snapshot, task_code)
+    if assigned.empty:
+        st.caption("No resource assignment.")
+    else:
+        ui.table(assigned, key=f"task_resources:{task_code}", reading="task_resources")
+
+
+def show_relationships(
+    snapshot,
+    task_code: str,
+    open_task: Callable[[str], None] | None = None,
+    pick_task: Callable[[str], None] | None = None,
+) -> None:
+    """P6's Relationships tab: the activity's predecessors on the left, its successors on the right.
+
+    A row opens its activity: with a button (``open_task``, the Gantt's panel) or at once (``pick_task``).
+    """
+    links = logic(snapshot, task_code)
+    for column, side, title in zip(st.columns(2, gap="large"), RELATIONSHIP_SIDES, RELATIONSHIP_TITLES, strict=True):
+        with column:
+            ui.section(title)
+            rows = links[links["relationship"] == side].drop(columns="relationship")
+            ui.table(
+                rows,
+                key=f"task_logic:{side}:{task_code}",
+                reading="task_logic",
+                open_task=open_task,
+                pick_task=pick_task,
+                empty=f"No {title.lower()} in this update.",
+            )
+
+
+ACTIVITY_TABS = ["General", "Status", "Resources", "Relationships", "Constraints"]
+CARD_SECTIONS_BY_TAB = {"General": ["Identity"], "Status": ["Status", "Dates"], "Constraints": ["Constraints"]}
+
+
+def show_activity_details(snapshot, task_code: str, pick_task: Callable[[str], None]) -> None:
+    """Show the activity's details as P6's Activity Details tabs.
+
+    The card's sections, its resources, its relationships (a row opens its activity through ``pick_task``).
+    """
+    rows = task_rows(snapshot, task_code)
+    if len(rows) != 1:
+        _warn_repeated(task_code, len(rows))
+        return
+    sections = dict(card_sections(snapshot, rows.iloc[0]))
+    for tab, name in zip(st.tabs(ACTIVITY_TABS), ACTIVITY_TABS, strict=True):
+        with tab:
+            _show_activity_tab(snapshot, task_code, name, sections, pick_task)
+
+
+def _show_activity_tab(snapshot, task_code: str, name: str, sections: dict, pick_task: Callable[[str], None]) -> None:
+    if name == "Resources":
+        show_resources(snapshot, task_code)
+    elif name == "Relationships":
+        show_relationships(snapshot, task_code, pick_task=pick_task)
+    else:
+        st.html(card_html([(title, sections[title]) for title in CARD_SECTIONS_BY_TAB[name]]))

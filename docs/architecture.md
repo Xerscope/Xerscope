@@ -512,11 +512,18 @@ or from the `verify/` modules themselves (`shapes`, `p6_corpus`, `mpxj_reader`).
   `app/diagnostic.py` builds the tables from the existing results; with anonymous exports on,
   `Anonymizer.zip_frames` hands them out with the codes of the anonymised extract (dates
   unchanged, cost figures 0 as in the extract).
-- **Pages:** one file per page in `views/` (`overview`, `gantt`, `health`, `audit`, `changelog`,
+- **Pages:** one file per page in `views/` (`overview`, `gantt`, `tasks`, `health`, `audit`, `changelog`,
   `forensics` for Delay analysis, `earned_value`, `milestones`, `ppc`, `export`, `debug`). Pages compose analyses and figures; the
   Plotly figures are built in `viz/`.
-- **`task_panel.py`:** one activity, named by its Activity ID: its card in the update shown
-  (P6 properties, resource assignments, logic with the driving flag of each link) and its
+- **`activity_details.py`:** one task in one update, as P6's Activity Details shows it: its card
+  (P6 properties), resource assignments, and relationships (predecessors on the left, successors
+  on the right, the driving flag of each link recalculated by the CPM); as one block under the
+  Gantt (`show_card`) or as P6's tabs General, Status, Resources, Relationships, Constraints on
+  the Tasks page (`show_activity_details`).
+- **`views/tasks.py`:** P6's Activities view: the WBS and its tasks in P6 order (the Gantt's tree,
+  `viz.gantt_rows`), a task picked in it detailed below with `activity_details`, and buttons to
+  the task before and after it.
+- **`task_panel.py`:** the Gantt's panel around one task (its card from `activity_details`) and its
   history across updates. Opened under the Gantt for the activity picked there
   (`task_from_row_id` accepts an `a:` row id only, and the page only an activity the chart
   draws), or from a row of the panel. Above the card, the breadcrumb: the activities opened,

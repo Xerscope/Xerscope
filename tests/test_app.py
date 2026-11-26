@@ -2757,6 +2757,14 @@ def _panel_table(app, columns: set[str]) -> pd.DataFrame:
     return next(d.value for d in app.dataframe if columns <= set(d.value.columns))
 
 
+def _relationship_tables(app) -> list[pd.DataFrame]:
+    """The predecessors and successors tables of a task's relationships, in the order drawn (left, right)."""
+    columns = {"task_code", "link type", "driving_link", "status", "on_longest_path", "total_float_d"}
+    tables = [d.value for d in app.dataframe if columns <= set(d.value.columns)]
+    assert len(tables) == 2, len(tables)
+    return tables
+
+
 def _trail(app, store) -> pd.DataFrame:
     """The breadcrumb matrix: a column per status date, headed as the panel writes a date."""
     return _panel_table(app, {"task_code", f"{store.first.data_date:%d %b %Y}"})
@@ -2771,8 +2779,10 @@ def test_gantt_panel_drills_through_logic_breadcrumb_constraints_and_chain(app, 
     app.session_state["gantt_task"] = "C3020"
     app.run()
     _ok(app)
-    logic = _panel_table(app, {"relationship", "driving_link", "on_longest_path", "total_float_d"})
-    predecessor = logic.loc[logic["relationship"] == "Predecessor", "task_code"].iloc[0]
+    predecessors, successors = _relationship_tables(app)  # P6's Relationships tab: predecessors left
+    assert predecessors["task_code"].tolist() == ["C3010", "E1020"]
+    assert successors["task_code"].tolist() == ["C3030", "C3040"]
+    predecessor = predecessors["task_code"].iloc[0]
     trail = _trail(app, store)
     # the task opened, then its predecessors and successors (demo: C3010, E1020; C3030, C3040)
     assert list(zip(trail["role"], trail["task_code"], strict=True)) == [
@@ -3254,3 +3264,36 @@ def test_uploaded_standard_is_in_the_picker_on_the_run_that_loads_it(app):
     _ok(app)
     assert any(s.value.startswith("Loaded") for s in app.success)
     assert "My standard" in app.segmented_control(key="health_std").options
+
+
+def test_tasks_lists_the_wbs_and_its_tasks_and_details_the_one_picked(app):
+    """The Tasks page, P6's Activities view, on the demo: the project row first (type WBS), each WBS node before its
+    activities; C3020 picked shows the Activity Details tabs, its predecessors (C3010, E1020) left of its
+    successors (C3030, C3040); a predecessor picked in the Relationships tab becomes the activity shown."""
+    app.switch_page("views/tasks.py").run()
+    _ok(app)
+    table = next(d.value for d in app.dataframe if {"task_code", "original_d", "remaining_d"} <= set(d.value.columns))
+    assert table["type"].iloc[0] == "WBS"
+    civ = table.index[table["task_code"] == "CIV"][0]
+    assert table.loc[civ + 1 :, "task_code"].iloc[0].startswith("C")  # the CIV node, then its activities
+    assert table["task_name"].str.startswith("\u2003").any()  # names indented by WBS level
+    assert any("Select a task" in caption.value for caption in app.caption)
+    app.session_state["tasks_picked"] = "C3020"  # what a click on its row stores
+    app.run()
+    _ok(app)
+    assert [tab.label for tab in app.tabs] == ["General", "Status", "Resources", "Relationships", "Constraints"]
+    predecessors, successors = _relationship_tables(app)
+    assert predecessors["task_code"].tolist() == ["C3010", "E1020"]
+    assert successors["task_code"].tolist() == ["C3030", "C3040"]
+    app.session_state["tasks_picked"] = "C3010"
+    app.run()
+    _ok(app)
+    assert "C3020" in _relationship_tables(app)[1]["task_code"].tolist()  # C3010's successor
+    # Next / Previous step through the table's tasks, WBS rows skipped: C3010 is the first task under CIV
+    tasks = table[table["type"] != "WBS"]["task_code"].tolist()
+    app.button(key="tasks_next").click().run()
+    _ok(app)
+    assert app.session_state["tasks_picked"] == tasks[tasks.index("C3010") + 1]
+    app.button(key="tasks_previous").click().run()
+    _ok(app)
+    assert app.session_state["tasks_picked"] == "C3010"

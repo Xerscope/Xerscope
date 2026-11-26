@@ -81,6 +81,25 @@
   "dataframe: 29 rows | task_code, task_name, wbs_code, status, category, start, finish, total_float_d, remaining_d, pct_complete, labor_budget_hr, constraint",
   "button: Prepare anonymized downloads"
  ],
+ "tasks": [
+  "title: Tasks",
+  "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
+  "caption: The WBS and its tasks as P6's Activities view lists them. Select a task for its details: General, Status, Resources, Relationships (predecessors on the left, successors on the right), Constraints.",
+  "selectbox: Update = 2026-10-19 · PRJ-ALPHA_2026-10-19.xer",
+  "popover: How to read",
+  "popover",
+  "text_input: Task ID = ",
+  "text_input: Task name = ",
+  "text_input: Type = ",
+  "text_input: Original duration (wd) = ",
+  "text_input: Remaining duration (wd) = ",
+  "text_input: % complete = ",
+  "text_input: Start = ",
+  "text_input: Finish = ",
+  "text_input: Total float (wd) = ",
+  "dataframe: 37 rows | task_code, task_name, type, original_d, remaining_d, pct_complete, start, finish, total_float_d",
+  "caption: Select a task in the table for its details."
+ ],
  "health": [
   "title: Schedule health",
   "button: PRJ\\-ALPHA · status date 19 Oct 2026 · BL update 2026\\-08\\-31 (the window's choice) · EV budgeted, planned dates · costs off · 8 files · 1 project",
