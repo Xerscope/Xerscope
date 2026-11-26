@@ -171,9 +171,11 @@ class _Rest:
 
 def _node_phrases(vocab: Vocabulary) -> tuple[dict[str, tuple[list[str], set[str]]], dict[tuple[str, str], str]]:
     """Per node, what a sentence may say for it (code, name, name words of 4+ letters, the
-    node's own words, their synonyms) and what is said as the file spells it; and, for a node
-    word that activities use, the file's word it stands for (the node and a search for it).
-    A partial name word said by a synonym ("électricité"), the full name or the code: the node only."""
+    node's own words, their synonyms) and what is said as the file spells it; and, for a word
+    only the node's activities use ("earthworks"), the file's word it stands for (the node and a
+    search for it). A word of the node's name or code ("civil" of "Civil works"), said as is or by
+    a synonym: the node only, its whole branch. Read with a search for the word too, it kept only
+    the activities that repeat the node's name, often none (a planner's complaint, 2026-11-26)."""
     phrases: dict[str, tuple[list[str], set[str]]] = {}
     stands_for: dict[tuple[str, str], str] = {}
     synonyms, own_synonyms = vocab.synonyms(*WBS_COLUMNS), vocab.synonyms(NAME_COLUMN)
@@ -181,12 +183,10 @@ def _node_phrases(vocab: Vocabulary) -> tuple[dict[str, tuple[list[str], set[str
         code, _, name = label.partition(" · ")
         own = vocab.node_words.get(wbs_id, frozenset())
         words = [w for w in re.split(r"[^a-z0-9]+", fold(name)) if len(w) >= 4 and w not in STOP] + sorted(own)
-        for word in words:
+        for word in words:  # a word of the node's name or code names the node alone: the branch first
             if word in own:
                 for said in with_synonyms([word], own_synonyms):
                     stands_for.setdefault((wbs_id, plain(said)), word)
-            elif vocab.words and word in vocab.words and word not in (plain(name), plain(code)):
-                stands_for.setdefault((wbs_id, word), word)
         candidates = [plain(c) for c in with_synonyms([fold(code), fold(name), *words], synonyms)]
         phrases[wbs_id] = (candidates, {plain(c) for c in (fold(code), fold(name), *words)})
     return phrases, stands_for

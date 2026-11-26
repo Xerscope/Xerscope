@@ -28,10 +28,9 @@ wbs = "ENG"
 status = ["Complete"]
 
 [[case]]
-text = "en retard mechanical"   # "mechanical" names the node and activities: the node, and a search in it
-wbs = "MEC"
-clauses = ["late"]   # late = P6-12 Late Activities (finish after baseline finish), not Critical
-search = "mechanical"
+text = "en retard mechanical"   # "mechanical", a word of the node's name: the node alone, its whole branch
+wbs = "MEC"                     # (rule of 2026-11-26: the node and a search kept only the activities that
+clauses = ["late"]              # repeat the node's name, most often none); late = P6-12, not Critical
 
 [[case]]
 text = "earthworks"    # an own word of Civil works: the node and a search in it

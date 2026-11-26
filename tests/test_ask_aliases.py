@@ -6,7 +6,7 @@ the sentence must keep, and the filter the funnel shows.
 """
 
 import pytest
-from xerkit import active, parse_text, snap, todo, xer_text
+from xerkit import ROOT_WBS, active, parse_text, snap, todo, xer_text
 
 from xerscope.analysis import query
 from xerscope.analysis.task_filters import branch_tasks
@@ -89,3 +89,22 @@ def test_a_phrase_grouped_with_the_ids_code_searches_that_code():
     codes, ignored, line = read(plan, "génie civil en cours", [["GC", "génie civil"]])
     assert codes == ["GC-1020"] and ignored == [] and 'name contains "gc"' in line
     assert read(plan, "génie civil")[1] == ["genie", "civil"]  # without the lexicon: words left out, as before
+
+
+@pytest.mark.oracle("standard")
+def test_a_word_of_a_wbs_name_keeps_the_whole_branch():
+    """WBS first (the planner's rule, 2026-11-26). Node "Civil works" holds C1 "Terrassement", C2
+    "Fondations" and C3 "Civil works complete"; "civil" is in its name and in C3's name. Read as the node
+    and a search for "civil", it kept C3 alone; read as the node, its three activities. With a word
+    of an activity name ("fondations") it keeps C2."""
+    civil = {"wbs_id": "20", "proj_id": "1", "parent_wbs_id": "10", "wbs_short_name": "CIV",
+             "wbs_name": "Civil works", "proj_node_flag": "N"}  # fmt: skip
+    tasks = [
+        todo("C1", task_name="Terrassement", wbs_id="20"),
+        todo("C2", task_name="Fondations", wbs_id="20"),
+        todo("C3", task_name="Civil works complete", wbs_id="20"),
+        todo("E1", task_name="Civil engineering review"),
+    ]
+    plan = snap(tasks, wbs=[*ROOT_WBS, civil])
+    assert read(plan, "civil")[0] == ["C1", "C2", "C3"]
+    assert read(plan, "fondations civil")[0] == ["C2"]

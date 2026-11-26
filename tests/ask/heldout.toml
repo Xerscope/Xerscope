@@ -79,9 +79,9 @@ status = ["In progress"]
 resources = ["VENDOR"]
 
 [[case]]
-text = "electrical"   # rule settled after the first run: a word of a node's name that also names activities
-wbs = "MEC"           # is the node and a search in it (the same rows as the search alone); written blind as
-search = "electrical" # search only
+text = "electrical"   # a word of a node's name ("Mechanical & electrical"): the node alone, its whole
+wbs = "MEC"           # branch (rule of 2026-11-26, the planner's: WBS first; it was the node and a search,
+                      # which kept only the activities repeating the node's name)
 
 [[case]]
 text = "unstarted roads"   # "roads" is an own word of Civil works
