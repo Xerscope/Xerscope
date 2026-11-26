@@ -667,7 +667,7 @@ def _missed_tasks_script():
     from xerscope.app.cache import metric_result
 
     store = st.session_state["store"]
-    st.session_state["identity"] = data_identity(ev_basis=False)  # the score job's identity starts with it
+    st.session_state["identity"] = data_identity()  # the score job's identity starts with it
     st.session_state["denominator"] = metric_result(st.session_state["metric"], store.latest, store).denominator
 
 

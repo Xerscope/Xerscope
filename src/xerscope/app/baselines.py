@@ -338,16 +338,16 @@ def _per_file_baseline(snapshot: Snapshot) -> Baseline | None:
     return _fallback_baseline(snapshot)
 
 
-def _baseline_identity(ev_basis: bool = True) -> tuple:
+def _baseline_identity() -> tuple:
     """Return what the sidebar's baseline is.
 
-    The choice, the EV basis (None when ``ev_basis`` is False) with the GUID link option (always:
+    The choice, the EV basis with the GUID link option (always:
     ``baseline_for`` relinks the baseline whatever the analysis reads), and, for an uploaded file, its
     bytes and the project read from it.
     """
     baseline = st.session_state.get("baseline")
     project = st.session_state.get("bl_file_project")
-    basis = (st.session_state.get("ev_basis") if ev_basis else None, st.session_state.get("guid_link", False))
+    basis = (st.session_state.get("ev_basis"), st.session_state.get("guid_link", False))
     if isinstance(baseline, Baseline):
         return baseline.label, basis, st.session_state.get("baseline_digest"), project
     if baseline == BL_EACH:  # resolved per snapshot: which project each file names
@@ -362,17 +362,17 @@ def _baseline_identity(ev_basis: bool = True) -> tuple:
     return baseline, basis  # None, or BL_PLANNED (resolved per snapshot)
 
 
-def data_identity(baseline: bool = True, ev_basis: bool = True) -> tuple:
+def data_identity(baseline: bool = True) -> tuple:
     """Return what a result computed now was computed from.
 
     The files (``signature``: names and content digests), the project read from each and, unless
-    ``baseline`` is False, the baseline in use with (unless ``ev_basis`` is False) the EV basis. The
+    ``baseline`` is False, the baseline in use with the EV basis. The
     memo's key and the tag of a built download start with it.
     """
     # the project pickers re-read the same files for another project: same signature, other data
     store = st.session_state.get("store")
     projects = tuple((snapshot.source, snapshot.project_id) for snapshot in store) if store is not None else ()
-    identity = _baseline_identity(ev_basis) if baseline else ()
+    identity = _baseline_identity() if baseline else ()
     return st.session_state.get("signature"), projects, identity
 
 

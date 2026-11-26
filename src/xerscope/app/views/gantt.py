@@ -78,7 +78,6 @@ nodes = memo(
     rollup,
     snapshot,
     baseline,
-    ev_basis=False,  # reads bl_finish only
 )
 # a focus asked after the WBS picker was drawn (a double click in the chart) applies on the next run
 if (wanted := st.session_state.pop(NEXT_NODE_KEY, None)) in set(nodes["wbs_id"]):
@@ -124,7 +123,7 @@ asked = st.text_input(
 answer_box = st.container(key="ask_answer")
 taught = st.session_state.get("taught", [])
 # the variants of each source column, generated from every loaded file, in memory (never written)
-generated = memo(("ask_variants",), query.variants, list(store), baseline=False, ev_basis=False)
+generated = memo(("ask_variants",), query.variants, list(store), baseline=False)
 lexicon = memo(  # the labels of every loaded file (memo's key names them all), rebuilt when a word is taught
     ("vocabulary", snapshot.source, tuple(taught)),
     query.vocabulary,
@@ -134,7 +133,6 @@ lexicon = memo(  # the labels of every loaded file (memo's key names them all), 
     [other for other in store if other is not snapshot],
     query.lexicons(query.refuse(generated, refusals()), file_variants()),
     baseline=False,
-    ev_basis=False,
 )
 ask = None
 chosen_held = st.session_state.get(CHOSEN_KEY) or {}
@@ -148,7 +146,6 @@ if asked:
             lexicon,
             chosen,
             baseline=False,
-            ev_basis=False,
         )
     except RecursionError:  # parentheses nested past the recursive parser: said, never echoed
         st.warning("This sentence nests too many parentheses to be read.")
@@ -191,7 +188,6 @@ if ask is not None:
             word,
             lexicon,
             baseline=False,
-            ev_basis=False,
         )
         if offers:
             with st.container(horizontal=True, gap="small", vertical_alignment="center", key=f"teach_{word}"):

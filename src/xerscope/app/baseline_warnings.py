@@ -341,7 +341,7 @@ def _renumbered_notice(sidebar, store: SnapshotStore) -> None:
     blank (``xer/pmxml.py``, the XML and the XER encode it differently), so no task can be told renumbered
     against it, and nothing is said rather than a renumbering invented.
     """
-    found = memo(("renumbered",), _renumbered_counts, store, ev_basis=False)
+    found = memo(("renumbered",), _renumbered_counts, store)
     if not found:
         return
     tasks = counted(sum(found.values()), "task")

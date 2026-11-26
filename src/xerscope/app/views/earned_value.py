@@ -645,7 +645,6 @@ bei = memo(
     baseline_for_checks,
     partial(metric_result, store=store, keep=False),
     code_filter,
-    ev_basis=False,
 )
 series = series.merge(bei, on="data_date", how="left")
 series = series.merge(spi_by_window(gains), on="data_date", how="left")
