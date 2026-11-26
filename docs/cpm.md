@@ -331,6 +331,21 @@ of its links into a path activity drives that activity's date (the P6 20.12 expo
 its ten LOEs, each spanning two activities of the path); the trace stops at the LOE,
 whose own dates come from its links.
 
+**Driving relationships** (`Schedule.links`, P6's Driving checkbox of the Relationships
+tab; Oracle web services, Relationship.Driving: "determines the early dates for the
+successor activity"). P6 does not export the flag (XER data map, TASKPRED). A link from an
+unfinished predecessor into unfinished work drives when the date it allows reaches the
+successor's remaining start (FS, SS) or early finish (FF, SF), in working time of the
+successor's calendar; past a mandatory start or finish it does not (the constraint sets the
+date; corpus H10-04 A1310). Checked against P6's own relationship date, TASKPRED.aref, which
+P6 writes on every link of the Hotel, Terminal, PV and xereditor exports (the corpus leaves
+it blank): the link drives exactly when aref reaches the successor's remaining start, 7,742
+links of 7,742, As Late As Possible successors included (tests/test_driving.py). Links of a
+level-of-effort activity place the LOE and are not listed. Only the plain recalculation
+(the one cached on the snapshot) lists them; a delayed run (critical path test, what-if) does not. Open: a successor whose date
+no link reaches (MPXJ marks its latest predecessor driving; UNRESOLVED
+`driving_held_by_data_date`).
+
 **Assignments.** Task dependent: remaining start = the activity's remaining start +
 assignment lag, finish = start + remaining units / units per hour (else the activity's
 remaining duration), on the activity calendar; late dates likewise from the late start.
