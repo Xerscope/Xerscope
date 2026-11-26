@@ -9,6 +9,7 @@ from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.task_filters import branch_tasks, filtered_tasks
 from xerscope.analysis.wbs import ROOT, path_to, rollup, subtree_ids
 from xerscope.app import ui
+from xerscope.app.activity_details import recalculated_links, show_card
 from xerscope.app.baselines import (
     baseline_for_checks,
 )
@@ -34,14 +35,7 @@ from xerscope.app.state import (
     require_store,
     snapshot_picker,
 )
-from xerscope.app.task_panel import (
-    chain_request,
-    recalculated_links,
-    show_card,
-    show_history,
-    show_trail,
-    task_from_row_id,
-)
+from xerscope.app.task_panel import chain_request, show_history, show_trail, task_from_row_id
 from xerscope.viz import categorise, gantt_data, gantt_rows
 from xerscope.viz.gantt import CATEGORY_ORDER, open_row_ids
 from xerscope.xer.model import STATUS

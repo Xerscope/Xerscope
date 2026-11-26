@@ -32,7 +32,7 @@ import pytest
 from xerkit import _table, snap, todo, xer_text
 
 from xerscope.analysis import query
-from xerscope.app.task_panel import card_sections
+from xerscope.app.activity_details import card_sections
 from xerscope.xer import Snapshot, build_snapshot, parse_text
 
 GLOBAL_P1, PROJECT_P1, GLOBAL_P2 = "7001", "7002", "7003"
