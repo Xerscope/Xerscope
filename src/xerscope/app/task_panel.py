@@ -21,6 +21,7 @@ from xerscope.analysis.activity_trail import (
     TASK,
     UPSTREAM,
     constraint_history,
+    constraint_text,
     driving_flags,
     trail_by_update,
 )
@@ -29,7 +30,7 @@ from xerscope.analysis.progress import activity_finish_shift
 from xerscope.app import ui
 from xerscope.config import DATETIME_FMT
 from xerscope.viz.charts import build_activity_history, link_text
-from xerscope.xer.model import CONSTRAINT, PCT_COMPLETE_TYPE, RSRC_TYPE, TASK_TYPE
+from xerscope.xer.model import PCT_COMPLETE_TYPE, RSRC_TYPE, TASK_TYPE
 
 # The panel's yes / no reads model.HARD_CONSTRAINTS, the DCMA-05 set (Start on, Start on or before, Finish
 # on, Finish on or before, Mandatory start / finish); P6-02 counts a narrower set. The label says which.
@@ -82,13 +83,6 @@ def _yes(value) -> str:
     if pd.isna(value):
         return ui.MISSING
     return "Yes" if bool(value) else "No"
-
-
-def _constraint(kind, date) -> str:
-    if pd.isna(kind) or kind == "":
-        return "–"
-    label = CONSTRAINT.get(kind, kind)
-    return label if pd.isna(date) else f"{label} {_when(date)}"
 
 
 def task_rows(snapshot, task_code: str) -> pd.DataFrame:
@@ -156,8 +150,8 @@ def card_sections(snapshot, task: pd.Series) -> list[tuple[str, list[tuple[str, 
         (
             "Constraints",
             [
-                ("Primary constraint", _constraint(task["cstr_type"], task["cstr_date"])),
-                ("Secondary constraint", _constraint(task["cstr_type2"], task["cstr_date2"])),
+                ("Primary constraint", constraint_text(task["cstr_type"], task["cstr_date"]) or "–"),
+                ("Secondary constraint", constraint_text(task["cstr_type2"], task["cstr_date2"]) or "–"),
                 (HARD_CONSTRAINT_LABEL, _yes(task["has_hard_constraint"])),
             ],
         ),

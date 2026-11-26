@@ -97,7 +97,7 @@ def _unseen(codes: list[str], seen: set[str]) -> list[str]:
     return found
 
 
-def _constraint_text(kind, date) -> str | None:
+def constraint_text(kind, date) -> str | None:
     """P6's name of a constraint and its date, None without one."""
     if pd.isna(kind) or kind == "":
         return None
@@ -125,8 +125,8 @@ def _trail_row(snapshot, code: str) -> dict:
         "update": snapshot.label,
         "total_float_d": task["total_float_d"],
         "free_float_d": task["free_float_d"],
-        "primary": _constraint_text(task["cstr_type"], task["cstr_date"]),
-        "secondary": _constraint_text(task["cstr_type2"], task["cstr_date2"]),
+        "primary": constraint_text(task["cstr_type"], task["cstr_date"]),
+        "secondary": constraint_text(task["cstr_type2"], task["cstr_date2"]),
     }
 
 
@@ -241,6 +241,6 @@ def _logic_row(snapshot, code: str, role: str, level: int, link_type: str | None
         "driving_link": driving,
         "total_float_d": task.get("total_float_d"),
         "free_float_d": task.get("free_float_d"),
-        "primary": _constraint_text(task.get("cstr_type"), task.get("cstr_date")),
-        "secondary": _constraint_text(task.get("cstr_type2"), task.get("cstr_date2")),
+        "primary": constraint_text(task.get("cstr_type"), task.get("cstr_date")),
+        "secondary": constraint_text(task.get("cstr_type2"), task.get("cstr_date2")),
     }
