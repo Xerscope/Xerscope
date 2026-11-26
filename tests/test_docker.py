@@ -455,21 +455,43 @@ SCAN_EXCEPTION_FILES = [
 ]
 
 
+# The Tailscale exceptions, each agreed with its date: CVE, latest expiry, the exact purls, and the CI step
+# that proves the reason before each scan.
+TAILSCALE_EXCEPTIONS = {
+    "CVE-2026-78661": (
+        "2026-12-09",
+        "[pkg:golang/golang.org/x/net@v0.60.0]",
+        "No golang.org/x/net/html code in the Tailscale binaries",
+    ),
+    "CVE-2026-124709": (  # agreed 2026-11-26
+        "2026-12-17",
+        "[pkg:apk/alpine/libssl3@3.5.9-r0, pkg:apk/alpine/libcrypto3@3.5.9-r0]",
+        "The Tailscale binaries load no shared library",
+    ),
+}
+
+
 def test_the_tailscale_scan_exception_is_dated_and_read_by_its_scan_only():
-    """Two Trivy exception files in the repository, each read by one scan. This one: CVE-2026-78661
-    in the Tailscale image, for golang.org/x/net v0.60.0 only (purls), with its reason and an expiry
-    no later than 2026-12-09. Only the Tailscale scan of the deploy job reads it."""
+    """Two Trivy exception files in the repository, each read by one scan. This one holds the entries
+    of TAILSCALE_EXCEPTIONS and no other, each for its exact package versions (purls), with its reason,
+    an expiry no later than its agreed date, and the CI step proving the reason. Only the Tailscale scan
+    of the deploy job reads it."""
     import datetime
 
     files = sorted({*ROOT.glob("**/*.trivyignore*"), *ROOT.glob("**/.trivyignore*")})
     assert files == SCAN_EXCEPTION_FILES, files
-    entries = [x for x in files[1].read_text().splitlines() if x.strip() and not x.lstrip().startswith("#")]
-    assert entries[:2] == ["vulnerabilities:", "  - id: CVE-2026-78661"] and len(entries) == 5, entries
-    fields = dict(x.strip().split(": ", 1) for x in entries[2:])
-    assert set(fields) == {"statement", "expired_at", "purls"}, fields
-    assert len(fields["statement"]) > 20
-    assert datetime.date.fromisoformat(fields["expired_at"]) <= datetime.date(2026, 12, 9)
-    assert fields["purls"].split("#")[0].strip() == "[pkg:golang/golang.org/x/net@v0.60.0]"
+    lines = [x for x in files[1].read_text().splitlines() if x.strip() and not x.lstrip().startswith("#")]
+    assert lines[0] == "vulnerabilities:" and len(lines) == 1 + 4 * len(TAILSCALE_EXCEPTIONS), lines
+    entries = [lines[first : first + 4] for first in range(1, len(lines), 4)]
+    assert [entry[0] for entry in entries] == [f"  - id: {cve}" for cve in TAILSCALE_EXCEPTIONS]
+    tests_yml = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    for entry, (latest, purls, evidence_step) in zip(entries, TAILSCALE_EXCEPTIONS.values(), strict=True):
+        fields = dict(line.strip().split(": ", 1) for line in entry[1:])
+        assert set(fields) == {"statement", "expired_at", "purls"}, fields
+        assert len(fields["statement"]) > 20
+        assert datetime.date.fromisoformat(fields["expired_at"]) <= datetime.date.fromisoformat(latest)
+        assert fields["purls"].split("#")[0].strip() == purls
+        assert f"- name: {evidence_step}" in tests_yml
     workflows = {p.name: p.read_text() for p in (ROOT / ".github" / "workflows").glob("*.yml")}
     uses = [
         (name, line.strip())
@@ -528,10 +550,17 @@ def test_the_trivy_self_scan_exception_covers_its_git_only_and_git_cannot_run():
     assert "-v /dev/null:/usr/bin/git:ro" in container, container
 
 
-@pytest.mark.parametrize(("listed", "code"), [("CVE-2026-78661 HIGH", 0), ("no finding", 1)])
+@pytest.mark.parametrize(
+    ("listed", "code"),
+    [
+        ("CVE-2026-78661 HIGH\nCVE-2026-124709 HIGH", 0),
+        ("CVE-2026-78661 HIGH", 1),  # one excepted finding gone: its entry must go too
+        ("no finding", 1),
+    ],
+)
 def test_scan_refuses_an_exception_whose_finding_is_gone(tmp_path, listed, code):
     """scan.sh with an exception file exits 1 when the listing of the image no longer holds the
-    excepted finding: the exception goes with the image bump that fixes it. docker is replaced by
+    excepted finding, any of them: the exception goes with the image bump that fixes it. docker is replaced by
     a script that prints the listing; Trivy itself is not run here."""
     import os
     import subprocess

@@ -357,12 +357,25 @@ jobs:
             echo "$bin: no golang.org/x/net/html code"
           done
           docker rm -f "$cid" > /dev/null
+      - name: The Tailscale binaries load no shared library (evidence for the CVE-2026-124709 exception)
+        if: ${{ !cancelled() }}
+        env:
+          IMAGE: ${{ steps.compose.outputs.tailscale }}
+        run: |  # a static binary has no NEEDED entry: it cannot load the image's libssl or libcrypto
+          work=$(mktemp -d); cid=$(docker create "$IMAGE")
+          for bin in containerboot tailscale tailscaled; do
+            docker cp -q "$cid:/usr/local/bin/$bin" "$work/$bin"
+            if ! readelf -h "$work/$bin" > /dev/null; then echo "$bin: not an ELF file"; exit 1; fi
+            if readelf -d "$work/$bin" | grep -q NEEDED; then echo "$bin: loads $(readelf -d "$work/$bin" | grep NEEDED)"; exit 1; fi
+            echo "$bin: static, loads no shared library"
+          done
+          docker rm -f "$cid" > /dev/null
       - name: Known vulnerabilities in the Tailscale image, fixed ones only
         if: ${{ !cancelled() }}   # each image scanned even if the other fails
         working-directory: .
         env:
           IMAGE: ${{ steps.compose.outputs.tailscale }}
-        run: .github/trivy/scan.sh "$IMAGE" deploy/tailscale.trivyignore.yaml   # one dated exception, CVE-2026-78661
+        run: .github/trivy/scan.sh "$IMAGE" deploy/tailscale.trivyignore.yaml   # dated exceptions: CVE-2026-78661, CVE-2026-124709
       - name: Container states and logs, when a step failed
         if: failure()
         run: |
