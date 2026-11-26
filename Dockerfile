@@ -24,7 +24,7 @@ ARG PYTHON_VERSION=3.14
 #     build that drops the os-fixes stage once OS_FIXES is empty)
 ARG OS_FIXES="zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1"
 
-FROM ghcr.io/astral-sh/uv:0.13.8-trixie-slim@sha256:2e5596835973a75bed0d37a980625b5089e87ffbd1026f11012ca0fe254ccac5 AS os-fixes
+FROM ghcr.io/astral-sh/uv:0.13.9-trixie-slim@sha256:9b7790faef7a3f2b9ba8f2f7c48b959c1359fe2bd51c44804b6ca61766fbacdf AS os-fixes
 ARG OS_FIXES
 WORKDIR /pkgs
 RUN apt-get update \
@@ -39,7 +39,7 @@ RUN apt-get update \
      done \
   && rm -rf /var/lib/apt/lists/*
 
-FROM ghcr.io/astral-sh/uv:0.13.8-trixie-slim@sha256:2e5596835973a75bed0d37a980625b5089e87ffbd1026f11012ca0fe254ccac5 AS build
+FROM ghcr.io/astral-sh/uv:0.13.9-trixie-slim@sha256:9b7790faef7a3f2b9ba8f2f7c48b959c1359fe2bd51c44804b6ca61766fbacdf AS build
 ARG PYTHON_VERSION
 ENV UV_PYTHON_INSTALL_DIR=/python \
   UV_PYTHON_PREFERENCE=only-managed \
