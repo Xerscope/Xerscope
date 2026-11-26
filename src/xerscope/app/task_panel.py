@@ -264,7 +264,7 @@ def chain_request(task_code: str) -> tuple[str, int, bool] | None:
             "Chain",
             list(CHAIN_DIRECTIONS),
             default=BOTH,
-            format_func=CHAIN_DIRECTIONS.get,
+            format_func=CHAIN_DIRECTIONS.__getitem__,
             key="task_chain_direction",
             help="Which side of the task to follow: its predecessors, its successors, or each side.",
         )
@@ -307,7 +307,8 @@ def show_trail(store, trail: list[str], logic: pd.DataFrame, open_task: Callable
         status_date=rows["data_date"].map(ui.fmt_date),
     )
     matrix = cells.pivot_table(index=["role", "task_code"], columns="status_date", values="cell", aggfunc="first")
-    order = sorted(set(cells["status_date"]), key=dict(zip(cells["status_date"], cells["data_date"], strict=True)).get)
+    date_of = dict(zip(cells["status_date"], cells["data_date"], strict=True))
+    order = sorted(date_of, key=date_of.__getitem__)
     matrix = matrix.reindex(index=pd.MultiIndex.from_tuples(_trail_rows(trail, opened, neighbours)), columns=order)
     shown = matrix.reset_index(names=["role", "task_code"])
     # how many links away, the nearest any update has it; blank on a task opened

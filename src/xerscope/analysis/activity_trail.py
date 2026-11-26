@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from collections import deque
+from typing import Any
 
 import pandas as pd
 
@@ -161,14 +162,14 @@ def logic_by_update(store: SnapshotStore, task_code: str, depth: int = 1, drivin
     return pd.DataFrame(rows, columns=LOGIC_COLS)
 
 
-def _followed_links(links: pd.DataFrame, driving: dict, driving_only: bool) -> list:
+def _followed_links(links: pd.DataFrame, driving: dict, driving_only: bool) -> list[Any]:
     """Return the relationships a walk may take: all of them, or the driving ones only."""
     if not driving_only:
         return list(links.itertuples())
     return [link for link in links.itertuples() if driving.get((link.pred_code, link.succ_code, link.type))]
 
 
-def _reached_links(links: list, task_code: str, toward: str, away: str, depth: int) -> list[tuple[int, object]]:
+def _reached_links(links: list[Any], task_code: str, toward: str, away: str, depth: int) -> list[tuple[int, Any]]:
     """Return (level, link) for each activity reached from ``task_code`` within ``depth`` links.
 
     Breadth first: the link by which it is first reached, whose ``toward`` end is nearer the task and
@@ -177,7 +178,8 @@ def _reached_links(links: list, task_code: str, toward: str, away: str, depth: i
     by_near_end: dict[str, list] = {}
     for link in links:
         by_near_end.setdefault(getattr(link, toward), []).append(link)
-    seen, frontier, reached = {task_code}, [task_code], []
+    seen, frontier = {task_code}, [task_code]
+    reached: list[tuple[int, Any]] = []
     for level in range(1, depth + 1):
         frontier = _next_frontier(by_near_end, frontier, away, seen, reached, level)
     return reached

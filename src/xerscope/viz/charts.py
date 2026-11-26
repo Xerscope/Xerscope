@@ -530,28 +530,39 @@ def build_activity_history(history: pd.DataFrame, logic: pd.DataFrame, shown: Se
 
 def _logic_line(rows: pd.DataFrame, role: str, colour: str, notes: Sequence[str] | None = None) -> go.Scatter:
     """One activity's total float across the updates; ``notes``: a hover line per point, after the float."""
-    code = html.escape(str(rows["task_code"].iloc[0])) if len(rows) else ""
-    nearest = int(rows["level"].min()) if len(rows) else 0
-    role_text = LOGIC_ROLE[role] + (f" {nearest}" if nearest > 1 else "")  # "pred 2": a predecessor's predecessor
+    if rows.empty:
+        return go.Scatter(x=[], y=[], name=LOGIC_ROLE[role], line=dict(color=colour))
+    code = html.escape(str(rows["task_code"].iloc[0]))
+    role_text = _role_text(role, int(rows["level"].min()))
     constraints = [
         _constraints_text(first, second) for first, second in zip(rows["primary"], rows["secondary"], strict=True)
     ]
     link = [link_text(kind, driving) for kind, driving in zip(rows["link_type"], rows["driving_link"], strict=True)]
-    notes = list(notes) if notes is not None else [""] * len(rows)
+    notes = [""] * len(rows) if notes is None else list(notes)
     return go.Scatter(
         x=rows["data_date"],
         y=rows["total_float_d"],
         name=f"{code} · {role_text}",
         mode="lines+markers",
         line=dict(color=colour, width=LINE * 2 if role == "task" else LINE, dash=LOGIC_DASH[role]),
-        marker=dict(
-            size=9,
-            symbol=["diamond" if text else "circle" for text in constraints],
-            opacity=[NOT_DRIVING_OPACITY if flag is False else 1.0 for flag in rows["driving_link"]],
-        ),
-        customdata=np.stack([link, [_hover_line(text) for text in constraints], notes], axis=-1) if len(rows) else None,
+        marker=_logic_markers(constraints, rows["driving_link"]),
+        customdata=np.stack([link, [_hover_line(text) for text in constraints], notes], axis=-1),
         hovertemplate=f"<b>{code}</b> · {role_text} %{{customdata[0]}}: TF %{{y}} wd"
         "%{customdata[1]}%{customdata[2]}<extra></extra>",
+    )
+
+
+def _role_text(role: str, level: int) -> str:
+    """The role as a line is named: "pred", or "pred 2" for a predecessor's predecessor."""
+    return LOGIC_ROLE[role] + (f" {level}" if level > 1 else "")
+
+
+def _logic_markers(constraints: list[str], driving: pd.Series) -> dict:
+    """A diamond where the activity carries a constraint; faded where its link does not drive."""
+    return dict(
+        size=9,
+        symbol=["diamond" if text else "circle" for text in constraints],
+        opacity=[NOT_DRIVING_OPACITY if flag is False else 1.0 for flag in driving],
     )
 
 
