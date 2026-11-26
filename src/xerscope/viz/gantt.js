@@ -55,6 +55,33 @@ export default function (component) {
   host.xsOpen = open;
   const maxDepth = Math.max(0, ...rows.filter((row) => row.kind === "wbs").map((row) => row.depth));
 
+  // --- tree grid width -------------------------------------------------------------------
+  // The grid fits its longest WBS label (indent, toggle, code and name, in bold) and the two
+  // number columns, so a WBS name is read whole; at least 320 px, at most 60 % of the page so the
+  // timeline keeps its share. An activity's name is still cut, its full text in its tooltip.
+  // Measured on a hidden WBS row with the page's own styles, again once the fonts are loaded.
+  const NUMBER_COLUMNS_PX = 2 * 88; // % complete and Float (wd), gantt.css .cols
+  const fitGridWidth = () => {
+    const probe = element("div", "row wbs");
+    probe.style.cssText = "position: absolute; visibility: hidden; display: block; width: max-content;";
+    const name = element("div", "name");
+    probe.append(name);
+    root.append(probe);
+    let widest = 0;
+    for (const row of rows) {
+      if (row.kind !== "wbs") continue;
+      name.style.paddingLeft = 8 + row.depth * 16 + "px";
+      name.replaceChildren(element("span", "toggle", "▸"), element("span", "code", row.code), element("span", "text", row.name));
+      widest = Math.max(widest, probe.getBoundingClientRect().width);
+    }
+    probe.remove();
+    // + 4 px: widths are fractional, and a label 1 px short of its width is cut with an ellipsis
+    const gridPx = Math.max(320, Math.ceil(widest) + 4 + NUMBER_COLUMNS_PX);
+    root.style.setProperty("--grid-w", "min(" + gridPx + "px, 60vw)");
+  };
+  fitGridWidth();
+  if (document.fonts) document.fonts.ready.then(fitGridWidth);
+
   const visibleRows = () => {
     const shownIds = new Set();
     const visible = [];
