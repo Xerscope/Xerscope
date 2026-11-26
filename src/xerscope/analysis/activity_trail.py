@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-from collections import deque
 from typing import Any
 
 import pandas as pd
@@ -73,18 +72,28 @@ def _neighbours(links: pd.DataFrame, from_column: str, to_column: str) -> dict[s
 
 def _walk(neighbours: dict[str, list[str]], task_code: str, depth: int, seen: set[str]) -> list[str]:
     """Breadth first from ``task_code``, ``depth`` steps at most, skipping ``seen`` (updated)."""
+    found, frontier = [], [task_code]
+    for _ in range(depth):
+        frontier = _unseen(_values_of(neighbours, frontier), seen)
+        found += frontier
+    return found
+
+
+def _values_of(mapping: dict, keys: list) -> list:
+    """Return the values ``mapping`` lists under each of ``keys``, in that order, in one list."""
+    values = []
+    for key in keys:
+        values.extend(mapping.get(key, []))
+    return values
+
+
+def _unseen(codes: list[str], seen: set[str]) -> list[str]:
+    """``codes`` not in ``seen``, each once, in order; ``seen`` takes them."""
     found = []
-    pending = deque([(task_code, 0)])
-    while pending:
-        code, distance = pending.popleft()
-        if distance == depth:
-            continue
-        for neighbour in neighbours.get(code, []):
-            if neighbour in seen:
-                continue
-            seen.add(neighbour)
-            found.append(neighbour)
-            pending.append((neighbour, distance + 1))
+    for code in codes:
+        if code not in seen:
+            seen.add(code)
+            found.append(code)
     return found
 
 
@@ -103,23 +112,22 @@ def trail_by_update(store: SnapshotStore, task_codes: list[str]) -> pd.DataFrame
     """
     rows = []
     for snapshot in store:
-        tasks = snapshot.by_code
-        for code in task_codes:
-            if code not in tasks.index:
-                continue
-            task = tasks.loc[code]
-            rows.append(
-                {
-                    "task_code": code,
-                    "data_date": snapshot.data_date,
-                    "update": snapshot.label,
-                    "total_float_d": task["total_float_d"],
-                    "free_float_d": task["free_float_d"],
-                    "primary": _constraint_text(task["cstr_type"], task["cstr_date"]),
-                    "secondary": _constraint_text(task["cstr_type2"], task["cstr_date2"]),
-                }
-            )
+        rows += [_trail_row(snapshot, code) for code in task_codes if code in snapshot.by_code.index]
     return pd.DataFrame(rows, columns=TRAIL_COLS)
+
+
+def _trail_row(snapshot, code: str) -> dict:
+    """One activity of one update, as ``trail_by_update`` lists it."""
+    task = snapshot.by_code.loc[code]
+    return {
+        "task_code": code,
+        "data_date": snapshot.data_date,
+        "update": snapshot.label,
+        "total_float_d": task["total_float_d"],
+        "free_float_d": task["free_float_d"],
+        "primary": _constraint_text(task["cstr_type"], task["cstr_date"]),
+        "secondary": _constraint_text(task["cstr_type2"], task["cstr_date2"]),
+    }
 
 
 def constraint_history(store: SnapshotStore, task_code: str) -> pd.DataFrame:
@@ -150,16 +158,21 @@ def logic_by_update(store: SnapshotStore, task_code: str, depth: int = 1, drivin
     """
     rows = []
     for snapshot in store:
-        if task_code not in snapshot.by_code.index:
-            continue
-        driving = driving_flags(snapshot)
-        followed = _followed_links(snapshot.relationships, driving, driving_only)
-        rows.append(_logic_row(snapshot, task_code, TASK, 0, None, None))
-        for role, toward, away in ((PREDECESSOR, "succ_code", "pred_code"), (SUCCESSOR, "pred_code", "succ_code")):
-            for level, link in _reached_links(followed, task_code, toward, away, depth):
-                flag = driving.get((link.pred_code, link.succ_code, link.type))
-                rows.append(_logic_row(snapshot, getattr(link, away), role, level, link.type, flag))
+        if task_code in snapshot.by_code.index:
+            rows += _logic_rows(snapshot, task_code, depth, driving_only)
     return pd.DataFrame(rows, columns=LOGIC_COLS)
+
+
+def _logic_rows(snapshot, task_code: str, depth: int, driving_only: bool) -> list[dict]:
+    """Return the task and the activities linked to it in one update, as ``logic_by_update`` lists them."""
+    driving = driving_flags(snapshot)
+    followed = _followed_links(snapshot.relationships, driving, driving_only)
+    rows = [_logic_row(snapshot, task_code, TASK, 0, None, None)]
+    for role, toward, away in ((PREDECESSOR, "succ_code", "pred_code"), (SUCCESSOR, "pred_code", "succ_code")):
+        for level, link in _reached_links(followed, task_code, toward, away, depth):
+            flag = driving.get((link.pred_code, link.succ_code, link.type))
+            rows.append(_logic_row(snapshot, getattr(link, away), role, level, link.type, flag))
+    return rows
 
 
 def _followed_links(links: pd.DataFrame, driving: dict, driving_only: bool) -> list[Any]:
@@ -181,18 +194,18 @@ def _reached_links(links: list[Any], task_code: str, toward: str, away: str, dep
     seen, frontier = {task_code}, [task_code]
     reached: list[tuple[int, Any]] = []
     for level in range(1, depth + 1):
-        frontier = _next_frontier(by_near_end, frontier, away, seen, reached, level)
+        frontier = _next_frontier(_values_of(by_near_end, frontier), away, seen, reached, level)
     return reached
 
 
-def _next_frontier(by_near_end: dict, frontier: list, away: str, seen: set, reached: list, level: int) -> list:
-    """Return the activities one link further than ``frontier``, not seen before; each is added to ``reached``."""
+def _next_frontier(
+    links: list[Any], away: str, seen: set[str], reached: list[tuple[int, Any]], level: int
+) -> list[str]:
+    """Return the far ends of ``links`` not seen before, each once; ``reached`` takes (level, link) for each."""
     found = []
-    for code in frontier:
-        for link in by_near_end.get(code, []):
-            other = getattr(link, away)
-            if other in seen:
-                continue
+    for link in links:
+        other = getattr(link, away)
+        if other not in seen:
             seen.add(other)
             reached.append((level, link))
             found.append(other)

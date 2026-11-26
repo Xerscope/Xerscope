@@ -216,6 +216,7 @@ carry no pointer logic of their own.
 | `evm.py` | baseline + series → PV curve (`pv_curve`), EV/AC/SPI per update (`evm_series`), Earned Schedule (`earned_schedule`), four weeks' window (`moving_window`, `spi_by_window`), BEI series (`bei_series`), forecast curve | labour units as P6: PV = BL × Schedule % Complete (exact working time), EV = BL × Performance % Complete (WBS EV technique); cost: BAC from `target_cost`, PV per assignment, EV = BAC × Performance %, SPI = EV cost / PV cost; `pv_p6_comparison` holds PV against a P6 Activities export |
 | `progress.py` | series → MTA trend (`milestone_trend`), PPC (`ppc_series`), look-ahead (`lookahead_series`: tasks anticipated and made ready), date variances, progress delta | PPC = W-1 finish and start commitments, W outcome |
 | `wbs.py` | snapshot → WBS tree with roll-ups (`tree`, `rollup`; `ROOT`) | % complete weighted by hours, else duration |
+| `activity_trail.py` | one activity and the activities around it, for the Gantt's task panel: `linked_chain` (the Activity IDs reached through its relationships, upstream, downstream or both, N links deep, every link or the driving ones), `logic_by_update` (in each update, the activity and the activities linked to it up to N links, with level, link, driving flag, P6's floats and constraints), `trail_by_update` (floats and constraints of a list of activities by update), `constraint_history` (the changelog's constraint rows by update), `driving_flags` | driving = `cpm.Schedule.links`, recalculated: P6 does not export its Driving flag ([cpm.md](cpm.md), Driving relationships) |
 | `task_filters.py` | snapshot + filters → the tasks kept (`branch_tasks`, `filtered_tasks`, `CodeFilter`) | the Gantt page's filters (WBS branch, status, float category, text, activity code) and the activity code filter of the PPC and Earned value pages |
 | `explain.py` | `CheckResult` → formula, verdict, population, effective parameters, source (`explain`); `READINGS`: the "How to read" text of each chart and table; `KPI_FORMULAS`; `schedule_reading` | read-only account of a result, shown under every check in the app; the popover of `ui.chart` and `ui.table` |
 | `query.py` + `ask/` | a sentence ("critical not started in civil works") → `Filter`: the Gantt page's filters (WBS node, status, float category, activity codes, resources, milestones, LOE, text, and clauses no widget says: NOT, OR across facets, comparisons, dates) | picks filters the page offers, computes nothing; `query.py` is the one entry point the rest of xerscope imports, the grammar lives in `ask/` (below, "The Gantt "Ask" field") |
@@ -515,10 +516,15 @@ or from the `verify/` modules themselves (`shapes`, `p6_corpus`, `mpxj_reader`).
   `forensics` for Delay analysis, `earned_value`, `milestones`, `ppc`, `export`, `debug`). Pages compose analyses and figures; the
   Plotly figures are built in `viz/`.
 - **`task_panel.py`:** one activity, named by its Activity ID: its card in the update shown
-  (P6 properties, resource assignments, logic) and its history across updates. Opened under
-  the Gantt for the activity picked there (`task_from_row_id` accepts an `a:` row id only, and
-  the page only an activity the chart draws); every value is read from the snapshot or the
-  store, card text is escaped.
+  (P6 properties, resource assignments, logic with the driving flag of each link) and its
+  history across updates. Opened under the Gantt for the activity picked there
+  (`task_from_row_id` accepts an `a:` row id only, and the page only an activity the chart
+  draws), or from a row of the panel. Above the card, the breadcrumb: the activities opened,
+  then the predecessors and successors of the one shown (Levels, Driving links only), with
+  their floats and constraints by update. Below, one chart of its forecast dates and total
+  float on a shared status date axis (one hover per status date for both plots), the chain
+  shown alone in the Gantt on request, and its constraint changes. Every value is read from
+  the snapshot or the store, card text is escaped.
 
 ### The Gantt "Ask" field: talking to the schedule without a model reading it
 
@@ -665,6 +671,8 @@ P6 corpus, MPXJ) unless `XERSCOPE_REQUIRE` names it.
 | `test_reference.py` | third-party stated results (MPXJ, xerlock), MPXJ as an independent reader |
 | `test_weekly.py` | changelog, EV/PV, PPC, delta, WBS, MTA |
 | `test_longest_path.py` | the longest path of each update and its churn: the P6 flag, the recalculated fallback, one change per activity |
+| `test_driving.py` | the driving flag of each relationship: hand cases on calendar C8, the rule on P6's stored dates against the recalculated ones (reference files, held-out corpus), and against P6's own relationship date `TASKPRED.aref` |
+| `test_activity_trail.py` | the task panel's analyses on hand-made networks: chain depth and direction, driving only, loops, levels, floats and constraints by update, constraint history |
 | `test_forensics.py` | the half-step reading: one hand case per step, the invariants, the finish cases, the two changelog categories it needs |
 | `test_calendar_and_standards.py` | calendar parsing, TOML validation |
 | `test_analysis_and_viz.py` | the demo's planted findings are found, figures build |
