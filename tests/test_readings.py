@@ -78,7 +78,7 @@ def builders_without_reading(source: str) -> list[str]:
 
 
 def test_every_builder_gives_its_figure_a_reading_key():
-    assert len(builders(CHARTS.read_text(encoding="utf-8"))) == 10
+    assert len(builders(CHARTS.read_text(encoding="utf-8"))) == 11  # + build_activity_history
     assert builders_without_reading(CHARTS.read_text(encoding="utf-8")) == []
 
 

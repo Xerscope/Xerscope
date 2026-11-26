@@ -27,6 +27,7 @@ from xerscope.viz.charts import (
     TEXT,
     build_activity_dates,
     build_activity_float,
+    build_activity_history,
 )
 
 
@@ -114,6 +115,27 @@ def test_activity_charts_follow_the_history(store):
     assert float_chart.layout.hovermode == "x unified"  # one box per status date for every line drawn
     picked = build_activity_float(logic, shown=["C3030"])
     assert [trace.name for trace in picked.data] == ["C3020 · task", "C3030 · succ"]
+
+
+@pytest.mark.oracle("property")
+def test_activity_history_stacks_dates_and_float_on_one_date_axis(store):
+    """The task panel's chart: Start and Finish above, the float lines below, every line on the same x
+    axis, so one hover box per status date covers both plots (hoversubplots "axis", unified hover). No
+    two lines share a colour: E1020, picked, is not drawn in Finish's colour."""
+    code = "C3020"
+    history = store.history[store.history["task_code"] == code].sort_values("data_date")
+    figure = build_activity_history(history, logic_by_update(store, code), shown=["E1020"])
+    assert [(trace.name, trace.yaxis) for trace in figure.data] == [
+        ("Start", "y"),
+        ("Finish", "y"),
+        ("C3020 · task", "y2"),
+        ("E1020 · pred", "y2"),
+    ]
+    assert {trace.xaxis or "x" for trace in figure.data} == {"x"}
+    assert figure.layout.hovermode == "x unified" and figure.layout.hoversubplots == "axis"
+    assert figure.layout.yaxis2.domain[1] < figure.layout.yaxis.domain[0]  # stacked, not overlaid
+    colours = [trace.line.color for trace in figure.data]
+    assert len(set(colours)) == len(colours)
 
 
 def test_fmt_date_shows_a_dash_for_missing_dates():

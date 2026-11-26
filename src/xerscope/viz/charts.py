@@ -493,6 +493,41 @@ def build_activity_float(logic: pd.DataFrame, shown: Sequence[str] = ()) -> go.F
     return figure
 
 
+def build_activity_history(history: pd.DataFrame, logic: pd.DataFrame, shown: Sequence[str] = ()) -> go.Figure:
+    """Forecast start and finish (above) and total float (below) of one activity, on one status date axis.
+
+    The lines of ``build_activity_dates`` and ``build_activity_float`` drawn as two stacked plots that share
+    their x axis, so hovering a status date on either opens one box with both plots' values at that date
+    (Plotly ``hoversubplots="axis"`` with the unified hover).
+    """
+    dates = build_activity_dates(history)
+    floats = build_activity_float(logic, shown)
+    figure = go.Figure()
+    for trace in dates.data:
+        figure.add_trace(trace.update(yaxis="y"))
+    # the float lines take the colours after the dates' two, so no colour means two things in the hover
+    for number, trace in enumerate(floats.data):
+        colour = SERIES[(number + len(dates.data)) % len(SERIES)]
+        figure.add_trace(trace.update(yaxis="y2", line_color=colour, marker_color=colour))
+    figure = _with_house_style(figure, "activity_history", 640, legend=True)
+    figure.update_layout(
+        hovermode="x unified",
+        hoversubplots="axis",
+        xaxis=dict(anchor="y2"),
+        yaxis=dict(domain=[0.56, 1], title=dict(text="Forecast date", font=FONT), range=dates.layout.yaxis.range),
+        yaxis2=dict(domain=[0, 0.44], title=dict(text="Working days", font=FONT), tickfont=TICK),
+    )
+    figure.update_layout(yaxis=DATE_AXIS)
+    figure.add_shape(
+        type="line", xref="paper", x0=0, x1=1, yref="y2", y0=0, y1=0,
+        line=dict(color=STATUS["critical"], width=1, dash="dot"),
+    )  # fmt: skip
+    figure.add_annotation(
+        xref="paper", x=0, yref="y2", y=0, text="critical", showarrow=False, xanchor="left", yanchor="top"
+    )
+    return figure
+
+
 def _logic_line(rows: pd.DataFrame, role: str, colour: str, notes: Sequence[str] | None = None) -> go.Scatter:
     """One activity's total float across the updates; ``notes``: a hover line per point, after the float."""
     code = html.escape(str(rows["task_code"].iloc[0])) if len(rows) else ""

@@ -28,7 +28,7 @@ from xerscope.analysis.cpm import ScheduleError, schedule
 from xerscope.analysis.progress import activity_finish_shift
 from xerscope.app import ui
 from xerscope.config import DATETIME_FMT
-from xerscope.viz.charts import build_activity_dates, build_activity_float, link_text
+from xerscope.viz.charts import build_activity_history, link_text
 from xerscope.xer.model import CONSTRAINT, PCT_COMPLETE_TYPE, RSRC_TYPE, TASK_TYPE
 
 # The panel's yes / no reads model.HARD_CONSTRAINTS, the DCMA-05 set (Start on, Start on or before, Finish
@@ -377,14 +377,9 @@ def show_history(store, task_code: str, logic: pd.DataFrame) -> None:
             ("% complete", ui.fmt_number(last["pct_complete"], "{:.0f} %")),
         ]
     )
-    dates_column, float_column = st.columns(2, gap="large")
-    with dates_column:
-        ui.section("Forecast start and finish")
-        ui.chart(build_activity_dates(history))
-    with float_column:
-        ui.section("Total float (working days)")
-        shown = pick_neighbours(logic, task_code)
-        ui.chart(build_activity_float(logic, shown))
+    ui.section("Forecast dates and total float")
+    shown = pick_neighbours(logic, task_code)
+    ui.chart(build_activity_history(history, logic, shown))
     ui.section("By update")
     ui.table(history, columns=HISTORY_COLUMNS, key="task_history", reading="task_history")
     ui.section("Constraint changes")

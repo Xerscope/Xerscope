@@ -563,6 +563,27 @@ READINGS: dict[str, Reading] = {
             "is named in the repository for the MTA."
         ),
     ),
+    "activity_history": Reading(
+        how=(
+            "two plots on one status date axis. Above: the task's forecast start and finish, one line each. "
+            'Below: its total float in working days, a red dotted line at 0 labelled "critical"; a neighbour '
+            "picked in Show on the chart is drawn there too, dotted (predecessor) or dashed (successor), in the "
+            "updates whose relationships link it, faded where its link does not drive, a diamond where it carries "
+            "a constraint. Hovering a status date on either plot opens one box with both plots' values at that "
+            "date, and that update's predecessors and successors: link type, driving (recalculated by the CPM: "
+            "the XER does not export P6's Driving flag), total float and constraints."
+        ),
+        meaning=(
+            "a finish rising from update to update is the task slipping; float is the delay the task can take "
+            "without moving the project finish (or its Must Finish By), negative float = already late against "
+            "it. A predecessor whose float falls with the task's is likely what pushes it."
+        ),
+        conclude=(
+            "a slip with float falling to 0 puts the task on the critical path; ≤ 0 d is critical (`config.py:12`; "
+            "P6 Define critical activities, read by `explain.critical_definition`)."
+        ),
+        source="xerscope (`store.history`, `activity_trail.logic_by_update`); P6 TASK and TASKPRED of each update.",
+    ),
     "activity_dates": Reading(
         how="x = status date, y = the task's forecast start and finish, one line each.",
         meaning=(
