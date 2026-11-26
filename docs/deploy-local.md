@@ -130,6 +130,12 @@ docker compose -f compose.yaml -f compose.silo.yaml -f compose.gpu.yaml up -d --
 ```
 
 Open http://127.0.0.1:8501. The first start builds the image and loads the model (minutes).
+The app's image is built here and never looked up on a registry (`pull_policy: build`); an older
+checkout printed "pull access denied for xerscope" before building, harmless.
+
+Shorter commands: add `COMPOSE_FILE=compose.yaml;compose.silo.yaml;compose.gpu.yaml` to `.env`
+(`;` on Windows), then `docker compose up -d --build`, `docker compose logs -f --tail 50 llm`,
+`docker compose ps`, `docker compose down`.
 
 ## 6. Check
 

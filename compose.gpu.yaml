@@ -121,6 +121,7 @@ services:
 
   study:  # the feasibility study (scripts/llm_study.py), run on demand; it reaches the model as http://llm:8080
     image: xerscope:latest
+    pull_policy: never  # the image the xerscope service builds here
     profiles: [study]
     entrypoint: ["/app/.venv/bin/python", "/study/scripts/llm_study.py", "--url", "http://llm:8080", "--out", "/out/report.md"]
     command: []

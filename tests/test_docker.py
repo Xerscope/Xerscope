@@ -280,6 +280,9 @@ def test_local_load_workers_are_sized_to_the_machine_within_a_memory_cap():
     assert re.search(r"^\s+XERSCOPE_LOAD_WORKERS: \$\{XERSCOPE_LOAD_WORKERS:-auto\}", app, re.M)
     assert re.search(r"^\s+mem_limit: \$\{XERSCOPE_MEM_LIMIT:-0\}", app, re.M)  # no cap but the machine's
     assert "- ${XERSCOPE_EXPORTS:-./exports}:/data:ro" in app  # the NAS's variable names the folder here too
+    # built here, never pulled: no registry holds xerscope:latest (Docker Desktop said "pull access denied")
+    assert "pull_policy: build" in _service(app, "xerscope") and "pull_policy: never" in _service(app, "lexicon-init")
+    assert "pull_policy: never" in _service((ROOT / "compose.gpu.yaml").read_text(), "study")
 
 
 def test_the_local_build_reads_the_lexicon_as_the_nas_does():

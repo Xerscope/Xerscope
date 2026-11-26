@@ -10,6 +10,7 @@ services:
   lexicon-init:  # on demand only (profile lexicon): writes generated/, purges suggested/; no network at all
     profiles: [lexicon]
     image: xerscope:latest
+    pull_policy: never  # the image the xerscope service builds here
     command: ["lexicon", "build", "/data", "--out", "/lexicon"]
     volumes:
       - ${XERSCOPE_EXPORTS:-./exports}:/data:ro
@@ -28,6 +29,7 @@ services:
   xerscope:
     build: .
     image: xerscope:latest
+    pull_policy: build  # built here, never looked up on a registry (none holds it: nothing is pushed)
     # Published on the host's loopback only: the schedules are not on the network.
     # Exposing it (e.g. "8501:8501") is a deliberate choice; put authentication in front.
     ports:
