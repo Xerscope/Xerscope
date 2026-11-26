@@ -310,23 +310,31 @@ def show_trail(store, trail: list[str], logic: pd.DataFrame, open_task: Callable
     order = sorted(set(cells["status_date"]), key=dict(zip(cells["status_date"], cells["data_date"], strict=True)).get)
     matrix = matrix.reindex(index=pd.MultiIndex.from_tuples(_trail_rows(trail, opened, neighbours)), columns=order)
     shown = matrix.reset_index(names=["role", "task_code"])
+    # how many links away, the nearest any update has it; blank on a task opened
+    nearest = neighbours.groupby(["role", "task_code"])["level"].min()
+    levels = [nearest.get((role, code)) for role, code in zip(shown["role"], shown["task_code"], strict=True)]
+    shown.insert(1, "level", pd.array(levels, dtype="Int64"))
     ui.table(shown, key="task_trail", reading="task_trail", open_task=open_task)
 
 
 def _trail_rows(trail: list[str], opened: pd.DataFrame, neighbours: pd.DataFrame) -> list[tuple[str, str]]:
-    """The breadcrumb's rows in order: the tasks opened as they were opened, then predecessors, then successors."""
+    """The breadcrumb's rows in order: the tasks opened as they were opened, then predecessors, then
+    successors, nearest first."""
     present = set(opened["task_code"])
     rows = [(OPENED, code) for code in trail if code in present]
     for role in (PREDECESSOR, SUCCESSOR):
-        codes = neighbours.loc[neighbours["role"] == role, "task_code"].drop_duplicates()
-        rows += [(role, code) for code in codes]
+        side = neighbours[neighbours["role"] == role].sort_values("level", kind="stable")
+        rows += [(role, code) for code in side["task_code"].drop_duplicates()]
     return rows
 
 
 def pick_neighbours(logic: pd.DataFrame, task_code: str) -> list[str]:
     """The predecessors and successors, of any update, the viewer picks to draw beside the task's float."""
-    neighbours = logic[logic["role"] != TASK].drop_duplicates("task_code")
-    labels = dict(zip(neighbours["task_code"], neighbours["role"].map(ROLE_LABEL), strict=True))
+    neighbours = logic[logic["role"] != TASK].sort_values("level", kind="stable").drop_duplicates("task_code")
+    labels = {
+        code: ROLE_LABEL[role] + (f" · level {level}" if level > 1 else "")
+        for code, role, level in zip(neighbours["task_code"], neighbours["role"], neighbours["level"], strict=True)
+    }
     return st.multiselect(
         "Show on the chart",
         list(labels),

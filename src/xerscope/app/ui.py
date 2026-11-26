@@ -238,6 +238,12 @@ COLUMNS: dict[str, tuple[str, str, str]] = {
         ),
     ),
     "primary": ("Primary constraint", "text", "TASK.cstr_type and cstr_date, under P6's name."),
+    "level": (
+        "Level",
+        "",
+        "How many links away from the task shown: 1 for its direct predecessors and successors, 2 for theirs, "
+        "and so on (the nearest in any update). Blank on a task opened.",
+    ),
     "secondary": ("Secondary constraint", "text", "TASK.cstr_type2 and cstr_date2, under P6's name."),
     "is_critical": (
         "Critical",

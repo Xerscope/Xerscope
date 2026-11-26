@@ -930,9 +930,11 @@ READINGS: dict[str, Reading] = {
     "task_trail": Reading(
         how=(
             "one row per task opened from this panel, in the order they were opened (the one shown last), then "
-            "one per predecessor and successor of the task shown; one column per update: the link as that update "
-            "holds it (type, and driving when it sets the successor's date: recalculated by the CPM, the XER does "
-            "not export it), P6's total float (TF) and free float (FF) in working days, then the primary / "
+            "one per predecessor and successor of the task shown, as far as Levels asks (1: its direct ones; 2: "
+            "theirs too; the Level column says how far, Driving links only keeps the chain that drives the task); "
+            "one column per update: the link (toward the task) as that update holds it (type, and driving when "
+            "it sets the successor's date: recalculated by the CPM, the XER does not export it), P6's total "
+            "float (TF) and free float (FF) in working days, then the primary / "
             "secondary constraint with its date. A blank cell: not in that update, or not linked to the task "
             "there. Select a row to open that task."
         ),

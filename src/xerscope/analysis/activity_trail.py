@@ -34,6 +34,7 @@ LOGIC_COLS = [
     "data_date",
     "update",
     "role",
+    "level",
     "task_code",
     "task_name",
     "link_type",
@@ -134,27 +135,66 @@ def constraint_history(store: SnapshotStore, task_code: str) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=columns)
 
 
-def logic_by_update(store: SnapshotStore, task_code: str) -> pd.DataFrame:
-    """Return, for each update holding ``task_code``, the activity and its direct neighbours (LOGIC_COLS).
+def logic_by_update(store: SnapshotStore, task_code: str, depth: int = 1, driving_only: bool = False) -> pd.DataFrame:
+    """Return, for each update holding ``task_code``, the activity and the activities linked to it (LOGIC_COLS).
 
-    ``role`` is TASK, PREDECESSOR or SUCCESSOR, read from that update's relationships, so a link added
-    or deleted shows as a neighbour present in some updates only. Floats and constraints are P6's;
-    ``driving_link`` is the recalculated flag (P6 does not export it), None when the update cannot be
-    scheduled and on the activity's own row.
+    ``role`` is TASK, PREDECESSOR (upstream) or SUCCESSOR (downstream), read from that update's
+    relationships, so a link added or deleted shows as a neighbour present in some updates only.
+    ``level`` is the number of links between the activity and the task (0 for the task, 1 for a direct
+    neighbour), ``depth`` links at most, each activity at the level it is first reached; with
+    ``driving_only`` only driving links are followed. ``link_type`` and ``driving_link`` are those of the
+    link it is reached by, toward the task. Floats and constraints are P6's; ``driving_link`` is the
+    recalculated flag (P6 does not export it), None when the update cannot be scheduled and on the
+    task's own row.
     """
     rows = []
     for snapshot in store:
         if task_code not in snapshot.by_code.index:
             continue
         driving = driving_flags(snapshot)
-        rows.append(_logic_row(snapshot, task_code, TASK, None, None))
-        links = snapshot.relationships
-        for role, mine, other in ((PREDECESSOR, "succ_code", "pred_code"), (SUCCESSOR, "pred_code", "succ_code")):
-            for link in links[links[mine] == task_code].itertuples():
-                neighbour = getattr(link, other)
+        followed = _followed_links(snapshot.relationships, driving, driving_only)
+        rows.append(_logic_row(snapshot, task_code, TASK, 0, None, None))
+        for role, toward, away in ((PREDECESSOR, "succ_code", "pred_code"), (SUCCESSOR, "pred_code", "succ_code")):
+            for level, link in _reached_links(followed, task_code, toward, away, depth):
                 flag = driving.get((link.pred_code, link.succ_code, link.type))
-                rows.append(_logic_row(snapshot, neighbour, role, link.type, flag))
+                rows.append(_logic_row(snapshot, getattr(link, away), role, level, link.type, flag))
     return pd.DataFrame(rows, columns=LOGIC_COLS)
+
+
+def _followed_links(links: pd.DataFrame, driving: dict, driving_only: bool) -> list:
+    """Return the relationships a walk may take: all of them, or the driving ones only."""
+    if not driving_only:
+        return list(links.itertuples())
+    return [link for link in links.itertuples() if driving.get((link.pred_code, link.succ_code, link.type))]
+
+
+def _reached_links(links: list, task_code: str, toward: str, away: str, depth: int) -> list[tuple[int, object]]:
+    """Return (level, link) for each activity reached from ``task_code`` within ``depth`` links.
+
+    Breadth first: the link by which it is first reached, whose ``toward`` end is nearer the task and
+    whose ``away`` end is the activity.
+    """
+    by_near_end: dict[str, list] = {}
+    for link in links:
+        by_near_end.setdefault(getattr(link, toward), []).append(link)
+    seen, frontier, reached = {task_code}, [task_code], []
+    for level in range(1, depth + 1):
+        frontier = _next_frontier(by_near_end, frontier, away, seen, reached, level)
+    return reached
+
+
+def _next_frontier(by_near_end: dict, frontier: list, away: str, seen: set, reached: list, level: int) -> list:
+    """Return the activities one link further than ``frontier``, not seen before; each is added to ``reached``."""
+    found = []
+    for code in frontier:
+        for link in by_near_end.get(code, []):
+            other = getattr(link, away)
+            if other in seen:
+                continue
+            seen.add(other)
+            reached.append((level, link))
+            found.append(other)
+    return found
 
 
 def driving_flags(snapshot) -> dict[tuple[str, str, str], bool]:
@@ -170,7 +210,7 @@ def driving_flags(snapshot) -> dict[tuple[str, str, str], bool]:
     return dict(zip(keys, links["driving"], strict=True))
 
 
-def _logic_row(snapshot, code: str, role: str, link_type: str | None, driving: bool | None) -> dict:
+def _logic_row(snapshot, code: str, role: str, level: int, link_type: str | None, driving: bool | None) -> dict:
     """One activity of one update; an activity of another project (``[ext]``) has no values."""
     tasks = snapshot.by_code
     known = code in tasks.index
@@ -179,6 +219,7 @@ def _logic_row(snapshot, code: str, role: str, link_type: str | None, driving: b
         "data_date": snapshot.data_date,
         "update": snapshot.label,
         "role": role,
+        "level": level,
         "task_code": code,
         "task_name": task.get("task_name"),
         "link_type": link_type,

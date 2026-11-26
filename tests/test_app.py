@@ -2782,9 +2782,17 @@ def test_gantt_panel_drills_through_logic_breadcrumb_constraints_and_chain(app, 
         ("successor", "C3030"),
         ("successor", "C3040"),
     ]
-    assert len(trail.columns) == 2 + len(store)  # role, Task ID, then one column per update
-    assert trail.iloc[0, 2].startswith("TF ")
-    assert trail.iloc[2, 2].startswith("FS driving · TF ")  # E1020 -> C3020 drives in the first update
+    assert len(trail.columns) == 3 + len(store)  # role, level, Task ID, then one column per update
+    assert trail["level"].tolist()[1:] == [1, 1, 1, 1] and pd.isna(trail["level"].iloc[0])
+    assert trail.iloc[0, 3].startswith("TF ")
+    assert trail.iloc[2, 3].startswith("FS driving · TF ")  # E1020 -> C3020 drives in the first update
+    app.number_input(key="gantt_trail_levels").set_value(2).run()  # their neighbours too
+    _ok(app)
+    deeper = _trail(app, store)
+    assert (deeper["level"] == 2).any() and len(deeper) > len(trail)
+    assert set(trail["task_code"]) <= set(deeper["task_code"])
+    app.number_input(key="gantt_trail_levels").set_value(1).run()
+    _ok(app)
     # the demo changes no constraint (tests/test_activity_trail.py covers a change): the panel says so
     assert any("No constraint added" in caption.value for caption in app.caption)
     app.session_state["gantt_task"] = predecessor  # what a Logic row's button stores
