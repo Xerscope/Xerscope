@@ -12,6 +12,7 @@ the only module of xerscope that opens a connection, to the local model only.
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from collections.abc import Callable
@@ -27,8 +28,9 @@ class AgentAnswer:
     """What the agent said, and how.
 
     The choice read from the model, the values the command computed, the sentence written from them
-    (empty with ``refused``), the Activity IDs the answer is about (``codes``: the Gantt draws them)
-    and the seconds the model took.
+    (empty with ``refused``), the Activity IDs the answer is about (``codes``: the Gantt draws them),
+    the seconds the model took, which model answered (``model``: "fast" when the cascade's first one
+    did, "main" otherwise) and its reasoning, when XERSCOPE_AGENT_THINKING asked for one.
     """
 
     choice: tools.Choice
@@ -37,6 +39,8 @@ class AgentAnswer:
     refused: str
     codes: tuple[str, ...]
     seconds: float
+    model: str = "main"
+    reasoning: str = ""
 
     @property
     def command(self) -> str:
@@ -102,6 +106,7 @@ def system_prompt(view: views.View) -> str:
         "Late, overdue, behind = finish_moved_wd < 0 or total_float_d < 0, as the question means.",
         "activity_slip, activity_history and simulate_delay take activity_id (as written, C3010); simulate_delay",
         "also takes days. A what-if delay is simulate_delay; any other what-if or advice is `none`.",
+        "Omit every field the command does not use.",
     ]
     return "\n".join(lines)
 
@@ -152,35 +157,74 @@ def _query(reply: dict, conditions: tuple[views.Condition, ...]) -> views.Query:
     )
 
 
+THINKING_VARIABLE = "XERSCOPE_AGENT_THINKING"
+Chat = Callable[[list, dict], dict]
+
+
+def thinking() -> bool:
+    """XERSCOPE_AGENT_THINKING=low: the model reasons first, in a pass of its own (``client.think``)."""
+    return os.environ.get(THINKING_VARIABLE, "").strip().lower() == "low"
+
+
 def answer(
-    question: str, context: tools.Context, lang: str = "en", chat: Callable[[list, dict], dict] | None = None
+    question: str,
+    context: tools.Context,
+    lang: str = "en",
+    chat: Chat | None = None,
+    reason: Callable[[list], str] | None = None,
 ) -> AgentAnswer:
     """Return the agent's answer to ``question`` on the page's ``context``, in ``lang`` ("en" or "fr").
 
-    ``chat``: called as ``chat(messages, schema)``, the model's JSON object; ``client.complete`` by default.
-    Raises ``client.ModelError`` when the model cannot be asked.
+    ``chat``: called as ``chat(messages, schema)``, the model's JSON object; ``reason``: called as
+    ``reason(messages)``, the model's reasoning, handed to ``chat`` with the question. By default the
+    local models: the faster one first when XERSCOPE_LLM_FAST_URL names one, the main one when the
+    faster one's choice gives no answer; a reasoning pass when XERSCOPE_AGENT_THINKING=low. Raises
+    ``client.ModelError`` when no model can be asked.
     """
-    chat = chat or client.complete
+    if chat is not None:
+        return _answer(question, context, lang, (chat, reason), "main")
+    fast = client.fast_url()
+    if fast:
+        said = _answer(question, context, lang, _local(fast), "fast")
+        if not said.refused:
+            return said
+    return _answer(question, context, lang, _local(None), "main")
+
+
+def _local(url: str | None) -> tuple[Chat, Callable[[list], str] | None]:
+    """Return the calls to the local model at ``url`` (the main one for None), reasoning when asked for."""
+    reason = (lambda messages: client.think(messages, url)) if thinking() else None
+    return (lambda messages, schema: client.complete(messages, schema, url)), reason
+
+
+def _answer(question: str, context: tools.Context, lang: str, model_calls, model: str) -> AgentAnswer:
+    chat, reason = model_calls
     messages = [{"role": "system", "content": system_prompt(context.view)}, {"role": "user", "content": question}]
     started = time.perf_counter()
-    choice = read_choice(chat(messages, schema_for(context.view)))
+    reasoning = reason(messages) if reason else ""
+    if reasoning:
+        messages[1] = {"role": "user", "content": f"{question}\n\nYour notes on it: {reasoning}"}
+    choice = _repaired(question, context.view, read_choice(chat(messages, schema_for(context.view))))
     seconds = round(time.perf_counter() - started, 2)
-    choice = replace(choice, query=_numbers_of(choice.query, context.view))
-    if choice.command == "simulate_delay" and choice.days <= 0:  # seen: the days left out, written in the question
+    refusal = _refusal(question, context, choice)
+    values = {} if refusal else tools.run(context, choice)
+    refusal = refusal or values.get("error", "")
+    if refusal:
+        return AgentAnswer(choice, values, "", refusal, (), seconds, model, reasoning)
+    codes = tuple(values.get("codes") or ([choice.argument] if choice.argument else ()))
+    return AgentAnswer(choice, values, sentence(choice, values, lang), "", codes, seconds, model, reasoning)
+
+
+def _repaired(question: str, view: views.View, choice: tools.Choice) -> tools.Choice:
+    """Read the choice's numbers from their text, and a delay's days from the question.
+
+    The days are taken when the reply leaves them out and the question writes exactly one number.
+    """
+    choice = replace(choice, query=_numbers_of(choice.query, view))
+    if choice.command == "simulate_delay" and choice.days <= 0:
         written = [float(n) for n in _numbers(question) if float(n) > 0]
         choice = replace(choice, days=written[0] if len(written) == 1 else 0.0)
-
-    def refuse(reason: str, values: dict | None = None) -> AgentAnswer:
-        return AgentAnswer(choice, values or {}, "", reason, (), seconds)
-
-    reason = _refusal(question, context, choice)
-    if reason:
-        return refuse(reason)
-    values = tools.run(context, choice)
-    if "error" in values:
-        return refuse(values["error"], values)
-    codes = tuple(values.get("codes") or ([choice.argument] if choice.argument else ()))
-    return AgentAnswer(choice, values, sentence(choice, values, lang), "", codes, seconds)
+    return choice
 
 
 def _refusal(question: str, context: tools.Context, choice: tools.Choice) -> str:
@@ -219,14 +263,30 @@ def _numbers(text: str) -> list[str]:
     return [number.replace(",", ".") for number in NUMBER.findall(text)]
 
 
+TRUE, FALSE = {"true", "yes", "oui", "vrai", "1"}, {"false", "no", "non", "faux", "0"}
+
+
 def _numbers_of(query: views.Query, view: views.View) -> views.Query:
-    """Read each number condition's value as the first number its text holds ("fmt(5)" -> "5")."""
-    conditions = []
-    for condition in query.conditions:
-        column = _column(view, condition.column)
-        found = _numbers(condition.value) if column is not None and column.kind == views.NUMBER else []
-        conditions.append(replace(condition, value=found[0]) if found else condition)
-    return replace(query, conditions=tuple(conditions))
+    """Read each condition's value as its column's kind says.
+
+    A number condition's value is the first number its text holds ("fmt(5)" -> "5"); a flag compared
+    with ``=`` or ``!=`` to a yes or a no ("critical = true", seen with a real model) is ``is_true`` or
+    ``is_false``.
+    """
+    return replace(query, conditions=tuple(_read_as_kind(c, _column(view, c.column)) for c in query.conditions))
+
+
+def _read_as_kind(condition: views.Condition, column: views.Column | None) -> views.Condition:
+    if column is None:
+        return condition
+    if column.kind == views.NUMBER:
+        found = _numbers(condition.value)
+        return replace(condition, value=found[0]) if found else condition
+    said = condition.value.strip().lower()
+    if column.kind == views.FLAG and condition.op in ("=", "!=") and said in TRUE | FALSE:
+        holds = (said in TRUE) == (condition.op == "=")
+        return replace(condition, op="is_true" if holds else "is_false", value="")
+    return condition
 
 
 LABELS = {  # value -> (English, French)

@@ -112,6 +112,8 @@ def run_query(context: Context, query: views.Query) -> dict:
         return {"error": str(error)}
     codes = [str(code) for code in result.funnel.rows.index]
     return {
+        "start": len(context.view.frame),
+        "steps": [(step.label, step.left) for step in result.funnel.steps],
         "count": result.count,
         "list": [str(code) for code in result.first.index][:FIRST],
         "groups": result.groups,

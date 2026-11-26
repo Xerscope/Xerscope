@@ -15,15 +15,22 @@
 #   XERSCOPE_GATE_IMAGE  a socat image, pinned by digest (compose.silo.yaml)
 #   XERSCOPE_MODELS      the folder of .gguf files, mounted read-only
 #   XERSCOPE_MODEL_FILE  the .gguf to serve, in that folder
-# Optional: XERSCOPE_LLM_CTX (context tokens, 16384), XERSCOPE_LLM_KV (cache type of keys and values,
+# Optional: XERSCOPE_LLM_CTX (context tokens, 4096: the agent's instructions and one question; raise
+# it to 16384 for the study's raw mode), XERSCOPE_LLM_KV (cache type of keys and values,
 # q8_0), XERSCOPE_LLM_GPU_LAYERS (layers on the card, 99 = all; fewer puts the rest in RAM, for a
 # model larger than the card), XERSCOPE_LLM_CPU_MOE (a mixture-of-experts model: blocks whose experts
-# stay in RAM, 0 = none), XERSCOPE_LLM_MEM_LIMIT (the model's memory cap, 0 = none: the machine's).
+# stay in RAM, 0 = none), XERSCOPE_LLM_MEM_LIMIT (the model's memory cap, 0 = none: the machine's),
+# XERSCOPE_AGENT_THINKING (low: the model reasons first, in a pass of its own; slower).
+# Cascade (profile cascade): a faster model asked first, the main one when its choice gives no
+# answer; XERSCOPE_FAST_MODEL_FILE, XERSCOPE_FAST_GPU_LAYERS, XERSCOPE_FAST_CPU_MOE, and
+# XERSCOPE_LLM_FAST_URL=http://llm-fast:8080 in .env.
 services:
   xerscope:
     environment:
       XERSCOPE_AGENT: ${XERSCOPE_AGENT:-on}  # the Gantt Ask field asks the model what its grammar does not read
       XERSCOPE_LLM_URL: http://llm:8080      # the model's name on the silo; the agent accepts no other host
+      XERSCOPE_LLM_FAST_URL: ${XERSCOPE_LLM_FAST_URL:-}  # the cascade's faster model, when profile cascade runs
+      XERSCOPE_AGENT_THINKING: ${XERSCOPE_AGENT_THINKING:-off}
     depends_on: [llm]
 
   llm:
@@ -41,7 +48,9 @@ services:
       - --n-cpu-moe
       - ${XERSCOPE_LLM_CPU_MOE:-0}  # a MoE model larger than the card: its experts in RAM
       - --ctx-size
-      - ${XERSCOPE_LLM_CTX:-16384}
+      - ${XERSCOPE_LLM_CTX:-4096}  # instructions + one question: less cache, more layers on the card
+      - --parallel
+      - "1"  # one slot: the instructions read once stay cached for every question
       - --flash-attn
       - "on"
       - --cache-type-k
@@ -64,6 +73,49 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${XERSCOPE_LLM_MEM_LIMIT:-0}  # 0: no cap but the machine's (Docker Desktop: .wslconfig, §12)
+    pids_limit: 256
+    restart: unless-stopped
+
+  llm-fast:  # profile cascade: a faster model the agent asks first (XERSCOPE_LLM_FAST_URL)
+    image: ${XERSCOPE_LLM_IMAGE:?pin ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>}
+    profiles: [cascade]
+    command:
+      - --model
+      - /models/${XERSCOPE_FAST_MODEL_FILE:-none.gguf}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --n-gpu-layers
+      - ${XERSCOPE_FAST_GPU_LAYERS:-99}
+      - --n-cpu-moe
+      - ${XERSCOPE_FAST_CPU_MOE:-0}  # the card is shared with the main model: keep this one's experts in RAM
+      - --ctx-size
+      - ${XERSCOPE_LLM_CTX:-4096}
+      - --parallel
+      - "1"
+      - --flash-attn
+      - "on"
+      - --cache-type-k
+      - ${XERSCOPE_LLM_KV:-q8_0}
+      - --cache-type-v
+      - ${XERSCOPE_LLM_KV:-q8_0}
+    networks: [silo]
+    volumes:
+      - ${XERSCOPE_MODELS:?folder of .gguf files}:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${XERSCOPE_LLM_MEM_LIMIT:-0}
     pids_limit: 256
     restart: unless-stopped
 

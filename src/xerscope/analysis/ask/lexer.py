@@ -27,7 +27,7 @@ from .text import (
     with_synonyms,
 )
 from .text import index as word_index
-from .vocab import NAME_COLUMN, RESOURCE_COLUMNS, WBS_COLUMNS, Vocabulary
+from .vocab import CODE_COLUMNS, NAME_COLUMN, RESOURCE_COLUMNS, WBS_COLUMNS, Vocabulary
 
 Item = tuple[int, str, object]
 
@@ -42,8 +42,11 @@ def items(
     confidence = _typo_items(tokens, used, found, vocab)
     rest = _Rest(tokens, used)
     confidence = min(confidence, _wbs_items(rest, vocab, found))
+    _say_as_the_file(rest, _code_aliases(vocab))
     clarify = _code_items(rest, vocab, found, chosen or {})
-    confidence = min(confidence, _resource_items(rest, vocab, found), _word_items(rest, vocab, found))
+    confidence = min(confidence, _resource_items(rest, vocab, found))
+    _say_as_the_file(rest, _word_aliases(vocab))
+    confidence = min(confidence, _word_items(rest, vocab, found))
     return sorted(found, key=lambda item: item[0]), confidence, clarify
 
 
@@ -145,6 +148,13 @@ class _Rest:
         """The folded ``phrase`` in the text as whole words; a substring test first, so no regex
         is compiled for a phrase the text does not hold."""
         return bool(phrase) and phrase in self.text and phrase_pattern([phrase]).search(self.text) is not None
+
+    def say(self, phrase: str, word: str) -> None:
+        """Write ``word`` where the folded ``phrase`` first stands, padded to its length, so every
+        later position still maps to the token it did (``word`` no longer than ``phrase``)."""
+        match = phrase_pattern([phrase]).search(self.text)
+        if match is not None and len(word) <= len(match.group(0)):
+            self.text = self.text[: match.start()] + word.ljust(len(match.group(0))) + self.text[match.end() :]
 
     def take(self, phrase: str) -> int:
         """Blank the phrase; the token index of its first occurrence."""
@@ -308,6 +318,63 @@ def _code_items(rest: _Rest, vocab: Vocabulary, found: list[Item], chosen: Mappi
         if len(fold(kind)) >= 2 and rest.has(fold(kind)):
             rest.take(fold(kind))
     return clarify
+
+
+# --- other words for what the file says -----------------------------------------------------------
+
+
+def _say_as_the_file(rest: _Rest, aliases: dict[str, str]) -> None:
+    """Write each alias the sentence holds as the file's own word, longest alias first."""
+    for alias in sorted(aliases, key=len, reverse=True):
+        if rest.has(alias):
+            rest.say(alias, aliases[alias])
+
+
+def _code_aliases(vocab: Vocabulary) -> dict[str, str]:
+    """Other words for an activity code value, each to the shortest of its value and name.
+
+    The lexicon's synonyms of the value or the name ("clim" for CVC), and a word of 4+ letters of
+    the name that no other value's name holds and the activity names do not use ("climatisation"
+    of "Chauffage ventilation climatisation"): a word of a name that activities also use stays a
+    search word."""
+    synonyms = vocab.synonyms(*CODE_COLUMNS)
+    own = _own_name_words(vocab)
+    aliases: dict[str, str] = {}
+    for code_id, (_, value, name) in vocab.codes.items():
+        forms = (fold(value), fold(name))
+        said = min(forms, key=len)
+        for alias in (*with_synonyms(list(forms), synonyms)[2:], *own.get(code_id, ())):
+            if alias not in forms and len(said) <= len(alias):
+                aliases.setdefault(alias, said)
+    return aliases
+
+
+def _own_name_words(vocab: Vocabulary) -> dict[str, list[str]]:
+    """Per code value, the words of 4+ letters of its name no other value's name holds and no
+    activity name uses."""
+    owners: dict[str, set[str]] = {}
+    for code_id, (_, _, name) in vocab.codes.items():
+        for word in re.split(r"[^a-z0-9]+", fold(name)):
+            if len(word) >= 4 and word not in STOP:
+                owners.setdefault(word, set()).add(code_id)
+    own: dict[str, list[str]] = {}
+    for word, held in owners.items():
+        if len(held) == 1 and not (vocab.words and word in vocab.words):
+            own.setdefault(next(iter(held)), []).append(word)
+    return own
+
+
+def _word_aliases(vocab: Vocabulary) -> dict[str, str]:
+    """A phrase of several words the lexicon groups with one word the activities use ("génie civil"
+    with "GC"): that word, searched as the file spells it."""
+    if not vocab.words:
+        return {}
+    aliases: dict[str, str] = {}
+    for phrase, others in vocab.synonyms(NAME_COLUMN).items():
+        held = [w for w in others if " " not in w and w in vocab.words]
+        if " " in phrase and held:
+            aliases[phrase] = min(held, key=len)
+    return aliases
 
 
 def _label(candidate: str, rest: _Rest) -> bool:

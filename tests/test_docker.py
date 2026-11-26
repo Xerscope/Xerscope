@@ -906,7 +906,7 @@ def test_the_app_and_the_model_have_no_route_out(tmp_path):
         "XERSCOPE_MODEL_FILE": "model.gguf",
     }
     files = ("-f", str(ROOT / "compose.yaml"), "-f", str(ROOT / "compose.silo.yaml"))
-    files += ("-f", str(ROOT / "compose.gpu.yaml"), "--profile", "study")
+    files += ("-f", str(ROOT / "compose.gpu.yaml"), "--profile", "study", "--profile", "cascade")
     done = subprocess.run(
         ["docker", "compose", *files, "config", "--format", "json"],
         capture_output=True,
@@ -920,8 +920,8 @@ def test_the_app_and_the_model_have_no_route_out(tmp_path):
     config = json.loads(done.stdout)
     services, networks = config["services"], config["networks"]
     assert networks["silo"].get("internal") is True and not networks["edge"].get("internal")
-    assert sorted(services) == ["gate-app", "llm", "study", "xerscope"]  # lexicon-init: its own profile
-    for name in ("xerscope", "llm", "study"):
+    assert sorted(services) == ["gate-app", "llm", "llm-fast", "study", "xerscope"]  # lexicon-init: its own profile
+    for name in ("xerscope", "llm", "llm-fast", "study"):
         assert list(services[name]["networks"]) == ["silo"] and not services[name].get("ports"), name
     gate = services["gate-app"]
     assert sorted(gate["networks"]) == ["edge", "silo"]

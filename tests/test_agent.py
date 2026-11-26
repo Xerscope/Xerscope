@@ -139,12 +139,75 @@ def test_a_number_is_read_from_its_text_and_must_be_the_questions(context):
     assert "not a number of the question" in said.refused
 
 
+@pytest.mark.parametrize(
+    ("op", "value", "kept"), [("=", "true", ["A", "B"]), ("!=", "oui", ["D"]), ("=", "false", ["D"])]
+)
+def test_a_flag_compared_to_yes_or_no_reads_as_true_or_false(context, op, value, kept):
+    """Seen with a real model: "critical = true" on a flag. A and B are critical (float 0), D is not
+    (float 5 days)."""
+    condition = {"column": "critical", "op": op, "value": value}
+    said = ask(context, "critical ones", command="query", field="list", conditions=[condition], sort_by="activity_id")
+    assert said.values["list"] == kept
+
+
 def test_a_fixed_value_is_searched_in_any_language(context):
     """Seen with a real model: "en cours" read as status contains "In progress": D only. The statuses
     are the model's words, not the question's, and are not refused as invented."""
     condition = {"column": "status", "op": "contains", "value": "In progress"}
     said = ask(context, "combien d'activités en cours", "fr", command="query", field="count", conditions=[condition])
     assert said.values["count"] == 1 and said.codes == ("D",)
+
+
+@pytest.mark.oracle("standard")
+def test_a_query_says_its_funnel_from_the_whole_update(context):
+    """3 activities; Discipline = GC keeps A and D."""
+    said = ask(context, "which GC activities", command="query", field="count",
+               conditions=[{"column": "code: Discipline", "op": "=", "value": "GC"}])  # fmt: skip
+    assert said.values["start"] == 3 and said.values["steps"] == [("code: Discipline = GC", 2)]
+
+
+def test_the_reasoning_pass_is_handed_to_the_choice_and_kept(context):
+    """With a reasoning pass, the model's notes go with the question to the choice, and the answer keeps
+    them for the trace; without one, the question goes alone."""
+    chat = chose(command="path_changes", field="on_path")
+    said = agent.answer("on the path?", context, "en", chat, reason=lambda messages: "longest path count")
+    assert chat.sent[0][1]["content"] == "on the path?\n\nYour notes on it: longest path count"
+    assert said.reasoning == "longest path count"
+    agent.answer("on the path?", context, "en", chat)
+    assert chat.sent[0][1]["content"] == "on the path?"
+
+
+def test_the_cascade_answers_with_the_fast_model_unless_it_gives_none(context, monkeypatch):
+    """The fast model's choice answers when it can; refused (here: "none"), the main model is asked."""
+    replies = {"http://llm-fast:8080": {"command": "none", "field": "none"}, None: {"command": "path_changes"}}
+    asked = []
+
+    def complete(messages, schema, url=None):
+        asked.append(url)
+        return replies[url]
+
+    monkeypatch.setattr(client, "complete", complete)
+    monkeypatch.setenv("XERSCOPE_LLM_FAST_URL", "http://llm-fast:8080")
+    said = agent.answer("on the path?", context)
+    assert asked == ["http://llm-fast:8080", None] and said.model == "main" and said.values["on_path"] == 2
+    replies["http://llm-fast:8080"] = {"command": "path_changes", "field": "entered"}
+    asked.clear()
+    said = agent.answer("entered the path?", context)
+    assert asked == ["http://llm-fast:8080"] and said.model == "fast" and said.values["entered"] == 0
+
+
+def test_the_trace_names_each_step_of_the_answer(context):
+    from xerscope.app.agent_panel import trace_lines
+
+    said = ask(context, "which GC activities", command="query", field="count",
+               conditions=[{"column": "code: Discipline", "op": "=", "value": "GC"}])  # fmt: skip
+    assert trace_lines("which GC activities", said) == [
+        "- **Question:** which GC activities",
+        "- **Choice:** query · count",
+        "- **Funnel:** 3 activities → 2 (code: Discipline = GC)",
+        "- **Answer:** Activities: 2 (code: Discipline = GC)",
+        f"- **Model:** main · {said.seconds:.1f} s",
+    ]
 
 
 # --- what is refused --------------------------------------------------------------------------
@@ -246,6 +309,24 @@ def test_the_client_asks_for_one_constrained_object_with_thinking_off(server):
     assert sent["chat_template_kwargs"] == {"enable_thinking": False} and sent["temperature"] == 0
 
 
+def test_the_reasoning_pass_asks_thinking_on_without_a_schema(server):
+    _, url = server
+    message = {"reasoning_content": "GC means the Discipline code", "content": ""}
+    _Server.status, _Server.reply = 200, json.dumps({"choices": [{"message": message}]}).encode()
+    assert client.think([{"role": "user", "content": "q"}], url) == "GC means the Discipline code"
+    sent = _Server.received[0]
+    assert "response_format" not in sent and sent["chat_template_kwargs"]["enable_thinking"] is True
+    assert sent["chat_template_kwargs"]["reasoning_effort"] == "low" and sent["cache_prompt"] is True
+
+
+def test_warming_reads_the_instructions_once_and_never_raises(server):
+    _, url = server
+    _Server.status, _Server.reply = 200, json.dumps({"choices": [{"message": {"content": ""}}]}).encode()
+    assert client.warm([{"role": "system", "content": "instructions"}], url) is True
+    assert _Server.received[0]["max_tokens"] == 1
+    assert client.warm([], "http://127.0.0.1:1") is False  # nothing listens: no answer, no exception
+
+
 @pytest.mark.parametrize(
     ("status", "reply"),
     [(200, b"not json"), (200, b'{"choices": [{"message": {"content": "[1]"}}]}'), (302, b""), (500, b"")],
@@ -273,13 +354,16 @@ def _gantt(sample_dir, monkeypatch, on):
     monkeypatch.setenv("XERSCOPE_DATA", str(sample_dir))
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     monkeypatch.setenv("XERSCOPE_AGENT", "on" if on else "off")
+    monkeypatch.setattr(client, "warm", lambda messages, url=None: True)  # no connection from a test
     at = read_folder(AppTest.from_file(APP, default_timeout=120).run())
     return at.switch_page("views/gantt.py").run()
 
 
 def test_the_page_shows_the_agents_answer_when_the_grammar_reads_nothing(sample_dir, monkeypatch):
     monkeypatch.setattr(
-        client, "complete", lambda messages, schema: {"command": "path_changes", "field": "on_path", "argument": ""}
+        client,
+        "complete",
+        lambda messages, schema, url=None: {"command": "path_changes", "field": "on_path", "argument": ""},
     )
     at = _gantt(sample_dir, monkeypatch, on=True)
     at.text_input(key="gantt_ask").set_value("how many activities drive the end date right now").run()
@@ -294,7 +378,9 @@ def test_a_query_answer_is_what_the_gantt_draws(sample_dir, monkeypatch):
     (Earthworks) only, so the Gantt draws that task only."""
     conditions = [{"column": "activity_name", "op": "contains", "value": "earthworks"}]
     monkeypatch.setattr(
-        client, "complete", lambda messages, schema: {"command": "query", "field": "list", "conditions": conditions}
+        client,
+        "complete",
+        lambda messages, schema, url=None: {"command": "query", "field": "list", "conditions": conditions},
     )
     at = _gantt(sample_dir, monkeypatch, on=True)
     at.text_input(key="gantt_ask").set_value("show me where the earthworks stand, the digging").run()
@@ -304,7 +390,7 @@ def test_a_query_answer_is_what_the_gantt_draws(sample_dir, monkeypatch):
 
 
 def test_the_page_asks_no_model_when_the_agent_is_off_or_the_grammar_reads_all(sample_dir, monkeypatch):
-    def fail(messages, schema):
+    def fail(messages, schema, url=None):
         raise AssertionError("the model was asked")
 
     monkeypatch.setattr(client, "complete", fail)
@@ -317,7 +403,7 @@ def test_the_page_asks_no_model_when_the_agent_is_off_or_the_grammar_reads_all(s
 
 
 def test_an_unreachable_model_is_said_and_the_page_still_draws(sample_dir, monkeypatch):
-    def down(messages, schema):
+    def down(messages, schema, url=None):
         raise client.ModelError("the local model did not answer (connection refused)")
 
     monkeypatch.setattr(client, "complete", down)

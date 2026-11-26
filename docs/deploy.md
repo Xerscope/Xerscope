@@ -468,6 +468,8 @@ misused a value when read. The backlog says what would change that measurement.
 
 ## 12. Local GPU study (own machine)
 
+The step-by-step procedure on Windows with Docker Desktop, and where each folder goes: [deploy-local.md](deploy-local.md).
+
 A feasibility study, not a deployment: it measures whether a local model, served by llama.cpp,
 can answer questions about a weekly series. It runs on your PC (Intel 285K, 64 GB, RTX 5070
 12 GB), never on the NAS, and the app is not involved: `src/` has no network code
@@ -533,7 +535,22 @@ and one of its values (`agent/tools.py`) under a JSON schema, thinking off:
 | `simulate_delay` | what some more working days on one open activity do to the project finish and to its own float, and what holds the delay back | `cpm.delay_impact` (the engine of the DCMA critical path test) |
 
 xerscope runs the command and writes the answer; the caption names the command, the value and the
-seconds taken. The model sees the column names and their meaning, never the activities, and
+seconds taken, and "How the agent answered" shows the path: the question, the choice, each condition
+with the activities it left, the answer, the model and the time.
+
+Speed: the context is 4,096 tokens (`XERSCOPE_LLM_CTX`; 16,384 for the study's raw mode), so the
+cache takes less of the card and more of the model's layers stay on it; one slot (`--parallel 1`)
+keeps the instructions, read once per update when the Gantt opens it, cached for every question; the
+model is asked to leave out the fields a command does not use. Options:
+
+- `XERSCOPE_AGENT_THINKING=low`: the model reasons first, in a pass of its own without the JSON
+  schema (a thinking template and a schema in one request have broken the grammar in llama.cpp), and
+  its notes go with the question to the choice. Slower (200 to 1,000 tokens more); the trace shows the
+  reasoning, the model's own account, while the steps above it are what ran.
+- Cascade, `--profile cascade`: a faster model (`XERSCOPE_FAST_MODEL_FILE`, `XERSCOPE_FAST_GPU_LAYERS`,
+  `XERSCOPE_FAST_CPU_MOE`) answers first, the main one when the faster one's choice gives no answer;
+  set `XERSCOPE_LLM_FAST_URL=http://llm-fast:8080`. Both models share the card: keep the faster one's
+  experts in RAM. The model sees the column names and their meaning, never the activities, and
 computes nothing. `XERSCOPE_AGENT=off` in `.env` keeps the model for the study only. Pin a llama.cpp
 build of b12005 or later (a `response_format` fix), and do not start it with MTP speculative
 decoding, which fails with a JSON schema (llama.cpp issue 30419).
