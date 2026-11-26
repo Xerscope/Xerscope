@@ -489,7 +489,42 @@ def build_activity_float(logic: pd.DataFrame, shown: Sequence[str] = ()) -> go.F
         annotation_position="bottom left",
     )
     figure = _with_house_style(figure, "activity_float", 380, "Working days", legend=bool(len(neighbours)))
-    figure.update_layout(hovermode="x")  # the hover opens anywhere above or below a status date
+    # hovermode stays "x unified" (house style): one box per status date lists every line drawn there
+    return figure
+
+
+def build_activity_history(history: pd.DataFrame, logic: pd.DataFrame, shown: Sequence[str] = ()) -> go.Figure:
+    """Forecast start and finish (above) and total float (below) of one activity, on one status date axis.
+
+    The lines of ``build_activity_dates`` and ``build_activity_float`` drawn as two stacked plots that share
+    their x axis, so hovering a status date on either opens one box with both plots' values at that date
+    (Plotly ``hoversubplots="axis"`` with the unified hover).
+    """
+    dates = build_activity_dates(history)
+    floats = build_activity_float(logic, shown)
+    figure = go.Figure()
+    for trace in dates.data:
+        figure.add_trace(trace.update(yaxis="y"))
+    # the float lines take the colours after the dates' two, so no colour means two things in the hover
+    for number, trace in enumerate(floats.data):
+        colour = SERIES[(number + len(dates.data)) % len(SERIES)]
+        figure.add_trace(trace.update(yaxis="y2", line_color=colour, marker_color=colour))
+    figure = _with_house_style(figure, "activity_history", 640, legend=True)
+    figure.update_layout(
+        hovermode="x unified",
+        hoversubplots="axis",
+        xaxis=dict(anchor="y2"),
+        yaxis=dict(domain=[0.56, 1], title=dict(text="Forecast date", font=FONT), range=dates.layout.yaxis.range),
+        yaxis2=dict(domain=[0, 0.44], title=dict(text="Working days", font=FONT), tickfont=TICK),
+    )
+    figure.update_layout(yaxis=DATE_AXIS)
+    figure.add_shape(
+        type="line", xref="paper", x0=0, x1=1, yref="y2", y0=0, y1=0,
+        line=dict(color=STATUS["critical"], width=1, dash="dot"),
+    )  # fmt: skip
+    figure.add_annotation(
+        xref="paper", x=0, yref="y2", y=0, text="critical", showarrow=False, xanchor="left", yanchor="top"
+    )
     return figure
 
 
@@ -513,7 +548,7 @@ def _logic_line(rows: pd.DataFrame, role: str, colour: str, notes: Sequence[str]
             opacity=[NOT_DRIVING_OPACITY if flag is False else 1.0 for flag in rows["driving_link"]],
         ),
         customdata=np.stack([link, [_hover_line(text) for text in constraints], notes], axis=-1) if len(rows) else None,
-        hovertemplate=f"<b>{code}</b> · {LOGIC_ROLE[role]} %{{customdata[0]}}<br>%{{x|%Y-%m-%d}}: TF %{{y}} wd"
+        hovertemplate=f"<b>{code}</b> · {LOGIC_ROLE[role]} %{{customdata[0]}}: TF %{{y}} wd"
         "%{customdata[1]}%{customdata[2]}<extra></extra>",
     )
 
