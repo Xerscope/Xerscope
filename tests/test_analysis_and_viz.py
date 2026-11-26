@@ -14,6 +14,7 @@ from rulekit import STANDARDS, codes, run_on_store
 
 import xerscope
 from xerscope.analysis import Baseline, health_history
+from xerscope.analysis.activity_trail import logic_by_update
 from xerscope.analysis.wbs import rollup
 from xerscope.app import ui
 from xerscope.viz import categorise, gantt_assets, gantt_data, gantt_rows
@@ -94,14 +95,24 @@ def test_gantt_compare_with_no_common_tasks(store):
 
 
 def test_activity_charts_follow_the_history(store):
-    code = store.latest.activities["task_code"].iloc[0]
+    """The float chart draws the task alone, one point per update holding it; each point's hover lists
+    that update's predecessors and successors. A neighbour picked is drawn too, named with its role."""
+    code = "C3020"  # demo: predecessors C3010, E1020; successors C3030, C3040
     history = store.history
     history = history[history["task_code"] == code].sort_values("data_date")
-    dates, float_chart = build_activity_dates(history), build_activity_float(history)
+    dates = build_activity_dates(history)
+    logic = logic_by_update(store, code)
+    float_chart = build_activity_float(logic)
     assert [trace.name for trace in dates.data] == ["Start", "Finish"]
-    assert [trace.name for trace in float_chart.data] == ["Total float"]
+    assert [trace.name for trace in float_chart.data] == ["C3020 · task"]
     assert len(float_chart.data[0].x) == len(history)
+    first_hover = float_chart.data[0].customdata[0][2]
+    predecessors, successors = first_hover.split("<b>Successors</b>")
+    assert "<b>Predecessors</b>" in predecessors and "E1020 FS driving · TF 20.0 wd" in predecessors
+    assert "C3040 SS driving · TF 85.0 wd" in successors
     assert float_chart.layout.yaxis.title.text == "Working days"
+    picked = build_activity_float(logic, shown=["C3030"])
+    assert [trace.name for trace in picked.data] == ["C3020 · task", "C3030 · succ"]
 
 
 def test_fmt_date_shows_a_dash_for_missing_dates():
