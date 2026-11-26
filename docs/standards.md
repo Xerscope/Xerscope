@@ -34,8 +34,13 @@ Order and groups of the P6 Professional 24 User Guide (Check Schedule, page 1013
 **Baseline for P6-12 and P6-13: the Project Baseline assigned in the update** (Project > Assign
 Baselines, `PROJECT.sum_base_proj_id`): "Baseline in each file", with the P6 XML export of the baselines
 when the XER does not hold them. Choose "Planned dates in each file (target_*)" only for an update that
-is its own baseline. P6's "BL Project Start / Finish" are the Planned Start / Finish of the project
-baseline, and when the project is its own baseline they are the file's own planned dates. P6 moves the planned dates of a not-started
+is its own baseline. P6's "BL Project Start / Finish" are dates of the activity in the project
+baseline: its Planned Start / Finish with the admin setting "Budgeted values with planned dates" (P6's
+default), its current Start / Finish with the two "current dates" options (Nasui and Winter, "When is a
+Baseline Not a Baseline?", 2020, on P6 Professional 17.12; P. Harris, "Oracle Primavera P6 Planned Date
+Issues", 2022; Oracle P6 EPPM help 88388 "Updating Baselines", which refers to Doc ID 893342.1, not read;
+no reading on P6 26.8 yet). The window's "Earned value basis" sets it. When the project is its own
+baseline they are the file's own planned dates. P6 moves the planned dates of a not-started
 activity with the schedule and freezes them when the activity starts, so only activities in progress
 (or finished) can drift from them. Checked against report R1 (see Sources): with this choice Late
 Activities lists the same activities with the same finish variance (to the hour) and BEI gives the

@@ -128,6 +128,14 @@ reports are kept outside the repository; what remains open is in `docs/quality-p
 
 ### Changed
 
+- Baseline dates of a separate baseline follow the earned value basis, as P6's BL Project Start / Finish
+  do: the planned dates of the baseline's activities with "Budgeted values with planned dates" (the
+  default), their current Start / Finish with the two "current dates" options. They were the current
+  dates whatever the basis. Late activities, BEI, finish variances, the Gantt and the MTA read them, so
+  their results can change for an activity already started when the baseline was taken, or whose
+  baseline was changed and not rescheduled. A result that reads a baseline is computed again when the
+  basis changes. Sources and what remains unverified: `docs/standards.md`, P6 Check Schedule.
+
 - CPM against the held-out P6 23.12.1 corpus (`tests/test_p6_heldout.py`, docs/cpm.md): from 89.4 % to
   99.6 % of its 54,726 values identical, `FLOORS` raised with each step. An unstarted milestone with
   an expected finish sits at it, under a Mandatory Start at the later of the two; with an expected
