@@ -103,8 +103,13 @@ XERSCOPE_GATE_IMAGE=alpine/socat@sha256:<digest>
 XERSCOPE_LLM_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>
 XERSCOPE_MODELS=C:/xerscope/models
 XERSCOPE_MODEL_FILE=Qwen3.8-27B-UD-Q4_K_M.gguf
-XERSCOPE_LLM_GPU_LAYERS=48
+XERSCOPE_LLM_GPU_LAYERS=28
 ```
+
+`XERSCOPE_LLM_GPU_LAYERS=28` is for Qwen3.8-27B (64 layers of about 0.26 GB) when Windows already
+holds about 3 GB of the card; with the screen plugged into the motherboard (the Core Ultra's own
+graphics), the card is free and about 36 layers fit. Keep about 1 GB free in `nvidia-smi`: past the
+card, the Windows driver may spill into system memory and the model runs, very slowly.
 
 For Qwen3.6-35B-A3B instead: `XERSCOPE_LLM_GPU_LAYERS=99` and `XERSCOPE_LLM_CPU_MOE=24`.
 Optional: `XERSCOPE_AGENT_THINKING=low` (a reasoning pass, slower; see deploy.md §12),
