@@ -1,18 +1,33 @@
-# One of the two scan exceptions of the repository (tests/test_docker.py allows this file, this
-# entry and no other; the second file is .github/trivy/self.trivyignore.yaml), read by the
-# Tailscale scan of the CI job deploy.
+# One of the two scan exception files of the repository (tests/test_docker.py allows this file and
+# these two entries only; the second file is .github/trivy/self.trivyignore.yaml), read by the
+# Tailscale scan of the CI job deploy. Each entry was agreed with its date.
+#
+# CVE-2026-78661:
 # CVE-2026-78661 is fixed in golang.org/x/net 0.62.0, which no Tailscale release embarks yet:
 # v1.104.4 to v1.104.7 pin v0.60.0, the fix is on Tailscale's main only (commit d064d75,
 # "We don't use the affected functions anywhere in oss"). The vulnerable package is the HTML
 # parser, and the job proves it absent from the image's three binaries before each scan (step
 # "No golang.org/x/net/html code in the Tailscale binaries").
-# The entry ends by itself, and the job turns red, in three cases:
-#   - the date below is reached: move to a fixed Tailscale release, or renew with a new accord;
-#   - the image holds another x/net version (purls): that version is scanned again;
+#
+# CVE-2026-124709 (agreed 2026-11-26): OpenSSL "Unbounded Memory Retention in QUIC Server for Rejected
+# Streams", Low for OpenSSL, fixed in Alpine openssl 3.5.9-r2; v1.104.7 ships 3.5.9-r0 from its
+# Alpine 3.22 base and no later Tailscale release exists. Only a QUIC server built on OpenSSL is
+# exposed. tailscaled, tailscale and containerboot load no shared library (static Go binaries); in
+# the image only apk, ssl_client and c_rehash link libssl or libcrypto, and none of them runs, let
+# alone as a QUIC server. The job proves the three binaries static before each scan (step "The
+# Tailscale binaries load no shared library").
+#
+# Each entry ends by itself, and the job turns red, in three cases:
+#   - its date is reached: move to a fixed Tailscale release, or renew with a new accord;
+#   - the image holds another version of the package (purls): that version is scanned again;
 #   - the finding is gone from the image: .github/trivy/scan.sh refuses an entry that matches
-#     nothing, so this file is deleted with the Tailscale bump that fixes it.
+#     nothing, so an entry is deleted with the Tailscale bump that fixes it.
 vulnerabilities:
   - id: CVE-2026-78661
     statement: golang.org/x/net/html DoS on crafted HTML; the parser is absent from the image's binaries (CI job deploy), tailscaled parses no HTML here
     expired_at: 2026-12-09
     purls: [pkg:golang/golang.org/x/net@v0.60.0]   # this version only: another one is scanned again
+  - id: CVE-2026-124709
+    statement: OpenSSL QUIC server memory retention (OpenSSL Low); the Tailscale binaries are static and load no libssl (CI job deploy), nothing in the image runs an OpenSSL QUIC server
+    expired_at: 2026-12-17
+    purls: [pkg:apk/alpine/libssl3@3.5.9-r0, pkg:apk/alpine/libcrypto3@3.5.9-r0]   # this version only

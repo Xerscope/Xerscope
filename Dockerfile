@@ -20,6 +20,8 @@ ARG PYTHON_VERSION=3.14
 # with its dpkg record, so the scanner reads the fixed version. Remove an entry once Dependabot
 # brings a distroless digest that ships it (Trivy then reports the same version without it).
 #   zlib1g: CVE-2026-85091, CVE-2026-76844 (HIGH), fixed in Debian, not in cc-debian13 at 08476c24
+#     (cc-debian13 at 29ee7076 ships the same fixed version: the entry is redundant, to remove with a
+#     build that drops the os-fixes stage once OS_FIXES is empty)
 ARG OS_FIXES="zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1"
 
 FROM ghcr.io/astral-sh/uv:0.13.8-trixie-slim@sha256:2e5596835973a75bed0d37a980625b5089e87ffbd1026f11012ca0fe254ccac5 AS os-fixes
@@ -61,7 +63,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # an empty mount point for the exports, owned by the runtime user (distroless has no mkdir)
 RUN mkdir -p /data
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:29ee70762214fe8190cea04ef1c0a84a8365879e047ce8f911ae5a5ab2355fa2
 COPY --from=os-fixes /out/ /
 COPY --from=build /python /python
 COPY --from=build /app/.venv /app/.venv

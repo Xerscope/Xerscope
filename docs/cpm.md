@@ -341,7 +341,8 @@ date; corpus H10-04 A1310). Checked against P6's own relationship date, TASKPRED
 P6 writes on every link of the Hotel, Terminal, PV and xereditor exports (the corpus leaves
 it blank): the link drives exactly when aref reaches the successor's remaining start, 7,742
 links of 7,742, As Late As Possible successors included (tests/test_driving.py). Links of a
-level-of-effort activity place the LOE and are not listed. Open: a successor whose date
+level-of-effort activity place the LOE and are not listed. Only the plain recalculation
+(the one cached on the snapshot) lists them; a delayed run (critical path test, what-if) does not. Open: a successor whose date
 no link reaches (MPXJ marks its latest predecessor driving; UNRESOLVED
 `driving_held_by_data_date`).
 

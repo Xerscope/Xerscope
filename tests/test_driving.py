@@ -124,6 +124,16 @@ def test_a_finished_predecessor_drives_nothing():
     assert links == {("A", "B"): False, ("B", "Z"): True}
 
 
+@pytest.mark.oracle("property")
+def test_only_the_plain_recalculation_lists_the_links():
+    """A run with a delay (the critical path test, a what-if) reads no link: it lists none and does
+    not pay for them. The plain recalculation of the same network lists its one link."""
+    snapshot = snap([todo("A", **hours(40)), todo("B", **hours(8))], [("A", "B", "FS", 0)])
+    assert len(cpm.schedule(snapshot).links) == 1
+    delayed = cpm.schedule(snapshot, extra_hours={"A": 8})
+    assert delayed.links.empty and list(delayed.links.columns) == cpm.LINK_COLS
+
+
 # --- P6's exports: stored dates and recalculated dates give the same links ----------------
 
 

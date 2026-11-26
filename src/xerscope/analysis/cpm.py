@@ -294,7 +294,9 @@ class Schedule:
     warnings: list[str] = field(default_factory=list)
     assignments: pd.DataFrame = field(default_factory=pd.DataFrame)  # one row per open assignment
     assignment_minutes: dict[str, float] = field(default_factory=dict)  # taskrsrc_id -> remaining minutes as placed
-    links: pd.DataFrame = field(default_factory=pd.DataFrame)  # one row per relationship: LINK_COLS
+    # one row per relationship (LINK_COLS) on the plain recalculation only: a delayed or re-optioned run
+    # (the critical path test, a what-if) does not need them and does not pay for them (empty)
+    links: pd.DataFrame = field(default_factory=pd.DataFrame)
     # the plain recalculation (file options, no delay), the one cached on the snapshot: its
     # comparison with the stored dates is cached too (compare_with_stored)
     plain: bool = False
@@ -393,7 +395,7 @@ def schedule(
     if not extra_hours and options is None:
         cached = getattr(snapshot, "_xs_schedule", None)
         if cached is None:
-            cached = replace(_schedule(snapshot, None, None), plain=True)
+            cached = replace(_schedule(snapshot, None, None, with_links=True), plain=True)
             object.__setattr__(snapshot, "_xs_schedule", cached)
         return cached.copy()
     return _schedule(snapshot, extra_hours, options, base)
@@ -428,11 +430,15 @@ def _refuse_unbounded_delays(extra_hours: dict[str, float]) -> None:
 
 
 def _schedule(
-    snapshot: Snapshot, extra_hours: dict[str, float] | None, options: Options | None, base: Schedule | None = None
+    snapshot: Snapshot,
+    extra_hours: dict[str, float] | None,
+    options: Options | None,
+    base: Schedule | None = None,
+    with_links: bool = False,
 ) -> Schedule:
     _refuse_unbounded_delays(extra_hours or {})
     try:
-        return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot), base).result()
+        return _Run(snapshot, extra_hours or {}, options or Options.from_snapshot(snapshot), base).result(with_links)
     except ScheduleError:
         raise
     except (OverflowError, OutOfBoundsDatetime) as exc:  # a date past year 2262 the time axis cannot hold
@@ -2055,7 +2061,7 @@ class _Run:
         return place_backward(axis, driving, durations, stretched_finish, None)
 
     # --- result ------------------------------------------------------------------------------
-    def result(self) -> Schedule:
+    def result(self, with_links: bool = False) -> Schedule:
         self.forward()
         self.backward()
         self.floats()
@@ -2091,7 +2097,7 @@ class _Run:
             self.warnings,
             self.assignment_dates(),
             self.assignment_minutes,
-            links=self.driving_links(),
+            links=self.driving_links() if with_links else pd.DataFrame(columns=LINK_COLS),
         )
 
     def _report(self) -> None:
