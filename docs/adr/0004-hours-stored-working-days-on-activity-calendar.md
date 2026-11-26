@@ -112,7 +112,7 @@ project's calendar, then the file's first calendar, then the standard one
 - `src/xerscope/config.py`: `Settings.default_hours_per_day`
 - `docs/architecture.md` §2 ("Units", "Lag" rows), §3
 - `docs/cpm.md` "Time: `TimeAxis` (`xer/calendar.py`)"
-- `README.md` "Definitions that matter" (Working time, Day units)
+- `docs/user-guide.md` "Concepts" (What xerscope reads from an update, Units of time)
 - `CONTRIBUTING.md` "Units" paragraph, Names rule 7
 - Related: [ADR-0002](0002-format-parser-then-p6-model-with-load-contract.md),
   [ADR-0007](0007-own-cpm-engine-validated-against-p6.md),

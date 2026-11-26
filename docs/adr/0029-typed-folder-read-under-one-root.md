@@ -4,7 +4,7 @@
 |---|---|
 | Status | Accepted |
 | Date | 2026-11-20 (`9e824e7`, the root and its check; `4c86900`, the check rewritten as a guard CodeQL reads) |
-| Scope | `src/xerscope/app/session.py` (`folder_root`, `folder_under_root`), `src/xerscope/app/files_window.py` (`_folder_boxes`), `src/xerscope/app/loading.py` (`_chosen_items`); `tests/test_folder_root.py`; `README.md` configuration table |
+| Scope | `src/xerscope/app/session.py` (`folder_root`, `folder_under_root`), `src/xerscope/app/files_window.py` (`_folder_boxes`), `src/xerscope/app/loading.py` (`_chosen_items`); `tests/test_folder_root.py`; `docs/user-guide.md`, "Environment variables" |
 | Sources | `9e824e7` "Files window: a typed folder is read only under one root"; `4c86900` "Files window: the root check written as a guard CodeQL reads"; CodeQL alert "Uncontrolled data used in path expression" (path injection, high); [docs/refactor-front-plan.md](../refactor-front-plan.md) "Folder typed in the Files window: read under one root (decided, 2026-11-20)"; [README.md](../../README.md) "Web app" (configuration table); [SECURITY.md](../../SECURITY.md) |
 
 ## Context
@@ -93,7 +93,7 @@ Negative:
 - `src/xerscope/app/files_window.py`: `_window` (the window), `_files_section` (the `files_folder`
   field, absent when the data is locked), `_folder_boxes`.
 - `src/xerscope/app/loading.py`: `_chosen_items`.
-- [README.md](../../README.md), configuration table (`XERSCOPE_FOLDER_ROOT`,
+- [docs/user-guide.md](../user-guide.md), "Environment variables" (`XERSCOPE_FOLDER_ROOT`,
   `XERSCOPE_DATA_LOCKED`); [SECURITY.md](../../SECURITY.md) (in scope: a folder typed in the Files
   window read only under `XERSCOPE_FOLDER_ROOT`); [docs/architecture.md](../architecture.md) §7
   (`session.py`); [docs/refactor-front-plan.md](../refactor-front-plan.md), "Folder typed in the

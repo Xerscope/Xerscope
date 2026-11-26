@@ -5,7 +5,7 @@
 | Status | Accepted |
 | Date | 2026-10-29 (`49ad764`, "initial git commit": `export.py` with the four tables and both formats, the Export page); CSV floats to four decimals on 2026-11-06 (`ab67657`, "CSV downloads write floats to four decimals", #119); CSV cells neutralised on 2026-11-09 (`5ca0f45`, #165, ADR-0023) |
 | Scope | `src/xerscope/export.py`, `src/xerscope/store.py` (`summary`, `history`, `relationship_history`, `assignment_history`), `src/xerscope/app/views/export.py`, `src/xerscope/cli.py` (`export`) |
-| Sources | [README.md](../../README.md), "Command line" (`export`) and "Web app" (Export for Power BI); [docs/architecture.md](../architecture.md), "Outside `analysis/`" (`export.py`) and Layer rules; `pyproject.toml` (`pyarrow`, `[tool.deptry.per_rule_ignores]` `DEP002`); commits `49ad764`, `ab67657`, `5ca0f45` |
+| Sources | [docs/user-guide.md](../user-guide.md), "Reference": "Command line" (`export`) and "Web app" (Export for Power BI); [docs/architecture.md](../architecture.md), "Outside `analysis/`" (`export.py`) and Layer rules; `pyproject.toml` (`pyarrow`, `[tool.deptry.per_rule_ignores]` `DEP002`); commits `49ad764`, `ab67657`, `5ca0f45` |
 
 ## Context
 
@@ -106,7 +106,7 @@ Follow-ups: none recorded in [docs/backlog.md](../backlog.md).
 - `src/xerscope/store.py`: `HISTORY_COLS`, `REL_COLS`, `ASSIGNMENT_COLS`, `SnapshotStore._stack`,
   `history`, `relationship_history`, `assignment_history`, `summary`.
 - `src/xerscope/app/views/export.py`; `src/xerscope/cli.py`: `_args_export`, `_cmd_export`.
-- [README.md](../../README.md), "Command line" and "Web app"; [docs/architecture.md](../architecture.md),
+- [docs/user-guide.md](../user-guide.md), "Reference": "Command line" and "Web app"; [docs/architecture.md](../architecture.md),
   "Outside `analysis/`" (`export.py`).
 - Related: ADR-0003 (identity by `task_code`), ADR-0004 (units), ADR-0006 (the store),
   ADR-0015 (anonymised downloads), ADR-0023 (CSV neutralisation).
