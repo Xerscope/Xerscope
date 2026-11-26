@@ -1,5 +1,7 @@
 # xerscope user guide
 
+Français : [Guide utilisateur](user-guide.fr.md)
+
 xerscope reads weekly Primavera P6 exports (`.xer`) and reports on them, from a command line and
 from a web app that runs on your own machine. This guide has eight parts:
 
@@ -23,34 +25,36 @@ and [docs/deploy.md](deploy.md).
 The guide describes the following versions:
 
 - xerscope 0.1.0. The command line has no `--version` option and the app shows no version.
-- Python 3.11 or later. The automated tests run on 3.11, 3.13 and 3.14; 3.12 installs but is
-  not tested.
+- Python 3.11 or later. The automated tests run on 3.11, 3.13 and 3.14.
 - The P6 Check Schedule standard follows the P6 Professional 24 documentation.
 - The recalculation applies the rules of P6 Professional 23.12 / 24. It is checked against
   schedules computed by P6 Professional 23.12.1, and some checks against P6 Professional 26.8
-  reports. No output of P6 Professional 24 itself is among the test references.
+  reports.
 - xerscope reads `.xer` exports as updates, and a P6 XML export for its baselines only.
 - The app and the command line are in English. The **Ask the schedule** field also reads French.
 
 The guide uses the following conventions:
 
 - "You" is the reader. You type every command in a terminal opened in the folder that holds the
-  xerscope source, and every command starts with `uv run xerscope`.
+  xerscope source, and every xerscope command starts with `uv run xerscope`, except in the
+  Docker image.
 - A label of the app is in bold, spelled as the app displays it, for example **Done**. Commands,
   file names, values and messages that the tool prints are in code font.
 - A word in capitals inside a command or a label, such as `ACTIVITIES_CSV` or NAME, is a
   placeholder. In a label, N, K and M stand for numbers.
+- A part between angle brackets in a message or a file name, such as `<file>` or `<n>`, stands
+  for a name or a number.
 - The guide uses P6's words: *data date*, *activity*, *Activity ID*. The app's labels say
   *status date*, *task* and *Task ID* for the same things.
 - The app spells *labor* and *anonymized*. The guide quotes labels as they are and writes
   *labour* and *anonymised* elsewhere.
-- Dates and times are written as the tool prints them: `2026-10-19` or `19 Oct 2026`, and the
-  24-hour clock (`08:00`).
+- Dates and times are written as the tool prints them: `2026-10-19` or `19 Oct 2026`, or
+  `20/12/2026` in the banner of the **Ask the schedule** field, and the 24-hour clock (`08:00`).
 - Every example uses the demo series, a synthetic project named `PRJ-ALPHA`.
 
-For depth, the guide links to [docs/formulas.md](formulas.md), [docs/standards.md](standards.md),
-[docs/cpm.md](cpm.md) and [docs/backlog.md](backlog.md). The full list is in
-[Related documents](#related-documents).
+For depth, the guide links to [docs/formulas.md](formulas.md),
+[docs/standards.md](standards.md), [docs/cpm.md](cpm.md) and [docs/backlog.md](backlog.md). The
+full list is in [Related documents](#related-documents) in this guide.
 
 ## Concepts
 
@@ -59,9 +63,9 @@ This part explains the ideas behind the numbers. It contains no procedure.
 ### Updates, the weekly series and snapshots
 
 An *update* is one `.xer` export of a schedule at one data date. xerscope reads several updates
-of the same project together, as a *series*, because most of its readings are comparisons: what
-changed between two weeks, what was promised last week and done this week, how the forecast
-finish moved. A single update still gives the checks, the recalculation and the Gantt.
+of the same project together, as a *series*, because most of its readings are comparisons. They
+show what changed between two weeks, what was promised last week and done this week, and how the
+forecast finish moved. A single update still gives the checks, the recalculation and the Gantt.
 
 A series is ordered by data date, then by file name. It holds one update per data date: two
 files with the same data date cannot both be read, because nothing says which one is the week's
@@ -95,27 +99,27 @@ For the exact fields and fallbacks, see [docs/formulas.md](formulas.md).
 
 ### Baselines and the kinds the app offers
 
-A baseline is the plan that planned value, BEI, missed activities and late activities are
-measured against. xerscope does not guess it: you choose it, and every result says which
-baseline it used. The choice has five kinds:
+A baseline is the plan that planned value, the Baseline Execution Index (BEI), missed activities
+and late activities are measured against. xerscope does not guess it: you choose it, and every
+result says which baseline it used. The choice has five kinds:
 
 - **Baseline in each file (P6 Project Baseline)**: each update is measured against the project
   its own file names as its Project Baseline (`PROJECT.sum_base_proj_id`). That baseline is
-  usable when it is another project of the same file, owns activities and, when it records the
-  project it was copied from, was copied from the analysed project. With a P6 XML export of the
-  baselines at hand, the baseline an update names is read from the export.
+  usable on three conditions. It is another project of the same file. It owns activities. When
+  it records the project it was copied from, that project is the analysed project. With a P6 XML
+  export of the baselines at hand, the baseline an update names is read from the export.
 - **Separate baseline file**: one file, an XER or a P6 XML export, for the whole series.
 - A loaded update, for example the first export, taken before any progress.
 - **Planned dates in each file (target_*)**: each update against its own planned dates.
 - **None**.
 
 The first kind follows a baseline that changes over time, update by update; the others hold one
-plan still. That matters when you compare weeks: updates measured against different plans do
-not show one trend, and the sidebar says so when it happens. xerscope records how each update's
-baseline was found: *in file*, *exact* (the baseline the update names, read from the P6 XML
-export), *probable*, *chosen*, *fallback*, *planned*, *series* (one baseline for every update)
-or *none*. By the code's own definition, only *in file* and *exact* are the baseline P6 itself
-used.
+plan still. That matters when you compare weeks: updates measured against different plans do not
+show one trend, and the sidebar says so when it happens. xerscope records how each update's
+baseline was found, in one of eight words: *in file*, *exact*, *probable*, *chosen*, *fallback*,
+*planned*, *series* or *none*. *Exact* is the baseline the update names, read from the P6 XML
+export, and *series* is one baseline for every update. By the code's own definition, only *in
+file* and *exact* are the baseline P6 itself used.
 
 Two groups of pages read the baseline differently. **Schedule health**, **Audit** and
 **Gantt & WBS** read the Project Baseline of the update's own file whenever the file holds a
@@ -124,24 +128,35 @@ cumulative figures against the origin of the series, the baseline that does not 
 update to the next, unless you turn on its P6 view.
 
 The *earned value basis* is a second choice: which baseline hours and dates planned and earned
-value use. The default is budgeted values with planned dates. Its help text quotes P6's Admin
-Preference "When calculating earned value from a baseline use"; that wording was not checked
-against P6.
+value use. The default is budgeted values with planned dates. The help text of the control names
+its counterpart in P6: the Admin Preference "When calculating earned value from a baseline use".
+
+The basis also sets the dates of a separate baseline, which the help text calls P6's BL Project
+Start / Finish. A separate baseline is a schedule of its own: a baseline file, a loaded update,
+or the Project Baseline that a file holds or names. With the default basis, its dates are the
+planned dates of the baseline's activities. With the two "current dates" options, they are the
+current Start and Finish of those activities. Late activities, BEI, finish variances, the Gantt
+and the milestone trend read these dates. Their results can therefore change with the basis for
+an activity that had started when the baseline was taken, or whose baseline was changed and not
+rescheduled. A result that reads a baseline is computed again when the basis changes. With
+**Planned dates in each file (target_*)**, the baseline dates are the update's own planned dates
+whatever the basis. For the sources of the rule, see
+[docs/standards.md](standards.md#p6-check-schedule-p6-professional-24-17-checks-18-report-lines).
 
 ### How activities are matched between files
 
 Activities are matched between files by Activity ID (`TASK.task_code`). `task_id` is not used
-for matching: the code treats it as a number that can change from one export to the next (a
-statement about P6 that was not checked), and the demo series changes it in every file while
-the Activity IDs stay. When an Activity ID is repeated in a project, the first `TASK` row is
-kept and a warning names the others, which are left out with their relationships, assignments
-and expenses.
+for matching: the code treats it as a number that can change from one export to the next. The
+demo series changes it in every file while the Activity IDs stay. When an Activity ID is
+repeated in a project, the first `TASK` row is kept and a warning names the others, which are
+left out with their relationships, assignments and expenses.
 
 An activity renumbered between two files therefore counts as one deleted and one new activity;
-the changelog and PPC note it. For a baseline you can change that: with **Link renumbered tasks
-by GUID** on, an update activity that carries a baseline activity's `TASK.guid` under a new
-Activity ID is measured against that baseline activity. The option is off by default, and has
-no effect with a baseline read from a P6 XML export, where the GUID is blank.
+the changelog and the percent plan complete (PPC) figures note it. For a baseline you can change
+that with **Link renumbered tasks by GUID**. When it is selected, an update activity that
+carries a baseline activity's `TASK.guid` under a new Activity ID is measured against that
+baseline activity. The checkbox is cleared by default, and has no effect with a baseline read
+from a P6 XML export, where the GUID is blank.
 
 ### Standards and checks
 
@@ -177,24 +192,26 @@ what it computed with what the file stores. The engine applies the following:
 - every calendar, with its work periods, holidays and exceptions;
 - the four relationship types, with lag on the calendar that the project's option designates
   (the successor's by default);
-- SS lag of a started predecessor, counted from its early start or from its actual start;
+- SS lag of a started predecessor, as the project's option says: from its early start, less the
+  lag already expired since its actual start, or from its actual start with the full lag;
 - the nine constraint types, primary and secondary;
 - Retained Logic, Progress Override or Actual Dates, and expected finish dates;
 - resource-dependent activities on their resources' calendars, with driving assignments and
-  assignment lag;
+  assignment lag; the duration of an assignment is its remaining units divided by its units per
+  hour;
 - As Late As Possible, level of effort, open ends, Must Finish By and the longest path.
 
 One rule follows the P6 version that exported the file. An expected finish earlier than the
 early start brings the remaining duration to 0 for an export of a version below 26. From
 version 26, the stored remaining duration is kept.
 
-The comparison covers the stored early and late dates, total float and free float of every
-activity that is not completed and not a level of effort, and the remaining dates of their
-resource assignments. A date agrees when it is the same clock time to the minute. The point of
-the comparison is trust in the file: by the code's own reading, a difference means that the
-file was edited after the last F9, or that it uses a scheduling feature xerscope does not
-model. Checks such as large float or negative float read the float stored in the file, so the
-comparison tells you whether that float is what the file's own logic produces. The Integrity
+The comparison covers every activity that is not completed and not a level of effort. For each
+one it reads the stored early and late dates, total float and free float, and the remaining
+dates of its resource assignments. A date agrees when it is the same clock time to the minute.
+The point of the comparison is trust in the file. By the code's own reading, a difference means
+that the file was edited after the last F9, or that it uses a scheduling feature xerscope does
+not model. Checks such as large float or negative float read the float stored in the file, so
+the comparison tells you whether that float is what the file's own logic produces. The Integrity
 standard runs the same comparison as checks INT-01 and INT-03. For the algorithm and its
 evidence, see [docs/cpm.md](cpm.md).
 
@@ -221,14 +238,15 @@ behind.
 
 The earned value figures are in labour hours:
 
-- Planned value (PV) is the baseline labour units times Schedule % Complete, which is linear in
-  working time between the baseline start and finish, to the minute, on the baseline activity's
-  calendar as the baseline file defines it.
+- Planned value (PV) is the baseline labour units times Schedule % Complete. Schedule % Complete
+  is linear in working time between the baseline start and finish, to the minute, on the
+  baseline activity's calendar as the baseline file defines it.
 - Earned value (EV) is the baseline labour units times Performance % Complete, which follows
   the earned value technique of the activity's WBS: activity % complete, 0/100, 50/50 or
   custom %. An activity of the update that is not in the baseline earns nothing and is listed.
-- AC is the actual labour hours of every activity of the update, ETC the remaining hours, and
-  EAC is AC plus ETC. Cost figures stay hidden until you turn on **Costs**.
+- Actual cost (AC) is the actual labour hours of every activity of the update, the estimate to
+  complete (ETC) is the remaining hours, and the estimate at completion (EAC) is AC plus ETC.
+  Cost figures stay hidden until you select **Costs**.
 
 PPC reads two consecutive updates, W−1 and W. A *commitment* is a start or a finish that W−1
 plans on or before W's data date, for an activity not yet started (or not yet finished) in
@@ -238,8 +256,8 @@ both. Work already late at W−1 is committed too, by default. Milestones and le
 activities are left out, and an activity deleted in W is a scope change, not a miss. When
 nothing was due, PPC shows a dash, not 0.
 
-The start and finish variance of an activity is its date in W−1 (or W−2) minus its date in W,
-in working days of its calendar in W; it is blank when a date is missing.
+The start and finish variance of an activity is its date in W−1 (or W−2) minus its date in W, in
+working days of its calendar in W. It is blank when a date is missing.
 
 ### What stays on your machine
 
@@ -249,29 +267,36 @@ xerscope is meant for schedules that must not leave your machine:
   login: every program and every local user of the same machine can reach it.
 - xerscope's own code makes no network call. Usage statistics are off, and the app serves its
   two fonts itself.
-- An uploaded file is held in the session's memory and is never written to disk. The app writes
-  nothing to disk, with one exception: a correction taught in the **Ask the schedule** field is
-  recorded when a lexicon folder is configured, which is off by default.
+- An uploaded file is held in the session's memory, and xerscope's own code never writes it to
+  disk. While a file over 1 MB arrives, Streamlit's upload handler passes it through a temporary
+  file of the system's temporary directory, deleted once read. To avoid that temporary copy,
+  read the file from a folder. The app itself writes nothing to disk, with one exception: a
+  correction taught in the **Ask the schedule** field is recorded when a lexicon folder is
+  configured, which is off by default.
 - The command line writes only where you ask it to, and downloads are anonymised by default.
 
-These statements rest on xerscope's code. The code of Streamlit and Plotly, which the app is
-built on, was not audited, and no browser traffic was captured.
+These statements describe xerscope's own code. Streamlit and Plotly, which the app is built on,
+behave as their own code says. For the requests that Streamlit makes, see
+[Flow matrix](it-deployment-guide.md#flow-matrix) in the IT deployment guide.
 
 ## Getting started
 
 At the end of this part, xerscope is installed, the app shows a demo series of eight weekly
 updates, and you have read the same check in the app and on the command line.
 
-Before you begin, make sure that you have a terminal, git, uv (the tool that installs and runs
-xerscope), Python 3.11 or later, and network access for the installation. The commands were run
-on Linux; they have not been checked on Windows or macOS.
+Before you begin, make sure that you have a terminal, git, Python 3.11 or later, network access
+for the installation, and uv, the tool that installs and runs xerscope. To install uv, see the
+[uv documentation](https://docs.astral.sh/uv/). The commands of this guide are written for a
+Linux shell. On Windows, the project's CI installs xerscope with
+`uv sync --locked --extra crosscheck` and runs `sample` and `crosscheck` at each run. Each week,
+it also runs `uv sync --locked`, the test suite, `sample`, `info` and `export` there.
 
 ### Install xerscope and generate the demo series
 
 To install xerscope and create the demo files, follow these steps:
 
 1. Fetch the source into a folder named `xerscope`. This step needs read access to the
-   repository and was not checked on a fresh machine.
+   repository.
    ```bash
    git clone https://github.com/Xerscope/Xerscope xerscope
    ```
@@ -342,9 +367,9 @@ To read the schedule checks of the last update, follow these steps in the app:
    **P6 Check Schedule** and **Update** is on `2026-10-19 · PRJ-ALPHA_2026-10-19.xer`. The cards
    read **P6 Check Schedule score** `29 %`, **Checks passed** `6 / 18` and **Checks failed**
    `12`. The **Results** table has one row per check.
-2. Under **Detail by check**, click the first line, `FAIL P6-01 · Logic — 8.7 % (2 / 23) ·
-   target < 5%`. The panel reads "8.7 % misses the target < 5 %." and lists the two activities
-   that the check found.
+2. In the **Detail by check** section, click the first line,
+   `FAIL P6-01 · Logic — 8.7 % (2 / 23) · target < 5%`. The panel reads "8.7 % misses the target
+   < 5 %." and lists the two activities that the check found.
 
 ### Run the same check on the command line
 
@@ -366,26 +391,27 @@ To get the same result without the app, follow these steps:
    ```
    The line P6-01 carries the figures of the page: 2 found out of 23. Six lines read `pass` and
    12 read `fail`, as the cards of the page do.
-3. In the first terminal, press `Ctrl+C` to stop the app. Streamlit prints `Stopping...`.
+3. In the first terminal, press `Ctrl+C` to stop the app. Streamlit prints `Stopping...`, then
+   Python prints a traceback that ends with `KeyboardInterrupt`. The app has stopped.
 
 You have installed xerscope, read a series of eight updates against a baseline, and obtained the
 same check results in the app and on the command line. The demo series carries deliberate
-defects, listed in [Demo series](#demo-series). To work on your own files, go to
-[Load files and choose the baseline](#load-files-and-choose-the-baseline).
+defects, listed in [Demo series](#demo-series) in this guide. To work on your own files, go to
+[Load files and choose the baseline](#load-files-and-choose-the-baseline) in this guide.
 
 ## Tasks
 
 Each guide in this part reaches one goal. The commands use the demo series from
-[Getting started](#getting-started), so each one runs as written from the folder of the source;
-replace `data/sample` and the demo file names with your own. Every option of every command is
-in [Reference](#reference).
+[Getting started](#getting-started) in this guide, so each one runs as written from the folder
+of the source; replace `data/sample` and the demo file names with your own. Every option of
+every command is in [Reference](#reference) in this guide.
 
 ### Load files and choose the baseline
 
 Use this guide to read your own weekly exports in the app and to set the baseline they are
 measured against. Keep one `.xer` file per data date in the folder. For what each baseline
-means, see [Baselines and the kinds the app offers](#baselines-and-the-kinds-the-app-offers).
-To read the `.xer` files of a folder, follow these steps:
+means, see [Baselines and the kinds the app offers](#baselines-and-the-kinds-the-app-offers) in
+this guide. To read the `.xer` files of a folder, follow these steps:
 
 1. Start the app on the folder, then open `http://localhost:8501` in your browser.
    ```bash
@@ -411,10 +437,9 @@ file**.
 
 To read another folder without restarting, enter an absolute path, or a path that starts with
 `~`, in the **…or read a folder** field of the window. The folder must lie under the folder
-root: the `--data` folder when you gave one, else your home directory. To read files that are
-in no such folder, add them under **Upload .xer files** (up to 200 MB each); uploaded files take
-precedence over the folder. The upload was read in the code and has not been exercised in a
-browser.
+root: the `--data` folder when you gave one, else your home directory. To read files that are in
+no such folder, add them under **Upload .xer files** (up to 200 MB each); uploaded files take
+precedence over the folder.
 
 #### Use a P6 XML export or a baselines subfolder
 
@@ -435,7 +460,6 @@ If you choose **Separate baseline file** instead, one baseline of the export ser
 update: the one the latest update names, else the export's Project Baseline, else its only
 baseline. On the command line, `--baseline` also takes a P6 XML export: it reads the export's
 Project Baseline, else its only baseline, and does not look at the baseline each update names.
-The reading of an export with several baselines was read in the code and has not been run.
 
 To offer baseline files that must never be read as updates, put them (`.xer` files or P6 XML
 exports) in a subfolder named `baselines` of the folder of the updates. Choose **Separate
@@ -451,9 +475,9 @@ the activities that each check found. To read the checks in the app, follow thes
 1. In **Standard**, choose the standard, and in **Update**, the update. The cards give the score
    and the number of checks passed, failed, for review and not applicable; the **Results** table
    has one row per check.
-2. Under **Detail by check**, click a check. Its panel gives what the check measures, its
-   calculation, its population, its source and the items it found. **Show the N tasks in the
-   Gantt** opens those activities in the schedule.
+2. In the **Detail by check** section, click a check. Its panel gives what the check measures,
+   its calculation, its population, its source and the items it found.
+   **Show the N tasks in the Gantt** opens those activities in the schedule.
 3. To see a check over time, go to **Trend across updates**, click **Compute the trend on the N
    updates**, then choose the check in **Check**.
 4. To keep the results, click **Summary (CSV)** or **All flagged items (CSV)**.
@@ -478,9 +502,9 @@ steps on the **Audit** page:
 
 1. Choose the standard in **Standard**, the update in **Update** and the check in **Check**. On
    **Schedule health**, the **Audit this check** button of a check's panel does it for you.
-2. Under **Sets**, read the tabs **Counted**, **Checked, not counted** and **Excluded**, each
-   with a **Download CSV** button, then **Population, step by step**: each step, what it
-   removed and what it left.
+2. In the **Sets** section, read the tabs **Counted**, **Checked, not counted** and
+   **Excluded**, each with a **Download CSV** button, then **Population, step by step**: each
+   step, what it removed and what it left.
 3. For a check of the P6 standard, open **Calculation sheet: population, fields, sources, worked
    example**.
 4. To try other settings, change **Rule parameters** or **Target** under **Settings for this
@@ -492,8 +516,8 @@ steps on the **Audit** page:
 ### Recalculate like P6 and read the differences
 
 Use this guide to find out whether the dates and float stored in a file are the ones its own
-logic produces. For what is compared and why, see [Recalculation](#recalculation). Follow these
-steps:
+logic produces. For what is compared and why, see [Recalculation](#recalculation) in this guide.
+Follow these steps:
 
 1. Run the `recalc` command with a report and a CSV of the recalculated values.
    ```bash
@@ -516,11 +540,11 @@ steps:
 4. Read the lines that start with `warning:`. They name what xerscope does not model in this
    file, such as leveling.
 
-The exit code is 0 whatever the number of differences. In the app, the same comparison is on
-the **Schedule health** page: choose **Integrity** in **Standard** and read INT-01 (**Schedule
-recalculated**; the four dates and total float, without free float) and INT-03 (**Assignments
-recalculated**). The values that differ are on the **Debug** page, in the block **3 · INT-01 /
-INT-03 differences**.
+The exit code is 0 whatever the number of differences. In the app, the same comparison is on the
+**Schedule health** page. Choose **Integrity** in **Standard** and read INT-01
+(**Schedule recalculated**; the four dates and total float, without free float) and INT-03
+(**Assignments recalculated**). The values that differ are on the **Debug** page, in the block
+**3 · INT-01 / INT-03 differences**.
 
 ### Compare two updates
 
@@ -531,8 +555,8 @@ updates, follow these steps on the **Changelog** page:
    update and the one before it.
 2. Read the cards: **Forecast finish**, **Added / deleted**, **Logic changes**, **Durations
    changed**, **Retroactive actuals** and **Became critical**.
-3. Under **All changes**, narrow the list with **Category**, **Change** and **Search**. To keep
-   the whole list, click **Download changelog (CSV)**.
+3. In the **All changes** section, narrow the list with **Category**, **Change** and **Search**.
+   To keep the whole list, click **Download changelog (CSV)**.
 
 To compare two files on the command line, older first, run the `changelog` command. It prints
 the number of changes of each kind, then `written changelog.csv (60 changes)`.
@@ -543,38 +567,39 @@ uv run xerscope changelog data/sample/PRJ-ALPHA_2026-10-12.xer data/sample/PRJ-A
 
 ### Read the delay analysis
 
-Use this guide to see what moved the project finish between an update and the one before it.
-The page needs at least two updates and does not read the baseline. For the method, the
-half-stepped update analysis, see
+Use this guide to see what moved the project finish between an update and the one before it. The
+page needs at least two updates and does not read the baseline. The page names its method: AACE
+RP 29R-03 MIP 3.4, contemporaneous split (half-stepped update analysis). For the method, see
 [docs/formulas.md](formulas.md#51-half-step-reading-of-a-week-analysisforensicspy). Follow these
 steps on the **Delay analysis** page:
 
 1. In **Update**, choose an update after the first one.
-2. Read the caption **Finish held by** (the last task, Must Finish By or a mandatory finish) and
-   the cards: **Finish before replanning** with the week's slip, **Finish shown**, **Longest
-   path float** and **Tasks matched**.
-3. Under **Step by step**, read what each kind of change did to the finish: progress, scope,
-   durations, logic, constraints, then calendars and options.
-4. Under **Longest path**, read which activities stayed on the longest path, entered it or left
-   it, and the week's commitments on that path.
-5. Under **Every update**, read the series: a finish shown that holds still while the finish
-   before replanning keeps slipping is a delay absorbed by replanning.
+2. Read the caption **Finish held by** (the last task, Must Finish By or a mandatory finish).
+   Then read the cards: **Finish before replanning** with the week's slip, **Finish shown**,
+   **Longest path float** and **Tasks matched**.
+3. In the **Step by step** section, read what each kind of change did to the finish: progress,
+   scope, durations, logic, constraints, then calendars and options.
+4. In the **Longest path** section, read which activities stayed on the longest path, entered it
+   or left it, and the week's commitments on that path.
+5. In the **Every update** section, read the series: a finish shown that holds still while the
+   finish before replanning keeps slipping is a delay absorbed by replanning.
 
 If the page warns that xerscope does not recalculate the finish P6 stored in the file, read the
 shifts as indications only.
 
 ### Follow earned value
 
-Use this guide to read planned value, earned value and schedule performance over the series.
-The page needs a baseline that carries labour hours. For the definitions, see
-[Planned value, earned value and commitments](#planned-value-earned-value-and-commitments).
-Follow these steps on the **Earned value** page:
+Use this guide to read planned value, earned value and schedule performance over the series. The
+page needs a baseline that carries labour hours. For the definitions, see
+[Planned value, earned value and commitments](#planned-value-earned-value-and-commitments) in
+this guide. Follow these steps on the **Earned value** page:
 
 1. In **Update**, choose the update, and read the first cards: **Percent complete**, **Percent
    scheduled**, **SPI (labor units)**, **SV**, **BEI (P6 / DCMA)** and **EAC**.
-2. Read the Earned Schedule figures under **Where the project stands**, **At what pace** and
-   **Does it end on the planned finish**.
-3. Under **S-curve**, read PV, EV and AC over time. **Show as % of BAC** gives percentages.
+2. In the **Where the project stands**, **At what pace** and
+   **Does it end on the planned finish** sections, read the Earned Schedule figures.
+3. In the **S-curve** section, read PV, EV and AC over time. **Show as % of BAC** gives
+   percentages.
 4. To measure the update against its own baseline, as P6 computes its planned value, turn on
    **P6 view: the file's baseline**.
 5. To see cost figures, select **Costs** in the sidebar. The page adds the **SPI** card and the
@@ -593,8 +618,8 @@ needs at least two updates. Follow these steps on the **Milestone trend** page:
    milestones**, **Critical milestones** and **Clear** buttons set the list in one click.
 2. Read the chart, one line per milestone. The last point is red when the milestone moved later
    in the last update and green when it moved earlier.
-3. Under **Slippage**, read the slip of each milestone in working days on its own calendar. A
-   later date reads negative.
+3. In the **Slippage** section, read the slip of each milestone in working days on its own
+   calendar. A later date reads negative.
 
 ### Measure PPC
 
@@ -608,9 +633,10 @@ progress** page:
    W−1**.
 4. Read **PPC Start**, **PPC Finish** and **PPC W/W−1**, with **Starts kept** and **Finishes
    kept**. A dash means that nothing was due.
-5. Under **Commitments**, read each commitment and its outcome; **Milestones committed** and
-   **Unplanned work** are listed apart, outside the counts. Under **Start and finish
-   variance**, read how each activity's dates moved against W−1 and W−2.
+5. In the **Commitments** section, read each commitment and its outcome;
+   **Milestones committed** and **Unplanned work** are listed apart, outside the counts. In the
+   **Start and finish variance** section, read how each activity's dates moved against W−1 and
+   W−2.
 
 ### Explore the Gantt and ask the schedule
 
@@ -661,9 +687,8 @@ download the Power BI tables from the app, follow these steps:
 The same toggle and the same two steps apply to the downloads of the other pages. To download an
 anonymised copy of the XER files themselves, click **Build anonymized extract** under
 **Anonymized XER extract**, then **Download anonymized XER (.zip)**; the extract is anonymised
-whatever the toggle says. The downloads were read in the code and have not been built through
-the page. On the command line, the `export` command writes the four tables from a folder of
-updates and prints their paths; these tables are not anonymised.
+whatever the toggle says. On the command line, the `export` command writes the four tables from
+a folder of updates and prints their paths; these tables are not anonymised.
 
 ```bash
 uv run xerscope export data/sample --out export --format csv
@@ -683,7 +708,7 @@ Use this guide to run your company's own checks and targets. Follow these steps:
    ```
 3. Edit the `my.toml` file. Give the standard an `id` and a `name` of its own, and write one
    `[[metric]]` table per check, each with an `id`, a `name` and a `rule`. The file format is in
-   [The standard file](#the-standard-file).
+   [The standard file](#the-standard-file) in this guide.
 4. Run the standard on an update. The table is titled with the standard's name; a mistake in
    the file stops the command with one line that names the file and the fault.
    ```bash
@@ -699,8 +724,9 @@ rules in detail, see [docs/standards.md](standards.md#your-own-standard).
 
 ### Compare xerscope with P6
 
-Use this guide to hold xerscope's numbers against P6's on the same file. P6's own menus are
-outside what this guide has checked. To compare the counts of P6's Check Schedule report with
+Use this guide to hold xerscope's numbers against P6's on the same file. The header of the
+built-in P6 standard names the report in P6 as "Tools > Check Schedule". A step-by-step through
+P6's own menus is not provided. To compare the counts of P6's Check Schedule report with
 xerscope's, follow these steps:
 
 1. In P6, run Check Schedule on the same project, data date and baseline, and note the found
@@ -721,9 +747,10 @@ xerscope's, follow these steps:
    column, then `all counts match`. When a count differs, it prints the number of differences
    and returns the exit code 1.
 
-In the app, the same comparison is on the **Schedule health** page, in **Compare with a P6
-Check Schedule report**: enter the counts in **Found (report)** and **Total (report)**, or add
-the CSV under **Report counts (.csv)**. Lines left empty are not compared.
+In the app, the same comparison is on the **Schedule health** page, in
+**Compare with a P6 Check Schedule report**. Enter the counts in **Found (report)** and
+**Total (report)**, or add the CSV in **Report counts (.csv)**. Lines left empty are not
+compared.
 
 To compare planned and earned value activity by activity, follow these steps:
 
@@ -746,9 +773,8 @@ the block **10 · PV against a P6 export**.
 ### Run with the local Docker image
 
 Use this guide to run the app in a container on your own machine instead of installing uv and
-Python. No Docker command of this guide has been run: the statements come from the `Dockerfile`
-and `compose.yaml` files. Building the image needs network access and Docker with BuildKit.
-Follow these steps in the folder of the source:
+Python. Building the image needs network access and Docker with BuildKit. Follow these steps in
+the folder of the source:
 
 1. Create the folder that the container reads, and copy your `.xer` files into it.
    ```bash
@@ -760,16 +786,20 @@ Follow these steps in the folder of the source:
    docker compose up -d --build
    ```
 3. In your browser, open `http://localhost:8501`, and read the files as in
-   [Load files and choose the baseline](#load-files-and-choose-the-baseline). The window opens
-   on `/data`, which is the `exports` folder, mounted read-only.
+   [Load files and choose the baseline](#load-files-and-choose-the-baseline) in this guide. The
+   window opens on `/data`, which is the `exports` folder, mounted read-only.
 
-The container is published on `127.0.0.1` only. The upload, the folder field (limited to
-`/data`) and the **Debug** page are available. To give a baseline file, put it in
-`exports/baselines/` and choose it in **Baseline file in the folder**, or upload it in the
-window; a baseline `.xer` placed directly in `exports/` is listed among the updates. After an
-update of the source, run `docker compose up -d --build` again. To run a command of the command
-line in the image, pass it after the image name; `crosscheck` does not run in the image, and a
-command that writes files needs a writable folder mounted in the container.
+The container is published on `127.0.0.1` only. For the properties of the image and of the
+container, see [Components and images](it-deployment-guide.md#components-and-images),
+[Option B](it-deployment-guide.md#option-b-the-local-image-on-the-hosts-loopback) and
+[Resource limits and storage per service](it-deployment-guide.md#resource-limits-and-storage-per-service)
+in the IT deployment guide. The upload, the folder field (limited to `/data`) and the **Debug**
+page are available. To give a baseline file, put it in `exports/baselines/` and choose it in
+**Baseline file in the folder**, or upload it in the window. A baseline `.xer` placed directly
+in `exports/` is listed among the updates. After an update of the source, run
+`docker compose up -d --build` again. To run a command of the command line in the image, pass it
+after the image name. The `crosscheck` command does not run in the image, and a command that
+writes files needs a writable folder mounted in the container.
 
 ```bash
 docker run --rm -v "$PWD/exports:/data:ro" xerscope check /data --standard P6
@@ -797,7 +827,7 @@ of a command; some options are listed there without a description.
 | `pv-compare` | Compare PV and EV with a P6 Activities export | `path`: one file, the update |
 | `sample` | Generate the demo series | None |
 | `ask-bench` | Score the reading of the **Ask the schedule** field | `path`: one file or one folder; the latest update is read |
-| `lexicon` | List or build the words the Ask field reads as one | `folder`: an optional folder of `*.toml` groups; or `build`, then `source`, a folder of `.xer` files |
+| `lexicon` | List or build the words the **Ask the schedule** field reads as one | `folder`: an optional folder of `*.toml` groups; or `build`, then `source`, a folder of `.xer` files |
 
 The following rules apply to the commands that read files:
 
@@ -820,7 +850,7 @@ The following table lists every option. *Off* is the default of an option that t
 
 | Command | Option | Default | Meaning |
 |---|---|---|---|
-| `app` | `--data DATA` | None | Folder of weekly `.xer` files that the Files window opens on. Passed to the app as `XERSCOPE_DATA`, made absolute. |
+| `app` | `--data DATA` | None | Folder of weekly `.xer` files that the **Files and baseline** window opens on. Passed to the app as `XERSCOPE_DATA`, made absolute. |
 | `app` | `--baseline BASELINE` | None | Baseline `.xer`, or a P6 XML export holding the baseline. Passed as `XERSCOPE_BASELINE`. The kind of file is told from its content. |
 | `app` | `--standards STANDARDS` | None | Folder of standard `.toml` files. Passed as `XERSCOPE_STANDARDS`. |
 | `app` | `--port PORT` | `8501` | Port, an integer. |
@@ -853,7 +883,7 @@ The following table lists every option. *Off* is the default of an option that t
 | `pv-compare` | `--p6-total H` | None | PV labor units total shown by P6. Adds a totals line. |
 | `pv-compare` | `--out OUT` | `pv_compare` | Folder for the five tables, created if missing. |
 | `sample` | `--out OUT` | `data/sample` | Folder to write to, created with its parents. |
-| `sample` | `--weeks WEEKS` | `8` | Number of weekly files. 0 or less writes nothing. |
+| `sample` | `--weeks WEEKS` | `8` | Number of weekly files. With 0 or less, no file is written and the folder is still created. |
 | `ask-bench` | `--cases CASES` | None | TOML file of `[[case]]` sentences with known filters. Repeatable. The command needs `--cases`, `--self` or both. |
 | `ask-bench` | `--self` | Off | Score the file's own labels, said every way the grammar reads. |
 | `ask-bench` | `--anonymize` | Off | Score `--cases` on the anonymised copy of the file. |
@@ -864,7 +894,10 @@ The following table lists every option. *Off* is the default of an option that t
 | `info`, `check`, `recalc`, `changelog`, `export`, `pv-compare` | `--project PROJECT` | Chosen by rule | Project short name (`PROJECT.proj_short_name`), exact and case-sensitive, for files that hold several projects. `changelog` applies it to both files, `pv-compare` to the update. |
 
 When several baseline options of `check` are given, the first that exists wins for each update:
-the baseline in the file, then the `--baseline` file, then the planned dates, else none.
+the baseline in the file, then the `--baseline` file, then the planned dates, else none. The
+command line has no option for the earned value basis. It reads a baseline on the default basis,
+so the dates of a `--baseline` file or of a baseline held in a file are the planned dates of the
+baseline's activities.
 
 #### Output
 
@@ -874,7 +907,7 @@ The following table says what each command prints on standard output and what it
 |---|---|---|
 | `app` | `You can now view your Streamlit app in your browser.` and `URL: http://localhost:<port>`. | Nothing. |
 | `info` | One line per update: `data_date`, `source`, `forecast_finish`, `finish_shift_wd` (working days against the previous line, negative when the finish goes later), `activities`, `complete`, `critical`, `relationships`. Load warnings go to stderr as `warning: ...`. | Nothing. |
-| `check` | Per update, a title line `<standard name> · <file> · data date YYYY-MM-DD · baseline <label or none>`, then a table: `id`, `check`, `target`, `actual` (two decimals, no unit), `found`, `total`, `status`. A check that is not computed prints `NaN`, `<NA>`, `<NA>` and `n/a`. With `--expect`: the comparison, then `all counts match` or, on stderr, `<n> difference(s)`. | With `--out`: a CSV with the columns `file`, `data_date`, `id`, `group`, `check`, `description`, `target`, `result`, `count`, `actual`, `found`, `total`, `status`, `note`, announced by `written <path>`. With `--flagged`: the CSV files of the items found. |
+| `check` | Per update, a title line `<standard name> · <file> · data date YYYY-MM-DD · baseline <label or none>`, then a table: `id`, `check`, `target`, `actual` (two decimals, no unit), `found`, `total`, `status`. A check that lacks its baseline or its earlier update prints `NaN`, `<NA>`, `<NA>` and `n/a`; a check with an empty population prints `NaN`, `0`, `0` and `n/a`. With `--expect`: the comparison, then `all counts match` or, on stderr, `<n> difference(s)`. | With `--out`: a CSV with the columns `file`, `data_date`, `id`, `group`, `check`, `description`, `target`, `result`, `count`, `actual`, `found`, `total`, `status`, `note`, announced by `written <path>`. With `--flagged`: the CSV files of the items found. |
 | `standards` | Each built-in standard as `<id> <name> (<n> metrics)`, then one line per check with its id, name, target and rule. | With `--template FILE`: the template, announced by `written <FILE>`. |
 | `recalc` | Per file: a title line with the number of activities, the data date and the recalculated finish; one line per field, `<identical> / <compared> identical`, for `early_end_date`, `early_start_date`, `free_float_hr_cnt`, `late_end_date`, `late_start_date` and `total_float_hr_cnt`; a table of the differences (`task_code`, `field`, `stored`, `computed`, `gap_hr`, `agree`); the assignments line; the warnings. | With `--out`: a CSV of the recalculated values, not of the comparison, with the columns `task_code`, `status_code`, `es`, `ef`, `remaining_start`, `ls`, `lf`, `tf_hr`, `ff_hr`, `resource_dependent`, `longest_path`, `rem_override_hr`, `task_name`. |
 | `changelog` | A table: `category`, `change`, `count`. The categories are Project, Scope, Tasks, Durations, Relationships, Progress, Dates, Float, Constraints, Resources, Calendars and Options. | With `--out`: a CSV with the columns `category`, `change`, `task_code`, `task_name`, `wbs_code`, `field`, `before`, `after`, `delta`, `unit`, announced by `written <file> (<n> changes)`. |
@@ -924,9 +957,9 @@ counted from 0, the first file.
 |---|---|---|
 | 0 | No progress; P2030 is a 60-day activity | The baseline; a high duration |
 | From 2 | E1030 and P2030 progress slowly | Slippage, float erosion |
-| 4 | Activity C3045 is added; E1040 loses 3 days | A scope change; PPC below 100 % |
+| 4 | Activity C3045 is added; E1040 loses 3 days | A scope change; PPC below 100% |
 | 5 | The remaining duration of P2030 grows by 10 days | Negative float through the hard constraint of X4050 |
-| 6 | The SS+10 link from C3050 to X4030 becomes FS; C3010 has an actual finish after the data date; E1020 loses 7 days | A logic change; an invalid date; PPC below 100 % |
+| 6 | The SS+10 link from C3050 to X4030 becomes FS; C3010 has an actual finish after the data date; E1020 loses 7 days | A logic change; an invalid date; PPC below 100% |
 | Always | E1040 to E1050 has a 3-day lead; K5040 has no successor; K5040 and E1050 have no resources; `task_id` changes in every file | A lead, an open end, missing resources, matching by Activity ID |
 
 #### Exit codes
@@ -961,8 +994,8 @@ that have one; it starts on the latest update.
 | Analysis | **Delay analysis** | Shared | **Finish before replanning**, **Finish shown**, **Longest path float**, **Tasks matched**; **Step by step**; the revisions within and beyond a lookahead of 6 weeks; **Longest path**; **Every update**. The baseline is not read. |
 | Analysis | **Earned value** | Shared | **P6 view: the file's baseline** (off); the cards; the Earned Schedule figures; **S-curve** with **Show as % of BAC** (off); **Performance indices by update**; **How it is calculated**; **The weeks of the 4 weeks' figures**; **Earned hours by task**. |
 | Analysis | **Milestone trend** | Latest | **Milestones and key tasks (up to 6)**, **Finish milestones**, **Critical milestones**, **Clear**; the chart; **Slippage**; **Data**. |
-| Analysis | **PPC & progress** (heading: **PPC & weekly progress**) | **Week ending** | **PPC target (%)** (80), **Include commitments late at W−1** (selected); **Percent plan complete by week**; **Commitments**; **Progress by WBS**; **Milestones committed**; **Unplanned work**; **Progress by task**; **Start and finish variance**; **Lookahead reliability**. |
-| Data | **Export for Power BI** | Latest | The four tables with their rows and columns; **Preview fact_activity**; **Format**; the download; **Anonymized XER extract**. |
+| Analysis | **PPC & progress** (heading: **PPC & weekly progress**) | **Week ending** | **PPC target (%)** (80), **Include commitments late at W−1** (selected); **Percent plan complete by week**; **Lookahead reliability**; **Commitments**; **Progress by WBS**; **Milestones committed**; **Unplanned work**; **Progress by task**; **Start and finish variance**. |
+| Data | **Export for Power BI** | Latest | The four tables with their rows and columns; **Format**; the download; **Preview fact_activity**; **Anonymized XER extract**. |
 | Data | **Debug** | Shared | What xerscope read from the file and what it decided, in 14 numbered blocks, and **Diagnostic**. Hidden when the data is locked. |
 
 The following elements are on every page:
@@ -979,15 +1012,24 @@ The following elements are on every page:
 - The tables cannot be exported or copied through their own toolbar; the download buttons are
   the way out.
 
-The blocks of the **Debug** page are drawn in this order: **1 · Scheduling options
-(SCHEDOPTIONS, PROJECT)**, **2 · Expected finish**, **3 · INT-01 / INT-03 differences**,
-**4 · Check Schedule parameters applied (P6 standard)**, **5 · Baseline and calendars**,
-**6 · Load warnings**, **7 · Costs in the file (TASKRSRC, PROJCOST)**, **8 · Earned Value
-settings of the WBS (PROJWBS)**, **9 · XER tables and planned value labor units**, **10 · PV
-against a P6 export**, **11 · Project settings (PROJECT, TASK.complete_pct_type)**,
-**13 · Calendar detail (CALENDAR.clndr_data, hours per time period)**, **12 · App runtime
-(where the theme and fonts come from)**, **14 · Ask vocabulary (variants generated per source
-column)**. Block 12 is not drawn when the data is locked.
+The blocks of the **Debug** page are drawn in this order:
+
+- **1 · Scheduling options (SCHEDOPTIONS, PROJECT)**
+- **2 · Expected finish**
+- **3 · INT-01 / INT-03 differences**
+- **4 · Check Schedule parameters applied (P6 standard)**
+- **5 · Baseline and calendars**
+- **6 · Load warnings**
+- **7 · Costs in the file (TASKRSRC, PROJCOST)**
+- **8 · Earned Value settings of the WBS (PROJWBS)**
+- **9 · XER tables and planned value labor units**
+- **10 · PV against a P6 export**
+- **11 · Project settings (PROJECT, TASK.complete_pct_type)**
+- **13 · Calendar detail (CALENDAR.clndr_data, hours per time period)**
+- **12 · App runtime (where the theme and fonts come from)**
+- **14 · Ask vocabulary (variants generated per source column)**
+
+Block 12 is not drawn when the data is locked.
 
 #### Downloads
 
@@ -997,30 +1039,30 @@ ends with " · anonymized".
 
 | Page | Button | File |
 |---|---|---|
-| Gantt & WBS, **Table view** | **Download CSV** | `gantt_<date>.csv` |
-| Schedule health | **Summary (CSV)** | `<standard id>_<date>_summary.csv` |
-| Schedule health | **All flagged items (CSV)** | `<standard id>_<date>_flagged.csv` |
-| Schedule health | **Prepare all sets**, then **All sets (CSV)** or **All sets (ZIP)** | `<standard id>_<date>_sets.csv` or `.zip` |
-| Schedule health, a check's panel | **Download list (CSV)** | `<check id>_<date>.csv` |
-| Schedule health and Audit, a set | **Download CSV** | `<check id>_<date>_counted.csv`, `_not_counted.csv`, `_excluded.csv`; on Audit also `_removed.csv` |
-| Schedule health | **Download the template** | `my-standard.toml`, never anonymised |
-| Changelog | **Download changelog (CSV)** | `changelog_<from date>_<to date>.csv` |
-| Delay analysis | **Download steps (CSV)** | `half_step_<from date>_<to date>.csv` |
-| Delay analysis | **Download series (CSV)** | `half_step_series.csv` |
-| Delay analysis | **Download longest path (CSV)** | `longest_path_churn.csv` |
-| Earned value | **Download CSV** | `earned_<date>.csv` |
-| Earned value | **Download deleted tasks (CSV)** | `earned_deleted_<date>.csv` |
-| PPC & progress | **Download CSV** | `progress_<date>.csv` |
-| PPC & progress | **Download variances (CSV)** | `variances_<date>.csv` |
-| Export for Power BI | **Download PARQUET tables (.zip)** or **Download CSV tables (.zip)** | `<project code>_xerscope_<format>.zip`; anonymised: `xerscope_<format>.zip` |
-| Export for Power BI | **Build anonymized extract**, then **Download anonymized XER (.zip)** | `xerscope_anonymised_xer.zip`, always anonymised |
-| Debug | **Build calendar detail**, then **Download calendar detail (.zip)** | `xerscope_calendars_<date>.zip` |
-| Debug | **Build diagnostic**, then **Download diagnostic (.zip)** | `xerscope_diagnostic.zip` |
+| **Gantt & WBS**, **Table view** | **Download CSV** | `gantt_<date>.csv` |
+| **Schedule health** | **Summary (CSV)** | `<standard id>_<date>_summary.csv` |
+| **Schedule health** | **All flagged items (CSV)** | `<standard id>_<date>_flagged.csv` |
+| **Schedule health** | **Prepare all sets**, then **All sets (CSV)** or **All sets (ZIP)** | `<standard id>_<date>_sets.csv` or `.zip` |
+| **Schedule health**, a check's panel | **Download list (CSV)** | `<check id>_<date>.csv` |
+| **Schedule health** and **Audit**, a set | **Download CSV** | `<check id>_<date>_counted.csv`, `_not_counted.csv`, `_excluded.csv`; on **Audit** also `_removed.csv` |
+| **Schedule health** | **Download the template** | `my-standard.toml`, never anonymised |
+| **Changelog** | **Download changelog (CSV)** | `changelog_<from date>_<to date>.csv` |
+| **Delay analysis** | **Download steps (CSV)** | `half_step_<from date>_<to date>.csv` |
+| **Delay analysis** | **Download series (CSV)** | `half_step_series.csv` |
+| **Delay analysis** | **Download longest path (CSV)** | `longest_path_churn.csv` |
+| **Earned value** | **Download CSV** | `earned_<date>.csv` |
+| **Earned value** | **Download deleted tasks (CSV)** | `earned_deleted_<date>.csv` |
+| **PPC & progress** | **Download CSV** | `progress_<date>.csv` |
+| **PPC & progress** | **Download variances (CSV)** | `variances_<date>.csv` |
+| **Export for Power BI** | **Download PARQUET tables (.zip)** or **Download CSV tables (.zip)** | `<project code>_xerscope_<format>.zip`; anonymised: `xerscope_<format>.zip` |
+| **Export for Power BI** | **Build anonymized extract**, then **Download anonymized XER (.zip)** | `xerscope_anonymised_xer.zip`, always anonymised |
+| **Debug** | **Build calendar detail**, then **Download calendar detail (.zip)** | `xerscope_calendars_<date>.zip` |
+| **Debug** | **Build diagnostic**, then **Download diagnostic (.zip)** | `xerscope_diagnostic.zip` |
 
-In an anonymised download, Task IDs, WBS codes and project ids are renamed, names are rebuilt
-from the new codes, the columns xerscope writes itself are kept, and any other text of the file
-is emptied. Dates, durations, units and logic are kept. Costs are written as 0. The new codes
-are the same in every download of one session and change with the session.
+In an anonymised download, Task IDs, WBS codes and project ids are renamed, and names are
+rebuilt from the new codes. The columns xerscope writes itself are kept, and any other text of
+the file is emptied. Dates, durations, units and logic are kept. Costs are written as 0. The new
+codes are the same in every download of one session and change with the session.
 
 #### Sidebar
 
@@ -1052,8 +1094,8 @@ the project, the data date and the number of activities of each file.
 | Files | **Select all**, **Clear** | Not applicable | Select every readable file except the doubles of one data date; clear all. The counter reads **N of M ticked**. |
 | Files | **Project read from each file · why** | The project chosen by rule | One line per file, and a list of projects for a file that holds several. |
 | Files | **Selection details** | Closed | A table: file, project, the rule that picked it, data date and its source, baseline in the file, tasks. |
-| Baseline | **Baseline (BL)** | See the paragraph that follows this table | The baseline of the series. |
-| Baseline | **Earned value basis** | **Budgeted · planned dates** | Also offers **Budgeted · current dates** and **At completion · current dates**. No check is rerun. |
+| Baseline | **Baseline (BL)** | See the list that follows this table | The baseline of the series. |
+| Baseline | **Earned value basis** | **Budgeted · planned dates** | Also offers **Budgeted · current dates** and **At completion · current dates**. Sets the baseline hours and dates of planned and earned value, and the dates of a separate baseline: its planned dates, or its current dates with the two current dates options. A result that reads a baseline is computed again when the basis changes. |
 | Baseline | **Link renumbered tasks by GUID** | Cleared | Measures a renumbered activity against the baseline activity that has its GUID. |
 | Baseline | **When a file has no baseline** | **None** | Drawn with **Baseline in each file (P6 Project Baseline)**. Offers the other entries of **Baseline (BL)**. |
 | Baseline | **Baseline of FILE (undecided)** | None chosen | For an update whose baseline the export does not settle: **None: not measured**, **Baseline ID, held by version ID** or **The fallback above**. |
@@ -1062,19 +1104,24 @@ the project, the data date and the number of activities of each file.
 | Baseline | **Project read from the baseline file** | The project chosen by rule | For a baseline XER of several projects. |
 | Both | **Done** | Not applicable | Applies the choices. Disabled while two uploads share a name. |
 
-**Baseline (BL)** offers, in this order: **Baseline in each file (P6 Project Baseline)**, only
-when a file holds a usable baseline or a P6 XML export is at hand; **Separate baseline file**;
-each loaded update as `<YYYY-MM-DD> · <file name>`; **Planned dates in each file (target_*)**;
-**None**. It starts on **Baseline in each file (P6 Project Baseline)** when a file holds a
-usable baseline and no baseline file was named at start, on **Separate baseline file** when one
-was named, and otherwise on the first update. After **Done** on a new choice of files, the
+**Baseline (BL)** offers the following entries, in this order:
+
+- **Baseline in each file (P6 Project Baseline)**, only when a file holds a usable baseline or a
+  P6 XML export is at hand;
+- **Separate baseline file**;
+- each loaded update as `<YYYY-MM-DD> · <file name>`;
+- **Planned dates in each file (target_*)**;
+- **None**.
+
+The list starts on **Baseline in each file (P6 Project Baseline)** when a file holds a usable
+baseline and no baseline file was named at start. It starts on **Separate baseline file** when
+one was named, and otherwise on the first update. After **Done** on a new choice of files, the
 window opens again by itself on its **Baseline** section, and the pages wait for a second
 **Done**. A later change of baseline takes one **Done**.
 
 #### Keyboard shortcuts
 
-The following table lists the shortcuts that the app declares. They were read in the code and
-have not been pressed in a browser.
+The following table lists the shortcuts that the app declares.
 
 | Key | Where | Effect |
 |---|---|---|
@@ -1090,15 +1137,15 @@ variable is on for `1`, `true` or `yes` in any letter case, and off for any othe
 
 | Variable | Default | Effect |
 |---|---|---|
-| `XERSCOPE_DATA` | Not set | Folder of weekly `.xer` files that the Files window opens on. Set by `app --data`. |
+| `XERSCOPE_DATA` | Not set | Folder of weekly `.xer` files that the **Files and baseline** window opens on. Set by `app --data`. |
 | `XERSCOPE_BASELINE` | Not set | Baseline `.xer`, or a P6 XML export holding the baselines. Set by `app --baseline`. |
 | `XERSCOPE_STANDARDS` | Not set | Folder of standard `.toml` files, read again at each run of a page. A file that reuses the id of a built-in standard replaces it. A folder that does not exist is ignored without a message. Set by `app --standards`. |
-| `XERSCOPE_FOLDER_ROOT` | `XERSCOPE_DATA`, else your home directory | The folder that a path entered in the Files window must lie under. The value `/` accepts no folder but `/`. |
+| `XERSCOPE_FOLDER_ROOT` | `XERSCOPE_DATA`, else your home directory | The folder that a path entered in the **Files and baseline** window must lie under. The value `/` accepts no folder but `/`. |
 | `XERSCOPE_DATA_LOCKED` | Off | Yes or no. On: no folder field, no upload of a schedule or of a baseline, and no **Debug** page; only the files of `XERSCOPE_DATA` are offered. |
-| `XERSCOPE_DEBUG_PAGE` | Off | Yes or no. On: the **Debug** page is shown even when the data is locked. |
+| `XERSCOPE_DEBUG_PAGE` | Off | Yes or no. On: the **Debug** page is shown even when the data is locked. The page describes the reading of every file to whoever can open the app. |
 | `XERSCOPE_LOAD_WORKERS` | One process per core, at most 2 | Number of files read at once. `1` reads in the calling thread. An invalid value is ignored. |
 | `XERSCOPE_LEXICON` | Not set | Lexicon folder of the **Ask the schedule** field, with the subfolders `curated`, `generated` and `suggested`. |
-| `XERSCOPE_SYNC_LOAD` | Off | Yes or no. On: the files are read and the scores computed in the page run instead of in the background; **Overview** then has a **Compute scores** button. |
+| `XERSCOPE_SYNC_LOAD` | Off | Yes or no. On: the files are read and the scores computed in the page run instead of in the background; **Overview** then has a **Compute scores** button. Meant for the automated tests. |
 | `XERSCOPE_MPXJ_CPM_JAR` | Not set | Path of the MPXJ scheduler build that `crosscheck --cpm` uses. |
 
 A further variable, `XERSCOPE_STRICT_READINGS`, serves the automated tests only.
@@ -1142,9 +1189,10 @@ The following table lists the checks of the P6 standard with the targets of the 
 | P6-16 | Dangling Start Activities | Inaccuracy | `<= 0%` |
 | P6-17 | Dangling Finish Activities | Inaccuracy | `<= 0%` |
 
-The built-in file attributes P6-01 to P6-14 to the P6 Professional 24 help. The limit of
-P6-04, P6-05 and P6-06 is 352 hours in that file. P6-10a and P6-10b are one criterion of the
-score. The app writes `≤` and `≥` where the command line prints `<=` and `>=`.
+The built-in file, `src/xerscope/standards/p6.toml`, attributes P6-01 to P6-14 to the P6
+Professional 24 help. The limit of P6-04, P6-05 and P6-06 is 352 hours in that file. P6-10a and
+P6-10b are one criterion of the score. The app writes `≤` and `≥` where the command line prints
+`<=` and `>=`.
 
 #### The standard file
 
@@ -1164,9 +1212,10 @@ prints a commented example with 14 checks.
 | `[[metric]]` | `params` | No | The parameters of the rule. |
 | `[[metric]]` | `description`, `source`, `group`, `item` | No | Text. Checks with the same `item` are one criterion of the score. |
 
-Twelve rules take parameters and are meant for a standard of your own: `missing_logic`,
+Twelve rules are written for a standard of your own, each with its parameters: `missing_logic`,
 `dangling`, `lag`, `relationship_type`, `constraints`, `float`, `duration`, `invalid_dates`,
-`on_data_date`, `no_resource`, `late_vs_baseline` and `bei`.
+`on_data_date`, `no_resource`, `late_vs_baseline` and `bei`. Sixteen rules of the built-in
+standards also take parameters, for example `p6_04_large_durations` (`limit_hours`).
 
 ### Fixed values and sizes
 
@@ -1180,7 +1229,7 @@ changes them, except where the table says so.
 | Total float at or under which an activity is near critical | 10 working days | Gantt colours and filters |
 | Rows from which a table gets column filters | More than 10 | Every table of the app |
 | Lookahead | 6 weeks | **Delay analysis** page |
-| PPC target | 80 % | **PPC & progress** page, where it can be changed |
+| PPC target | 80% | **PPC & progress** page, where it can be changed |
 | Size of an uploaded file | 200 MB at most | The upload fields |
 | Processes that read files | 2 at most | The app |
 | Length of a sentence | 300 characters at most | **Ask the schedule** field |
@@ -1203,11 +1252,11 @@ the tool prints them; a part between angle brackets stands for a name or a numbe
 | `xerscope: --baseline-in-file needs distinct file names` | Two files of two folders have the same name. | Rename one, or check the folders one at a time. |
 | `xerscope --version` prints the usage and an error | There is no `--version` option. | The version is 0.1.0. |
 | `Port 8501 is not available`; exit code 1 | Another program, or another xerscope, uses the port. | Stop it, or start the app with `--port` and another number. |
-| After `Ctrl+C`, a Python `KeyboardInterrupt` traceback follows `Stopping...` | The command does not catch the interrupt. Seen when the interrupt was sent by a tool; not checked by typing `Ctrl+C`. | Nothing: the app has stopped. |
-| The Files window shows **Folder not found** | The folder does not exist, or you entered a relative path. A relative path is read from the app's own folder, so the path `data/sample` that the opening message suggests is not found. | Enter an absolute path or a path that starts with `~`. |
+| After `Ctrl+C`, a Python `KeyboardInterrupt` traceback follows `Stopping...` | The `app` command does not catch the interrupt. | Nothing: the app has stopped. |
+| The **Files and baseline** window shows **Folder not found** | The folder does not exist, or you entered a relative path. A relative path is read from the app's own folder, so the path `data/sample` that the opening message suggests is not found. | Enter an absolute path or a path that starts with `~`. |
 | `Folder outside <root>: set XERSCOPE_FOLDER_ROOT to read another tree` | The folder is not under the folder root: the `--data` folder when given, else your home directory. | Start the app with `--data` on that folder, or set `XERSCOPE_FOLDER_ROOT`. Do not set it to `/`. |
-| The Files window shows **No .xer file in that folder** | The folder holds no `.xer` file directly in it. | Enter the folder that holds the exports. |
-| A file reads `<file> — unreadable` in the Files window | The file cannot be read as an XER. Its tooltip gives the reason. | Export the file again. **Select all** skips it. |
+| The **Files and baseline** window shows **No .xer file in that folder** | The folder holds no `.xer` file directly in it. | Enter the folder that holds the exports. |
+| A file reads `<file> — unreadable` in the **Files and baseline** window | The file cannot be read as an XER. Its tooltip gives the reason. | Export the file again. **Select all** skips it. |
 | `<file>: no status date (PROJECT.last_recalc_date); the file is skipped` | The file carries no data date. | Export the project again once it has a data date. |
 | `N files named <name>: untick all but one`; **Done** is disabled | Two uploaded files have the same name. | Clear the checkbox of all but one. |
 | Every page shows `N files · K projects read. Choose the baseline in the window (...), then Done` | The files are read and the baseline is not confirmed yet. | Click the sidebar's **Baseline** line, then **Done**. |
@@ -1221,12 +1270,12 @@ the tool prints them; a part between angle brackets stands for a name or a numbe
 | `N task(s) renumbered since the baseline: turn on Link by GUID in the Baseline window. ...` | Activity IDs changed since the baseline. | In the **Baseline** section of the **Files and baseline** window, select **Link renumbered tasks by GUID**. |
 | "The word « x » is in neither this file nor the lexicon." | The **Ask the schedule** field does not know the word. | Use the file's own words, or click a label under **Did you mean**. |
 | A download button is replaced by an error `<what> not written: it still holds values of ...` | The anonymiser found original values left in the output and refused to write it. | Nothing is written. To download the data with its own names, turn off **Anonymous exports**. |
-| The page keeps an older look after an update of xerscope (other fonts) | By the app's own text: an old running copy, or a page that did not load the theme. The browser's part was not tested. | Stop the app and start it again with `uv run xerscope app`: it runs the code of the source folder as it is. Then reload the page with the cache bypassed (`Ctrl+Shift+R`). For the local image, run `docker compose up -d --build`. On the **Debug** page, block 12 shows what the running app read: `Config read` must say `yes`. |
+| The page keeps an older look after an update of xerscope (other fonts) | By the app's own text: an old running copy, or a page that did not load the theme. | Stop the app and start it again with `uv run xerscope app`: it runs the code of the source folder as it is. Then reload the page with the cache bypassed (`Ctrl+Shift+R`). For the local image, run `docker compose up -d --build`. On the **Debug** page, block 12 shows what the running app read: `Config read` must say `yes`. |
 | `check --expect` stops with `<csv>: columns total missing` or `<csv>: add a 'file' column, N files were checked` | The CSV lacks a column. | Give the columns `id`, `found` and `total`, and `file` when several files are checked. |
 | `xerscope: pv-compare: give --baseline BL.xer or --planned-baseline` | `pv-compare` needs a baseline. | Add one of the two options. |
 | `<csv>: column(s) not found for pv_hr; headers read: ... Name them with --column FIELD=HEADER.` | The P6 export names a column otherwise. | Add `--column` with the field and the header of your export. |
 | `<file>: invalid TOML: ...`, `unknown rule '<name>'`, `needs a [standard] table with id and name`, or `id 'P6' is a built-in standard's; give yours another id` | The standard file has a fault. | Correct the file. `uv run xerscope standards --rules` lists the rule names. |
-| `crosscheck` ends with a traceback and `RuntimeError: crosscheck needs the optional extra: uv sync --extra crosscheck` | The optional extra is not installed. | Run `uv sync --extra crosscheck`. Java must be on `PATH`: the automated tests use JDK 21 and 25. What the command prints without Java was not run. |
+| `crosscheck` ends with a traceback and `RuntimeError: crosscheck needs the optional extra: uv sync --extra crosscheck` | The optional extra is not installed. | Run `uv sync --extra crosscheck`. Java must be on `PATH`: the automated tests use JDK 21 and 25. |
 | `warning: MPXJ's released scheduler predates its out-of-sequence fix (#972); ...` | `crosscheck --cpm` runs without the pinned scheduler build. | Build it with `tests/reference/mpxj_cpm.py` and set `XERSCOPE_MPXJ_CPM_JAR` to its path. |
 | A test run skips tests with `mpxj missing: no Java runtime on PATH` | The tests that use MPXJ need Java. | Install a JDK (21 or later) if you need those tests. |
 | In the local Docker image, a baseline `.xer` placed in `exports/` is listed as an update | Every `.xer` file of the folder is listed. | Leave it unselected, or put it in `exports/baselines/`. |
@@ -1247,7 +1296,7 @@ midnight counts no work, with a note.
 
 That the result equals P6's is not something the code proves. It is measured against schedules
 computed by P6 Professional 23.12.1, with a floor per reference set that the tests enforce; the
-lowest floor is 98.2 % of stored values reproduced. For the conventions that no reference file
+lowest floor is 98.2% of stored values reproduced. For the conventions that no reference file
 settles, see [docs/cpm.md](cpm.md#conventions-no-reference-file-settles).
 
 Earned value has the following limits, detailed in
@@ -1261,31 +1310,51 @@ Earned value has the following limits, detailed in
 - Actual cost, a cost CPI and a cost EAC are not modelled. Cost figures use the budgeted values
   whatever the earned value basis.
 
-The code marks the readings of P6 Check Schedule that no source settles: a secondary hard
-constraint (P6-02), an external link on one side only (P6-01), FF and SF relationships (P6-15),
-and completed activities and links to other projects in the dangling checks (P6-16, P6-17). A
-baseline read from a P6 XML export carries no GUID, so renumbered activities cannot be linked
+The code marks the following readings of P6 Check Schedule as settled by no source:
+
+- a secondary hard constraint (P6-02);
+- an external link on one side only (P6-01);
+- FF and SF relationships (P6-15);
+- completed activities and links to other projects in the dangling checks (P6-16, P6-17).
+
+A baseline read from a P6 XML export carries no GUID, so renumbered activities cannot be linked
 to it.
 
-xerscope has no login, no `--version` option, no language other than English, and no time
-impact analysis. The values of [Fixed values and sizes](#fixed-values-and-sizes) cannot be
-changed.
+xerscope has no login, no `--version` option, no language other than English, and no time impact
+analysis. The values of [Fixed values and sizes](#fixed-values-and-sizes) in this guide cannot
+be changed.
 
 ### What has not been established
 
-The following points rest on reading the code or the configuration files, not on a run:
+This list is the one place where the guide says what the project's automated tests do not cover:
 
-- Windows and macOS: every run was on Linux.
-- Docker: no image was built and no container was started.
-- A browser: the keyboard shortcuts, uploads, downloads built through the page, the **Ask the
-  schedule** field through the page, and what a reload does to a session.
-- A first installation: `git clone` and `uv sync --locked` on a machine without xerscope, and
-  whether uv fetches Python by itself.
-- Reading in the background: the progress bar and the worker processes.
-- A P6 XML export with several baselines; files with several projects, with a baseline inside,
-  with renumbered activities, with costs or with activity codes. The demo series has none of
-  these.
-- The memory that a large file needs.
+- macOS: no automated test runs on it. On Windows, the CI covers the test suite and the
+  `sample`, `info`, `export` and `crosscheck` commands, not the app in a browser and not Docker.
+  No job runs the other commands of this guide on Windows.
+- Python 3.12: the package accepts it (`requires-python = ">=3.11"`), and no automated test runs
+  on it.
+- P6 Professional 24: no output of that version is among the test references.
+- Docker: the project's CI builds the image, starts a container, reads its health route and a
+  mounted folder. No test starts the container with `docker compose up` and the root
+  `compose.yaml`.
+- A browser: the automated tests drive the pages without a browser, and a weekly run opens every
+  page in a headless browser to check its accessibility. No test presses a keyboard shortcut,
+  and no test uploads or downloads a file through a browser.
+- A first installation by hand: the project's CI runs `uv sync --locked` on a new machine at
+  each run, from a checkout made by GitHub Actions. Whether uv fetches Python by itself is not
+  established.
+- The `crosscheck` command without Java: no test of the project runs it.
+- P6's own screens: the app and the built-in standard quote menu paths and preference names of
+  P6, and no test of the project compares them with P6.
+- The dates of a separate baseline under each earned value basis:
+  [docs/standards.md](standards.md#p6-check-schedule-p6-professional-24-17-checks-18-report-lines)
+  gives the sources of the rule and records that no reading on P6 Professional 26.8 supports it
+  yet.
+- Streamlit and Plotly: no test of the project captures what a browser requests from the page.
+- Memory: one test holds the parser at no more than four times the size of a 10 MB file built in
+  memory. No test measures the memory that the app needs for a series of updates.
+- The examples of this guide: the demo series holds one project per file, no baseline inside a
+  file, no cost, no activity code and no P6 XML export, so no example shows those cases.
 
 ## Glossary and related documents
 
@@ -1308,7 +1377,8 @@ The following list gives the terms of this guide. P6 terms keep P6's spelling.
 - **DCMA**: Defense Contract Management Agency, author of the 14-Point Assessment and of DECM.
 - **DECM**: DCMA EVMS Compliance Metrics; here, its schedule metrics, version 8.0.
 - **EAC**, **ETC**: estimate at completion (AC plus ETC); estimate to complete (remaining hours).
-- **Earned value basis**: the baseline hours and dates that PV and EV use.
+- **Earned value basis**: the baseline hours and dates that PV and EV use. It also sets the
+  dates of a separate baseline.
 - **EV**: earned value; baseline labour units times Performance % Complete.
 - **Forecast finish**: the latest finish of the project's activities.
 - **FS**, **SS**, **FF**, **SF**: the four relationship types. In the app, **FF** is Finish to
@@ -1340,7 +1410,8 @@ The following list gives the terms of this guide. P6 terms keep P6's spelling.
 The following documents complete this guide:
 
 - [docs/it-deployment-guide.md](it-deployment-guide.md): hosting the app for a team.
-- [docs/deploy.md](deploy.md): the remote deployment, and the lexicon of the Ask field.
+- [docs/deploy.md](deploy.md): the remote deployment, and the lexicon of the
+  **Ask the schedule** field.
 - [docs/formulas.md](formulas.md): the formula and population of every number.
 - [docs/standards.md](standards.md): the standards, their sources and their differences.
 - [docs/cpm.md](cpm.md): the recalculation engine.
