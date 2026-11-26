@@ -209,7 +209,9 @@ def _baseline_fields(store: SnapshotStore) -> None:
         key="draft_ev_basis",
         format_func=EV_BASIS_LABEL.get,
         help="P6 Admin Preferences > Earned Value > 'When calculating earned value from a baseline use' "
-        "(P6 default: budgeted values with planned dates). Set it as in your P6 so PV, EV and BAC match.",
+        "(P6 default: budgeted values with planned dates). Set it as in your P6 so PV, EV and BAC match. "
+        "It also sets the dates of a separate baseline (P6's BL Project Start / Finish): its planned dates, "
+        "or its current dates with the two 'current dates' options.",
     )
     st.checkbox(
         "Link renumbered tasks by GUID",

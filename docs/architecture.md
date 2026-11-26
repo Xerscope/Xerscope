@@ -151,8 +151,8 @@ not found, same XER format, unverified on 26). It is usable when that project is
 same file that owns activities and, when its `orig_proj_id` is filled, names the analysed project; otherwise
 `note` says why not and the sidebar's choice applies. The app builds that project as a snapshot
 (`load_snapshot(..., project_id=)`, exact because a baseline copy may carry the code of the project it was
-copied from) and `Baseline.from_snapshot` gives its dates (actual > remaining > early = BL Project
-Start / Finish). It is named as P6's Maintain Baselines names it: the baseline project's name (the
+copied from) and `Baseline.from_snapshot` gives its dates (BL Project Start / Finish: its planned
+dates on the earned value basis "planned dates", else its current dates, actual > remaining > early). It is named as P6's Maintain Baselines names it: the baseline project's name (the
 `wbs_name` of its project node, P6's default "<project name> - B1"), then its Project ID; the Project ID
 alone when the file holds no project node (`analysis.baseline.baseline_name`; Oracle P6 help, Create a
 baseline and Maintain Baselines dialog box). An update whose `use_project_baseline_flag` is N measures
