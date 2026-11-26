@@ -12,8 +12,10 @@ right.
 
 ## How to read this sheet
 
-The sheet has one part per family of numbers, in the order of the app's pages. Every calculation is
-one entry, and every entry has the same fields in the same order.
+The sheet has one part per family of numbers: the checks of the standards and their score, the
+recalculation, the analyses of the series in the order of the app's **Analysis** pages, then the
+figures of the **Overview** and **Gantt & WBS** pages. Every calculation is one entry, and every
+entry has the same fields in the same order.
 
 ### Map of the calculations
 
@@ -22,7 +24,7 @@ object feeds.
 
 ```mermaid
 flowchart LR
-  xer["XER file: PROJECT, TASK, TASKPRED, TASKRSRC, PROJCOST, PROJWBS, CALENDAR, SCHEDOPTIONS"]
+  xer["XER file: PROJECT, TASK, TASKPRED, TASKRSRC, RSRC, ROLES, PROJCOST, PROJWBS, CALENDAR, SCHEDOPTIONS"]
   snap["snapshot: one update"]
   series["weekly series: the updates in data date order"]
   bl["baseline: a designated file, or the planned dates"]
@@ -47,6 +49,7 @@ flowchart LR
   recalc --> checks
   series --> changes
   changes --> delay
+  series --> delay
   recalc --> delay
   bl --> ev
   series --> ev
@@ -56,6 +59,7 @@ flowchart LR
   series --> overview
   snap --> gantt
   bl --> gantt
+  series --> gantt
 ```
 
 Table 1 gives the same content in words.
@@ -64,7 +68,7 @@ Table 1. What each family of numbers reads
 
 | Family | Reads | Part of this sheet |
 |---|---|---|
-| Checks of a standard | one update; the baseline for the checks that compare with it; the series for the three DECM checks that compare with an earlier update; the recalculation for DCMA-12, 06A401a and the Integrity checks | P6 Check Schedule, DCMA DECM v8.0, DCMA 14-Point, Integrity, Rules for a custom standard |
+| Checks of a standard | one update; the baseline for the checks that compare with it; the series for the three DECM checks that compare with an earlier update; the recalculation for DCMA-12, 06A401a, INT-01, INT-03, INT-07 and INT-08 | P6 Check Schedule, DCMA DECM v8.0, DCMA 14-Point, Integrity, Rules for a custom standard |
 | Standard score | the statuses of the checks of one standard on one update | Standard score |
 | Recalculation | one update: activities, relationships, assignments, calendars, scheduling options | Recalculation |
 | Changelog | two updates | Changelog |
@@ -196,9 +200,10 @@ carry that setting (recorded in `docs/backlog.md`, section "Checks and earned va
 
 Every move of a date in working days reads negative when the date goes later: finish shift,
 changelog dates, start and finish variance, milestone slip, finish variance of P6-12 and of a WBS
-node, shifts of the delay analysis. Two rows read the other way: the changelog's status date row
-is the working days elapsed, and the `reason` of DCMA-11 gives `finish variance N h` with a
-positive N for a late finish.
+node, shifts of the delay analysis. Three rows read the other way: the changelog's status date
+row is the working days elapsed, the `reason` of DCMA-11 gives `finish variance N h` with a
+positive N for a late finish, and the note of DCMA-12 and 06A401a gives `moved +N wd` with a
+positive N for a later finish.
 
 ### Status words
 
@@ -237,7 +242,7 @@ Table 6. Quantities read from the file
 | Percent complete (`pct_complete`) | by `TASK.complete_pct_type`. `CP_Drtn`: 100 × (original − remaining duration) / original duration, not below 0, 100 once complete. `CP_Units`: 100 × actual units / (actual + remaining units), labour and nonlabour. Any other type: `phys_complete_pct`. A value that cannot be computed takes `phys_complete_pct`, then 100 when complete, else 0. Kept in the range 0 to 100, not rounded | `percent_complete` |
 | Working hours from `a` to `b` | working minutes of the calendar between the two timestamps / 60; negative when `b` is earlier; blank when a date is missing | `WorkCalendar.work_hours`, `TimeAxis.between` |
 | Working days from `a` to `b` | working hours / the calendar's `hours_per_day` | `WorkCalendar.working_days` |
-| Has resource, has expense | the activity has at least one `TASKRSRC` row of any type; at least one `PROJCOST` row | `_task_frame` |
+| Has resource, has expense | the activity has at least one `TASKRSRC` row of any type; at least one `PROJCOST` row | `build_snapshot` |
 
 ### Targets and statuses
 
@@ -266,8 +271,9 @@ The status of a check is decided in this order (`checks.run_metric`, `Metric.eva
 6. `pass` when the comparator holds between the value rounded to six decimals and the threshold,
    else `fail`.
 
-The app prints a `%` with one decimal, a ratio with two, a count as written, and `–` for `n/a` and
-`error`. `xerscope check` prints the value with two decimals in the `actual` column.
+The app prints a `%` with one decimal, a ratio with two, a count as written, `pass` or `fail` for
+a `pass/fail` check, and `–` for `n/a` and `error`. `xerscope check` prints the value with two
+decimals in the `actual` column.
 
 ### Baselines and earlier updates
 
@@ -366,7 +372,8 @@ help, Check Schedule dialog box; 46277 to 46291: P6 EPPM help, sections of the S
 Report; 113174 and 113176: P6 Professional help), the report R1, a P6 Professional 26.8 report on a
 synthetic project (`tests/test_p6_checksched.py`) and a P6 Professional r22.12 report analysed by
 Ten Six. Formulas 2.1 holds the long form and the pinning tests; Standards holds the texts the
-checks follow. These labels, like every label of a **Deeper reading** field, are those of Table 9.
+checks follow, and Standards, sources their references. These labels, like every label of a
+**Deeper reading** field, are those of Table 9.
 
 ### Checks of P6 Check Schedule
 
@@ -389,7 +396,7 @@ Table 10. Checks of P6 Check Schedule
 | P6-10b | Invalid Progress After Data Date | `act_start_date` or `act_end_date` after the data date, timestamps compared | `%` | `< 1%` | data date; without one: `n/a`, note `no status date` | 101248; P6 Professional 26.8 report | `p6_10b_invalid_progress_after` | [P6-10b sheet](../src/xerscope/sheets/P6/P6-10b.md) |
 | P6-11 | Resource / Cost | no `TASKRSRC` row and no `PROJCOST` row | `%` | `< 1%` | none | 101248; 46279 | `p6_11_resource_cost` | [P6-11 sheet](../src/xerscope/sheets/P6/P6-11.md) |
 | P6-12 | Late Activities | working hours from the baseline finish to Finish above 0, on the activity's calendar; baseline finish = `bl_finish`, else the update's `target_end_date`; listed with `finish_variance_wd` = −hours / `hours_per_day`, rounded to 0.01 wd | `%` | `< 5%` | baseline; without one: `n/a`, note `needs a baseline` | 101248; R1; 46278 | `p6_12_late_activities` | [P6-12 sheet](../src/xerscope/sheets/P6/P6-12.md) |
-| P6-13 | BEI | complete activities of the update, milestones and level of effort left out; value = counted / population (the baseline's activities); the list shows the activities with `bl_finish` on or before the data date and not complete | `ratio` | `> 0.95` | baseline; without one: `n/a`, note `needs a baseline`; without a data date: `n/a`, note `no status date` | R1 (overrides 101248); P6 Professional 26.8 report | `p6_13_bei` | [P6-13 sheet](../src/xerscope/sheets/P6/P6-13.md) |
+| P6-13 | BEI | Baseline Execution Index (BEI): complete activities of the update, milestones and level of effort left out; value = counted / population (the baseline's activities); the list shows the activities with `bl_finish` on or before the data date and not complete | `ratio` | `> 0.95` | baseline; without one: `n/a`, note `needs a baseline`; without a data date: `n/a`, note `no status date` | R1 (overrides 101248); P6 Professional 26.8 report | `p6_13_bei` | [P6-13 sheet](../src/xerscope/sheets/P6/P6-13.md) |
 | P6-14 | Negative Float | `total_float_hr_cnt < 0` (hours as stored) | `%` | `< 1%` | none | 101248; 46283 | `p6_14_negative_float` | [P6-14 sheet](../src/xerscope/sheets/P6/P6-14.md) |
 | P6-15 | Out of Sequence | started activities with an FS predecessor not complete or an SS predecessor not started, once per activity | `%` | `< 2%` | none | R1 | `p6_15_out_of_sequence` | [P6-15 sheet](../src/xerscope/sheets/P6/P6-15.md) |
 | P6-16 | Dangling Start Activities | among activities not complete, not milestone and not started (`ignore_in_progress = true`): a predecessor exists and none is FS or SS | `%` | `<= 0%` | none | R1; 113174 | `p6_16_dangling_start` | [P6-16 sheet](../src/xerscope/sheets/P6/P6-16.md) |
@@ -497,7 +504,7 @@ The following lines give the same chains check by check, with the demo counts.
 
 P6-15, P6-16 and P6-17 divide by every activity. The activities they examine are cut in the
 numerator, as their row of Table 10 says: a started activity for P6-15, an activity that is
-neither complete nor a milestone for the two others.
+neither complete nor a milestone for the two others, and not started for P6-16.
 
 ### Open points of the P6 checks
 
@@ -541,14 +548,14 @@ Table 11. Checks of DCMA DECM v8.0
 
 | Id | Name | Formula | Unit | Target | Needs | Source | Code | Deeper reading |
 |---|---|---|---|---|---|---|---|---|
-| 06A204b | Dangling logic | open start (milestone: no predecessor; other activity: no FS or SS predecessor) or open finish (milestone: no successor; other activity: no FS or FF successor); a link to another project counts by its type; exempt: the earliest baseline start (start side) and the latest baseline finish (finish side), ties included | `%` | `<= 0%` | baseline read, not required; without one, or when the update is its own baseline: planned dates, note `no baseline: first/last by planned dates` | sheet 06A204b | `decm_06a204b_dangling_logic` | Formulas 2.2 |
+| 06A204b | Dangling logic | open start (milestone: no predecessor; other activity: no FS or SS predecessor) or open finish (milestone: no successor; other activity: no FS or FF successor); a link to another project counts by its type; exempt: the earliest baseline start (start side) and the latest baseline finish (finish side), ties included | `%` | `<= 0%` | baseline read, not required; without one: planned dates, note `no baseline: first/last by planned dates`; when the update is its own baseline: planned dates, note `first/last by baseline dates` | sheet 06A204b | `decm_06a204b_dangling_logic` | Formulas 2.2 |
 | 06A205a | Lags | successor of at least one relationship with `lag_hr > 0` | `%` | `<= 10%` | none | sheet 06A205a | `decm_06a205a_lags` | Formulas 2.2 |
 | 06A208a | Summary tasks with logic | WBS summary row that is the predecessor or the successor of a relationship | `count` | `<= 0` | none | sheet 06A208a | `decm_06a208a_summary_logic` | Formulas 2.2 |
 | 06A209a | Hard constraints | primary or secondary constraint among Mandatory start, Mandatory finish; no exemption once started | `%` | `<= 0%` | none | sheet 06A209a | `decm_06a209a_hard_constraints` | Formulas 2.2 |
 | 06A210a | LOE with discrete successors | at least one successor in the file that is not level of effort | `%` | `<= 0%` | none | sheet 06A210a | `decm_06a210a_loe_successors` | Formulas 2.2 |
 | 06A211a | High total float | `total_float_d > limit_days` (44 wd of the activity's calendar) | `%` | `info` | none | sheet 06A211a | `decm_06a211a_high_float` | Formulas 2.2 |
 | 06A212a | Out of sequence | with Start and Finish of both ends (actual, else forecast): FS successor start before predecessor finish; SS start before start; FF finish before finish; SF finish before start; the lag is not added | `count` | `<= 0` | none | sheet 06A212a | `decm_06a212a_out_of_sequence` | Formulas 2.2 |
-| 06A401a | Critical path test | value 1 when the critical path test of DCMA-12 passes, else 0 (`slip_days` 600) | `pass/fail` | `pass` | data date; without one: `n/a`, note `no status date` | sheet 06A401a; method: xerscope | `decm_06a401a_critical_path_test` | Formulas 2.6; CPM, critical path test |
+| 06A401a | Critical path test | value 1 when the critical path test of DCMA-12 passes, else 0 (`slip_days` 600 wd of the delayed activity's calendar) | `pass/fail` | `pass` | data date; without one: `n/a`, note `no status date` | sheet 06A401a; method: xerscope | `decm_06a401a_critical_path_test` | Formulas 2.6; CPM, critical path test |
 | 06A501a | Missing baseline dates | no `bl_start` or no `bl_finish` | `%` | `<= 5%` | baseline; without one: `n/a`, note `needs a baseline` | sheet 06A501a | `decm_06a501a_missing_baseline` | Formulas 2.2 |
 | 06A504a | Actual starts changed | in both updates, with an actual start in the earlier one and another, or none, in this one | `%` | `<= 10%` | an update at least 28 days older; without one: `n/a`, note `needs an update 28 days older` | sheet 06A504a | `decm_06a504a_actual_starts_changed` | Formulas 2.2 |
 | 06A504b | Actual finishes changed | the same on the actual finish | `%` | `<= 10%` | an update at least 28 days older; without one: `n/a`, note `needs an update 28 days older` | sheet 06A504b | `decm_06a504b_actual_finishes_changed` | Formulas 2.2 |
@@ -556,7 +563,7 @@ Table 11. Checks of DCMA DECM v8.0
 | 06A505b | Complete without actual finish | no `act_end_date` | `%` | `<= 5%` | none | sheet 06A505b | `decm_06a505b_complete_without_actual_finish` | Formulas 2.2 |
 | 06A506a | Actual dates after the status date | `act_start_date` or `act_end_date` after the data date, read on every activity (the population is the denominator only) | `%` | `<= 5%` | data date; without one: `n/a`, note `no status date` | sheet 06A506a | `decm_06a506a_actual_dates_after_status_date` | Formulas 2.2 |
 | 06A506b | Forecast dates before the status date | not started with a forecast start on or before the data date, or a forecast finish on or before it | `count` | `<= 0` | data date; without one: `n/a`, note `no status date` | sheet 06A506b | `decm_06a506b_forecast_dates_before_status_date` | Formulas 2.2 |
-| 06A506c | Riding the status date | not started in both updates with a forecast start 0 wd to 3 wd after the data date in both (`riding_window_wd`, each update on its own data date and calendar); or started in both with remaining durations within 2 wd of each other (`remaining_tolerance_wd`) | `%` | `<= 1%` | an update at least 28 days older; without one: `n/a`, note `needs an update 28 days older` | sheet 06A506c | `decm_06a506c_riding_status_date` | Formulas 2.2 |
+| 06A506c | Riding the status date | not started in both updates with a Start 0 wd to 3 wd after the data date in both (`riding_window_wd`, each update on its own data date and calendar); or started in both with remaining durations within 2 wd of each other (`remaining_tolerance_wd`) | `%` | `<= 1%` | an update at least 28 days older; without one: `n/a`, note `needs an update 28 days older` | sheet 06A506c | `decm_06a506c_riding_status_date` | Formulas 2.2 |
 
 ### Funnel tree of DCMA DECM v8.0
 
@@ -711,12 +718,12 @@ Table 12. Checks of DCMA 14-Point
 | DCMA-05 | Hard constraints | primary or secondary constraint among Start on, Start on or before, Finish on, Finish on or before, Mandatory start, Mandatory finish; no exemption once started | `%` | `<= 5%` | none | PAM 200.1 §4.5, §4.0 | `dcma_05_hard_constraints` | Formulas 2.3 |
 | DCMA-06 | High float | `total_float_d > limit_days` (44 wd of the activity's calendar) | `%` | `<= 5%` | none | PAM 200.1 §4.6, §4.0 | `dcma_06_high_float` | Formulas 2.3 |
 | DCMA-07 | Negative float | `total_float_d < 0` | `count` | `<= 0` | none | PAM 200.1 §4.7, §4.0 | `dcma_07_negative_float` | Formulas 2.3 |
-| DCMA-08 | High duration | baseline duration above `limit_days` (44): `bl_duration_hr` / the activity's current `hours_per_day`; an activity the baseline does not hold is not counted | `%` | `<= 5%` | baseline read; without one: `n/a`, note `needs a baseline` | PAM 200.1 §4.8, §4.0 | `dcma_08_high_duration` | Formulas 2.3 |
+| DCMA-08 | High duration | baseline duration above `limit_days` (44 wd of the activity's current calendar): `bl_duration_hr` / the activity's current `hours_per_day`; an activity the baseline does not hold is not counted | `%` | `<= 5%` | baseline read; without one: `n/a`, note `needs a baseline` | PAM 200.1 §4.8, §4.0 | `dcma_08_high_duration` | Formulas 2.3 |
 | DCMA-09 | Invalid dates | not started with a forecast start before the data date, or a forecast finish before it, or an actual start or finish after it; calendar days compared (`date_grain = "day"`) | `count` | `<= 0` | data date; without one: `n/a`, note `no status date` | PAM 200.1 §4.9, §4.0 | `dcma_09_invalid_dates` | Formulas 2.3 |
 | DCMA-10 | Resources | no `TASKRSRC` row and no `PROJCOST` row; `n/a` when the project has no assignment and no activity with `labor_budget_hr > 0` | `%` | `<= 0%` | none | PAM 200.1 §4.10, §4.0 | `dcma_10_resources` | Formulas 2.3 |
 | DCMA-11 | Missed tasks | Finish (actual, else forecast) on a later calendar day than `bl_finish`, or later by any working time on the activity's calendar | `%` | `<= 5%` | baseline; without one: `n/a`, note `needs a baseline`; without a data date: `n/a`, note `no status date` | PAM 200.1 §4.11, §4.0 | `dcma_11_missed_tasks` | Formulas 2.3 |
 | DCMA-12 | Critical path test | value 1 when a slip of `slip_days` (600 wd) on the first open activity of the recalculated longest path reaches the project finish, else 0 | `pass/fail` | `pass` | data date; without one: `n/a`, note `no status date` | PAM 200.1 §4.12; slip length and reading: xerscope | `dcma_12_critical_path_test` | Formulas 2.6; CPM, critical path test |
-| DCMA-13 | CPLI | value = (CPL + TF) / CPL, in wd of the project calendar; CPL from the data date to the measured finish, TF its float or its margin to its baseline finish | `ratio` | `>= 0.95` | data date; a Must Finish By, or a baseline (not the planned dates, which give `info`); without either: `n/a` | PAM 200.1 §3.1.2.3; margin without a Must Finish By: xerscope | `dcma_13_cpli` | Formulas 2.6 |
+| DCMA-13 | CPLI | Critical Path Length Index (CPLI) = (CPL + TF) / CPL, in wd of the project calendar; CPL, the critical path length, from the data date to the measured finish; TF, the total float, its float or its margin to its baseline finish | `ratio` | `>= 0.95` | data date; a Must Finish By, or a baseline (not the planned dates, which give `info`); without either: `n/a` | PAM 200.1 §3.1.2.3; margin without a Must Finish By: xerscope | `dcma_13_cpli` | Formulas 2.6 |
 | DCMA-14 | BEI | complete activities, less those with an actual finish after the data date (calendar days compared); value = counted / population | `ratio` | `>= 0.95` | baseline; without one: `n/a`, note `needs a baseline`; without a data date: `n/a`, note `no status date` | PAM 200.1 §3.1.2.4 | `dcma_14_bei` | Formulas 2.3 |
 
 ### Funnel tree of DCMA 14-Point
@@ -1033,18 +1040,18 @@ Table 14. Parameterised rules
 
 | Rule | List label | Formula | Unit | Target | Needs | Source | Code | Deeper reading |
 |---|---|---|---|---|---|---|---|---|
-| `missing_logic` | Missing a predecessor or a successor | no predecessor or no successor among the relationships of the project; `external_passes` (true) counts a link to another project; `pred_exempt` and `succ_exempt` (none) pass one side for `started`, `start_milestone`, `finish_milestone`, `project_start`, `project_finish`, `single_project_start`, `single_project_finish`; `dangling` (false) also counts a start with predecessors none of which is FS or SS, and a finish with successors none of which is FS or FF | `%` | set by the standard file | none | xerscope | `missing_logic` | Formulas 2.5 |
-| `dangling` | Logic that does not drive the task | `end = "finish"` (default): a successor exists and none is FS or FF; `end = "start"`: a predecessor exists and none is FS or SS, the started activities left out of the population | `%` | set by the standard file | none | xerscope | `dangling` | Formulas 2.5 |
-| `lag` | Relationships with the lag in question | `lag_hr` compared with `value` (0) by `op` (`>`); `unit = "days"` reads `lag_d`, days of the predecessor's calendar; `unit = "project_pct"` compares `lag_hr` with `value` % of the working hours from the planned start to the forecast finish on the project calendar | `%` | set by the standard file | none; `project_pct` without those two dates: `n/a` | xerscope | `lag` | Formulas 2.5 |
-| `relationship_type` | Relationships of another type | relationships of `type` (FS), with a lag of 0 as well when `zero_lag`; value = 100 × counted / population; `listed` chooses the list: the others, or those of the type | `%` | set by the standard file | none | xerscope | `relationship_type` | Formulas 2.5 |
-| `constraints` | Constrained tasks | primary or secondary constraint among `types` (none), P6 codes such as `CS_MANDSTART`; `ignore_start_when_started` (true) leaves out a start constraint on a started activity | `%` | set by the standard file | none | xerscope | `constraints` | Formulas 2.5 |
-| `float` | Tasks outside the float limit | `total_float_d`, wd of the activity's calendar, compared with `value` (44) by `op` (`>`); `unit = "hours"` reads `total_float_hr_cnt`; `op = "between"` counts a float from `value` to `value_max`, both included | `%` | set by the standard file | none | xerscope | `total_float` | Formulas 2.5 |
-| `duration` | Tasks outside the duration limit | `original_d` compared with `value` (44) by `op` (`>`); `field` reads the remaining duration, or the baseline duration (`bl_duration_hr` / the activity's current `hours_per_day`); `unit = "hours"` reads the hours as stored | `%` | set by the standard file | baseline for `field = "baseline"`; without one: `n/a`, note `needs a baseline` | xerscope | `duration` | Formulas 2.5 |
-| `invalid_dates` | Progress dates on the wrong side of the status date | `kind` (both): a forecast before the data date (not started: forecast start; any open activity: forecast finish; `in_progress = "start"`: forecast start of every open activity), or an actual date after it; `include_data_date` (false) also counts a forecast on the data date; `denominator = "started"` divides by the activities with an actual start | `%` | set by the standard file | data date; without one: `n/a`, note `no status date` | xerscope | `invalid_dates` | Formulas 2.5 |
-| `on_data_date` | Starting or finishing on the data date | Start or Finish on the data date; `date_grain` (day) compares calendar days, or timestamps | `%` | set by the standard file | data date; without one: `n/a`, note `no status date` | xerscope | `on_data_date` | Formulas 2.5 |
-| `no_resource` | Tasks with no resource assignment | no `TASKRSRC` row, and no `PROJCOST` row when `expenses_count` (true); `kind = "labour_units"` counts `labor_budget_hr` not above 0 instead | `%` | set by the standard file | none | xerscope | `no_resource` | Formulas 2.5 |
-| `late_vs_baseline` | Forecast to finish after their baseline finish | working hours from `bl_finish` to Finish above `tolerance_hours` (0), on the activity's calendar; `no_baseline = "planned"` takes the update's `target_end_date` where the baseline has no finish | `%` | set by the standard file | baseline; without one: `n/a`, note `needs a baseline` | xerscope | `late_vs_baseline` | Formulas 2.5 |
-| `bei` | Due by the status date but not completed | complete activities; value = counted / population, the activities due: `bl_finish` on or before the data date, or no baseline finish (`missing_baseline = "due"`); `due_from = "baseline"` counts the due activities in the baseline itself | `ratio` | set by the standard file | baseline; without one: `n/a`, note `needs a baseline`; without a data date: `n/a`, note `no status date` | xerscope | `bei` | Formulas 2.5 |
+| `missing_logic` | Missing a predecessor or a successor | no predecessor or no successor among the relationships of the project; `external_passes` (true) counts a link to another project; `pred_exempt` and `succ_exempt` (none) pass one side for `started`, `start_milestone`, `finish_milestone`, `project_start`, `project_finish`, `single_project_start`, `single_project_finish`; `dangling` (false) also counts an activity not started whose predecessors include no FS or SS, and an activity whose successors include no FS or FF; a link to another project on that side, or the project start or finish, exempts it; `exclude` (`complete`) | `%` | set by the standard file | none | xerscope | `missing_logic` | Formulas 2.5 |
+| `dangling` | Logic that does not drive the task | `end = "finish"` (default): a successor exists and none is FS or FF; `end = "start"`: a predecessor exists and none is FS or SS, the started activities left out of the population; `exclude` (`complete`) | `%` | set by the standard file | none | xerscope | `dangling` | Formulas 2.5 |
+| `lag` | Relationships with the lag in question | `lag_hr` compared with `value` (0) by `op` (`>`); `unit = "days"` reads `lag_d`, days of the predecessor's calendar; `unit = "project_pct"` compares `lag_hr` with `value` % of the working hours from the planned start to the forecast finish on the project calendar; `links` (`succ_incomplete`), `exclude_loe` (false), `exclude` (none) | `%` | set by the standard file | none; `project_pct` without those two dates: `n/a` | xerscope | `lag` | Formulas 2.5 |
+| `relationship_type` | Relationships of another type | relationships of `type` (FS), with a lag of 0 as well when `zero_lag`; value = 100 × counted / population; `listed` chooses the list: the others, or those of the type; `links` (`succ_incomplete`), `exclude_loe` (false), `exclude` (none) | `%` | set by the standard file | none | xerscope | `relationship_type` | Formulas 2.5 |
+| `constraints` | Constrained tasks | primary or secondary constraint among `types` (none), P6 codes such as `CS_MANDSTART`; `ignore_start_when_started` (true) leaves out a start constraint on a started activity; `exclude` (`complete`) | `%` | set by the standard file | none | xerscope | `constraints` | Formulas 2.5 |
+| `float` | Tasks outside the float limit | `total_float_d`, wd of the activity's calendar, compared with `value` (44) by `op` (`>`); `unit = "hours"` reads `total_float_hr_cnt`; `op = "between"` counts a float from `value` to `value_max`, both included; `exclude` (`complete`) | `%` | set by the standard file | none | xerscope | `total_float` | Formulas 2.5 |
+| `duration` | Tasks outside the duration limit | `original_d` compared with `value` (44) by `op` (`>`); `field` reads the remaining duration, or the baseline duration (`bl_duration_hr` / the activity's current `hours_per_day`); `unit = "hours"` reads the hours as stored; `exclude` (`complete`) | `%` | set by the standard file | baseline for `field = "baseline"`; without one: `n/a`, note `needs a baseline` | xerscope | `duration` | Formulas 2.5 |
+| `invalid_dates` | Progress dates on the wrong side of the status date | `kind` (both): a forecast before the data date (not started: forecast start; any open activity: forecast finish; `in_progress = "start"`: forecast start of every open activity), or an actual date after it; `include_data_date` (false) also counts a forecast on the data date; `denominator = "started"` divides by the activities with an actual start; `exclude` (`loe`, `complete_before_data_date`) | `%` | set by the standard file | data date; without one: `n/a`, note `no status date` | xerscope | `invalid_dates` | Formulas 2.5 |
+| `on_data_date` | Starting or finishing on the data date | Start or Finish on the data date; `date_grain` (day) compares calendar days, or timestamps; `exclude` (`complete`) | `%` | set by the standard file | data date; without one: `n/a`, note `no status date` | xerscope | `on_data_date` | Formulas 2.5 |
+| `no_resource` | Tasks with no resource assignment | no `TASKRSRC` row, and no `PROJCOST` row when `expenses_count` (true); `kind = "labour_units"` counts `labor_budget_hr` not above 0 instead; `exclude` (`complete`, `loe`, `milestones`) | `%` | set by the standard file | none | xerscope | `no_resource` | Formulas 2.5 |
+| `late_vs_baseline` | Forecast to finish after their baseline finish | working hours from `bl_finish` to Finish above `tolerance_hours` (0), on the activity's calendar; `no_baseline = "planned"` takes the update's `target_end_date` where the baseline has no finish; `exclude` (`complete`, `milestones`, `loe`) | `%` | set by the standard file | baseline; without one: `n/a`, note `needs a baseline` | xerscope | `late_vs_baseline` | Formulas 2.5 |
+| `bei` | Due by the status date but not completed | complete activities; value = counted / population, the activities due: `bl_finish` on or before the data date, or no baseline finish (`missing_baseline = "due"`); `due_from = "baseline"` counts the due activities in the baseline itself; `exclude` (`loe`, `milestones`) | `ratio` | set by the standard file | baseline; without one: `n/a`, note `needs a baseline`; without a data date: `n/a`, note `no status date` | xerscope | `bei` | Formulas 2.5 |
 
 ### Funnels of the parameterised rules
 
@@ -1089,7 +1096,7 @@ flowchart LR
   skipped["only info, n/a or error: not evaluated (0)"]
   failed["at least one fail: failed (12)"]
   passed["no fail, at least one pass: passed (5)"]
-  score["score = passed / evaluated = 5 / 17 = 29 %"]
+  score["score = passed / evaluated = 5 / 17 = 29%"]
   checks --> criteria
   criteria --> evaluated
   criteria --> skipped
@@ -1174,11 +1181,24 @@ flowchart TD
   calendar and each lag on the calendar the scheduling options designate. The total float `tf_hr`
   is the working hours of the activity's calendar from early finish to late finish, or the start
   float, or the smaller of the two, as the option **Compute Total Float as** says. The project
-  finish is the latest early finish.
+  finish is the latest early finish. `longest_path` flags the activities not complete whose early
+  finish is the project finish, then every activity reached from them going back through the
+  driving relationships. When only milestones finish the project, an activity with no working
+  minute of its calendar between its early finish and the project finish starts the trace too. A
+  relationship drives when the date it allows its successor (the predecessor's early finish for
+  FS and FF, the start an SS or SF relationship is measured from, plus the lag on the lag
+  calendar) is not before the date it bounds (remaining start for FS and SS, early finish for FF
+  and SF), in working minutes of the successor's calendar. A relationship into or out of a
+  complete activity drives nothing; nor does one into an activity in progress under Progress
+  Override, nor one that allows a later date than the one a mandatory constraint holds on a
+  successor not started. A level of effort is flagged when one of its relationships drives an
+  activity of the path.
 - **Funnel**: activities (30) → population: in the recalculation (30). A level of effort takes
   its dates from the activities it is linked to and drives nothing.
 - **Target and status**: none. A logic loop, or a duration or a lag that is not finite or is above
-  1,000,000 h, stops the recalculation; the checks then print `cannot schedule:` and the reason.
+  1,000,000 h, stops the recalculation: INT-01, INT-03, INT-07 and INT-08 are then `n/a` with the
+  note `cannot schedule:` and the reason, and DCMA-12 and 06A401a fail with the reason as their
+  note.
 - **Needs**: one update.
 - **Source**: Oracle P6 scheduling rules, validated against P6 output; xerscope for the conventions
   no reference settles.
@@ -1290,7 +1310,7 @@ Table 15. Rows of the changelog
 | Float | became critical, no longer critical | critical after and not before; critical before, not after, and not complete | none |
 | Constraints | primary or secondary constraint added, removed, changed | the type differs, or the type is present and its date differs | none |
 | Resources | budgeted labour hours changed | `labor_budget_hr` after − before, rounded to 0.01, is not 0 | that difference (h) |
-| Resources | resource assigned, resource removed, budgeted units changed | per activity of both updates and resource: `TASKRSRC.target_qty` summed appears, disappears, or differs by 0.01 or more | the difference of units, for the last one |
+| Resources | resource assigned, resource removed, budgeted units changed | per activity of both updates and resource: `TASKRSRC.target_qty` summed appears, disappears, or differs once the difference is rounded to 0.01 | the difference of units, for the last one |
 | Relationships | added, deleted | the pair of predecessor and successor is only in the later update, only in the earlier one | none |
 | Relationships | type changed, lag changed | the pair is in both with another set of types; with the same types and another lag in hours | none |
 | Calendars | working time changed | a calendar of both updates whose hours per day, week or dated exceptions differ | none |
@@ -1374,15 +1394,17 @@ Table 16. Steps of the half-step reading
 ### Shift of each step, slip and replanning
 
 - **Identifier**: `shift_wd` of a step; `slip_wd`; `replanning_wd`; `finish_before_replanning`.
-- **Shown**: **Delay analysis** page, cards **Finish before replanning** and **Finish shown**,
-  section **Step by step**, section **Every update**; download **Download steps (CSV)**.
+- **Shown**: **Delay analysis** page, cards **Finish before replanning**, **Finish shown** and
+  **Tasks matched** (`matched`, with `added` and `deleted` under it), section **Step by step**,
+  section **Every update**; download **Download steps (CSV)**.
 - **Formula**: `shift_wd` = −(working days from the finish before the step to the finish after it),
   on the project calendar of the later update, rounded to 0.01 wd. `slip_wd` is the shift of the
   progress step. `replanning_wd` is the sum of the shifts of the five other steps. The finish
   before replanning is the recalculated finish after the progress step.
 - **Funnel**: activities of the earlier update (30) and of the later update (30) → matched by
   Activity ID (30), added (0), deleted (0); changelog rows (60) → carried by a step: progress
-  (6), every other step (0). The demo reads a slip of −2.0 wd and a replanning of 0.0 wd.
+  (6), every other step (0). The recalculated finish goes from 2027-03-21 to 2027-03-23. The demo
+  reads a slip of −2.0 wd and a replanning of 0.0 wd.
 - **Target and status**: none.
 - **Needs**: two updates the engine can schedule; a week it cannot keeps its row in the series
   with `not read:` and the reason.
@@ -1575,8 +1597,9 @@ flowchart TD
 
 - **Identifier**: `bac_hr`; `unbaselined`; `deleted_since_bl`, `pv_deleted_hr`;
   `Baseline.bac_hours`.
-- **Shown**: **Earned value** page, expander **How it is calculated**, table of **Performance
-  indices by update**, and the captions under **Earned hours by task**.
+- **Shown**: **Earned value** page: expander **How it is calculated** for BAC; table of
+  **Performance indices by update** for `unbaselined`, `deleted_since_bl` and `pv_deleted_hr`;
+  captions under **Earned hours by task**.
 - **Formula**: BAC = Σ `ev_labor_hr` over the baseline activities whose Activity ID is in the
   update, in hours. `Baseline.bac_hours` sums every baseline activity: the size of the plan. With
   the option **Link renumbered tasks by GUID**, an activity renumbered since the baseline is matched
@@ -1653,9 +1676,9 @@ Table 17. Performance percent by earned value technique
 - **Identifier**: `ac_hr`, `ac_unbaselined_hr`; `etc_hr`; `eac_hr`; `vac_hr`, card **EAC**.
 - **Shown**: **Earned value** page, card **EAC** with VAC as its delta, expander **How it is
   calculated**.
-- **Formula**: AC = Σ `labor_actual_hr` and ETC = Σ `labor_remaining_hr` over every activity of
-  the update, in the baseline or not. EAC = AC + ETC. VAC = BAC − EAC, negative for an overrun.
-  All in hours.
+- **Formula**: AC = Σ `labor_actual_hr` and ETC, the estimate to complete, = Σ
+  `labor_remaining_hr` over every activity of the update, in the baseline or not. EAC = AC + ETC.
+  VAC, the variance at completion, = BAC − EAC, negative for an overrun. All in hours.
 - **Funnel**: activities of the update (30) → population (30) → counted: with actual hours (9),
   with remaining hours (17). The demo reads AC 2,216 h, ETC 6,720 h, EAC 8,936 h, VAC −896 h.
 - **Target and status**: none.
@@ -1727,7 +1750,9 @@ Table 17. Performance percent by earned value technique
   the day after the last `ev_finish`, and at the data date. The forecast curve starts at AC on the
   data date and adds the remaining hours of the activities not complete, spread in a straight
   line in working time of each activity's calendar from the later of its Start and the data date
-  to its Finish. A row holds the value at its instant.
+  to its Finish. A row holds the value at its instant. With the toggle **Show as % of BAC**, the
+  EV, AC and SV of each update are divided by that update's own BAC, and the two curves by the
+  BAC of the update shown.
 - **Funnel**: PV curve: baseline activities in the update (29) → with EV basis hours and both EV
   dates (22). Forecast curve: activities (30) → not complete (23) → with remaining hours above 0
   and a Finish (17). In the demo the PV curve ends at 8,040 h and the forecast curve at 8,936 h.
@@ -1785,7 +1810,10 @@ flowchart TD
 
 - **Identifier**: `earned_schedule`: `plan_start`, `plan_finish`, `pd_min`, `at_min`, `es_min`,
   `es_date`, `ev_left_out_hr`; cards **Plan reached** and **Planned finish**.
-- **Shown**: **Earned value** page, section **Earned Schedule**.
+- **Shown**: **Earned value** page, section **Earned Schedule**, for `es_date` (card **Plan
+  reached**) and `plan_finish` (card **Planned finish**); **Debug** page, block 9, for
+  `plan_start`, for PD, AT and ES in plan days (`pd_plan_d`, `at_plan_d`, `es_plan_d`) and for
+  `ev_left_out_hr`.
 - **Formula**: the measured activities are the baseline activities of the update with EV basis
   hours and both EV dates. The plan start and the plan finish are their first and last EV dates.
   PD is the plan time from the plan start to the plan finish, AT to the data date, and ES to the
@@ -1809,7 +1837,8 @@ flowchart TD
 
 - **Identifier**: `sv_min`; `spi_t`, card **SPI(t)**; `gap_calendar_d`, card **Time gap**; `tspi`,
   card **TSPI (planned finish)**.
-- **Shown**: **Earned value** page, section **Earned Schedule**.
+- **Shown**: **Earned value** page, section **Earned Schedule**, for SPI(t), the time gap and
+  TSPI; **Debug** page, block 9, for SV(t) in plan days (`sv_t_plan_d`).
 - **Formula**: SV(t) = ES − AT, in plan time, negative when behind. SPI(t) = ES / AT. Time gap =
   `es_date` − data date, in calendar days; none once ES = PD. TSPI = (PD − ES) / (PD − AT); none
   once ES is at least PD or AT is at least PD.
@@ -1896,7 +1925,9 @@ one update to the next.
   Finish of any other activity. The chart blanks the forecast of an update in which the milestone
   is complete with a forecast before that update's data date.
 - **Funnel**: activities of every update (30 Activity IDs) → milestone in at least one update
-  (4) → population (4); not complete in the latest update (3).
+  (4) → population (4); not complete in the latest update (3). The page starts with the finish
+  milestones of the latest update picked (3 in the demo); the field **Milestones and key tasks
+  (up to 6)** adds the others.
 - **Target and status**: none.
 - **Needs**: at least two updates for the chart.
 - **Source**: xerscope; the chart is a milestone trend analysis.
@@ -1937,7 +1968,7 @@ flowchart TD
   committed["still in W: committed (4)"]
   kept["status reached in W with its actual date on or before the data date of W: kept (2)"]
   missed["missed (2)"]
-  ppc["PPC of the week = kept / committed = 2 / 4 = 50 %"]
+  ppc["PPC of the week = kept / committed = 2 / 4 = 50%"]
   previous --> work
   work --> open
   work --> waiting
@@ -1961,9 +1992,9 @@ flowchart TD
   finish on or before that data date. A start commitment is the same on not started, Start, and
   actual start. An activity due to start and to finish in the week is two commitments. With
   **Include commitments late at W−1** cleared, only the dates after the data date of W−1 commit.
-- **Funnel**: activities of W−1 (30) → not milestone, not level of effort (25) → finish
-  commitments (2) and start commitments (2) → still in W (4) → population (4) → counted: kept
-  (2). The cards read 1 / 2 and 1 / 2.
+- **Funnel**: activities of W−1 (30) → not milestone, not level of effort (25) → not complete
+  (20): finish commitments (2); not started (17): start commitments (2) → still in W (4) →
+  population (4) → counted: kept (2). The cards read 1 / 2 and 1 / 2.
 - **Target and status**: none.
 - **Needs**: two consecutive updates; without a data date in W nothing commits.
 - **Source**: Last Planner System for the finish commitments; xerscope for the start commitments.
@@ -2090,7 +2121,7 @@ a comparison update.
 - **Identifier**: `finish_date`, card **Forecast finish**; `finish_shift_wd`;
   `finish_shift_since_first`, card **Shift since first update**.
 - **Shown**: **Overview** page, cards, chart **Forecast finish by update** and table **Updates
-  loaded**; `xerscope info FOLDER`.
+  loaded**; `xerscope info FOLDER` for `forecast_finish` and `finish_shift_wd`.
 - **Formula**: the forecast finish is the latest Finish of the activities. `finish_shift_wd` =
   −(working days from the forecast finish of the previous update to this one), on the project
   calendar of this update, not rounded. The shift since the first update is the same from the
@@ -2108,7 +2139,8 @@ a comparison update.
 
 - **Identifier**: `summary`: `activities`, `complete`, `in_progress`, `not_started`,
   `relationships`, `pct_complete_count`; card **Tasks complete**.
-- **Shown**: **Overview** page, card and table **Updates loaded**; `xerscope info FOLDER`.
+- **Shown**: **Overview** page, card and table **Updates loaded**; `xerscope info FOLDER` for
+  `activities`, `complete` and `relationships`.
 - **Formula**: counts of activities by status, and of relationships. `pct_complete_count` = 100 ×
   complete / activities, rounded to 0.1.
 - **Funnel**: activities (30) → population (30) → counted: complete (7), in progress (4), not
@@ -2236,8 +2268,14 @@ The following numbers are shown by the app and have their formula elsewhere.
   formula is that of the check.
 - **Schedule health** page, section **Trend across updates**: the value of one check on every
   update (`checks.health_history`). The formula is that of the check.
+- **Schedule health** page, table **Results**: `count` is counted / population of the check and
+  `flagged` the number of rows its list holds (`checks.summary_frame`); expander **All checks, all
+  updates**: the value of every check on every update (`checks.health_wide`).
 - **Schedule health** page, expander **Compare with a P6 Check Schedule report**: the counts typed
   from a report against `found` and `total` of each check (`checks.compare_counts`).
+- **Gantt & WBS** page, card of the activity picked and **History across updates**: the quantities
+  of Tables 4 to 6 as the update holds them; the delta **since first** is the entry "Finish shift
+  of an activity".
 - **Export for Power BI** page: the table `dim_snapshot` holds the counts of each update, and the
   tables `fact_activity`, `fact_relationship` and `fact_assignment` hold the columns of the
   activities, relationships and assignments as the model reads them, without any other calculation
@@ -2247,3 +2285,8 @@ The following numbers are shown by the app and have their formula elsewhere.
   a P6 Activities export (`evm.pv_p6_comparison`, also `xerscope pv-compare`). These two
   comparisons are diagnostics that no figure of the other pages reads; Formulas 3 and the
   docstrings of `analysis/evm.py` hold their definitions.
+- **Debug** page, blocks 2, 4, 5, 6, 11, 13 and 14: what the file holds and what the app applied
+  to it, without a formula of their own. They list the activities with an expected finish beside
+  their stored and recalculated dates, the targets and options of the P6 standard, the baseline
+  of each update and the calendars, the activities behind the load warnings, the project
+  settings, the calendar detail, and the counts of word variants the Ask field reads as one.

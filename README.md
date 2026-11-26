@@ -54,6 +54,7 @@ With Docker, `docker compose up -d --build` serves the app on `http://localhost:
 |---|---|
 | [User guide](docs/user-guide.md) ([français](docs/user-guide.fr.md)) | concepts (updates, baselines, standards, units), a first run on the demo series, one how-to per goal in the app and on the command line, the reference of every command, option, page and environment variable, troubleshooting, limits, glossary |
 | [IT deployment guide](docs/it-deployment-guide.md) ([français](docs/it-deployment-guide.fr.md)) | hosting on an internal server: data handled, architecture, flow matrix, accounts and secrets, container hardening against ANSSI-FT-082, origin and integrity of the images, procedures, logging, known gaps |
+| [Formula sheet](docs/formula-sheet.md) ([français](docs/formula-sheet.fr.md)) | every calculation in one entry: formula, unit and calendar, the funnel that cuts its population (start set, each step and its source, what is counted), target, source; funnel diagrams per standard |
 | [docs/deploy.md](docs/deploy.md) | the shipped remote stack (Tailscale Funnel, Caddy) step by step on a Synology NAS |
 
 ## Validation

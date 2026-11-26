@@ -1574,6 +1574,8 @@ Les documents suivants complètent ce guide :
   une équipe.
 - [docs/deploy.md](deploy.md) (en anglais) : le déploiement distant, et le lexique du champ
   **Ask the schedule**.
+- [docs/formula-sheet.fr.md](formula-sheet.fr.md) : chaque calcul en une entrée, avec l'entonnoir
+  qui découpe sa population, et des schémas.
 - [docs/formulas.md](formulas.md) (en anglais) : la formule et la population de chaque chiffre.
 - [docs/standards.md](standards.md) (en anglais) : les standards, leurs sources et leurs
   différences.

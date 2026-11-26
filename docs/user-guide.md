@@ -1412,6 +1412,8 @@ The following documents complete this guide:
 - [docs/it-deployment-guide.md](it-deployment-guide.md): hosting the app for a team.
 - [docs/deploy.md](deploy.md): the remote deployment, and the lexicon of the
   **Ask the schedule** field.
+- [docs/formula-sheet.md](formula-sheet.md): every calculation in one entry, with the funnel that
+  cuts its population, and diagrams.
 - [docs/formulas.md](formulas.md): the formula and population of every number.
 - [docs/standards.md](standards.md): the standards, their sources and their differences.
 - [docs/cpm.md](cpm.md): the recalculation engine.

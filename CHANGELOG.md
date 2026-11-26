@@ -22,7 +22,9 @@ reports are kept outside the repository; what remains open is in `docs/quality-p
   concepts, a first run on the demo series, one how-to per goal, reference, troubleshooting, limits and
   glossary; an IT deployment guide (`docs/it-deployment-guide.md`, French in
   `docs/it-deployment-guide.fr.md`) for hosting on an internal server: flow matrix, accounts and secrets,
-  container hardening against ANSSI-FT-082, origin of the images, procedures, known gaps. The README
+  container hardening against ANSSI-FT-082, origin of the images, procedures, known gaps; a formula sheet
+  (`docs/formula-sheet.md`, French in `docs/formula-sheet.fr.md`): every calculation with the funnel that
+  cuts its population, and funnel diagrams per standard. The README
   sections "Command line", "Web app" and "Definitions that matter" moved to the user guide.
 
 - Reader (XER-01): a cell the file fills but the reader cannot type (a number or a date it cannot read, an
