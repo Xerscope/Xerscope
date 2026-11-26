@@ -64,9 +64,26 @@ git clone -b deploy-test-llm https://github.com/Xerscope/Xerscope.git
 
 Later updates: `git pull origin deploy-test-llm` in `C:\xerscope\Xerscope`.
 
-Download one model into `C:\xerscope\models` (the order and the reasons: [deploy.md §12](deploy.md)):
-Qwen3.8-27B in Q4_K_M from a known publisher (no official Qwen GGUF), or `unsloth/Qwen3.6-35B-A3B-GGUF`,
-file `UD-Q4_K_M`.
+Download the model into `C:\xerscope\models` before the first start: its container downloads
+nothing. The order and the reasons: [deploy.md §12](deploy.md). Checked on Hugging Face on 26 November
+2026 (no official Qwen GGUF of this model; unsloth's is the most downloaded):
+
+| Model | Repository | File | Size |
+|---|---|---|---|
+| Qwen3.8-27B (main) | `unsloth/Qwen3.8-27B-GGUF` | `Qwen3.8-27B-UD-Q4_K_M.gguf` | 16.6 GB |
+| Qwen3.6-35B-A3B (fast second) | `unsloth/Qwen3.6-35B-A3B-GGUF` | the `UD-Q4_K_M` file | 22.1 GB |
+
+In a browser, open
+`https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-Q4_K_M.gguf` and save it
+in `C:\xerscope\models`, or with Hugging Face's command-line tool:
+
+```powershell
+pip install -U huggingface_hub
+hf download unsloth/Qwen3.8-27B-GGUF Qwen3.8-27B-UD-Q4_K_M.gguf --local-dir C:\xerscope\models
+```
+
+Leave out the variants named uncensored, abliterated or MTP: retrained or modified models, and MTP
+fails with the agent's JSON schema (llama.cpp issue 30419).
 
 Pin the two images by digest (llama.cpp: a build of b12005 or later):
 
@@ -85,7 +102,7 @@ XERSCOPE_LEXICON_DIR=C:/xerscope/lexicon
 XERSCOPE_GATE_IMAGE=alpine/socat@sha256:<digest>
 XERSCOPE_LLM_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:<digest>
 XERSCOPE_MODELS=C:/xerscope/models
-XERSCOPE_MODEL_FILE=<exact .gguf file name>
+XERSCOPE_MODEL_FILE=Qwen3.8-27B-UD-Q4_K_M.gguf
 XERSCOPE_LLM_GPU_LAYERS=48
 ```
 
