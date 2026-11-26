@@ -9,6 +9,7 @@ from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.task_filters import branch_tasks, filtered_tasks
 from xerscope.analysis.wbs import ROOT, path_to, rollup, subtree_ids
 from xerscope.app import ui
+from xerscope.app.activity_details import recalculated_links, show_card
 from xerscope.app.baselines import (
     baseline_for_checks,
 )
@@ -34,14 +35,7 @@ from xerscope.app.state import (
     require_store,
     snapshot_picker,
 )
-from xerscope.app.task_panel import (
-    chain_request,
-    recalculated_links,
-    show_card,
-    show_history,
-    show_trail,
-    task_from_row_id,
-)
+from xerscope.app.task_panel import chain_request, show_history, show_trail, task_from_row_id
 from xerscope.viz import categorise, gantt_data, gantt_rows
 from xerscope.viz.gantt import CATEGORY_ORDER, open_row_ids
 from xerscope.xer.model import STATUS
@@ -59,6 +53,9 @@ DROPPED_KEY = "gantt_ask_dropped"  # (sentence, [labels taken off with their × 
 CHOSEN_KEY = "gantt_ask_chosen"  # {"text": sentence, "chosen": {word: value}}: answers to Filter.clarify
 TRAIL_KEY = "gantt_trail"  # the Activity IDs opened in the task panel, in order: the breadcrumb
 TRAIL_MAX = 12  # tasks kept in the breadcrumb, the oldest dropped first
+TRAIL_LEVELS_KEY = "gantt_trail_levels"  # links followed from the task shown: 1 = its direct neighbours
+TRAIL_DRIVING_KEY = "gantt_trail_driving"  # follow only the driving links
+TRAIL_MAX_LEVELS = 5
 FOCUS_KEY = "gantt_focus"  # {"codes": [...], "label": "P6-01 · Logic"} set by Schedule health; None otherwise
 GANTT_HEIGHT = 680  # px at most (viz.gantt.fitted_height: less for a short tree); the chart scrolls inside
 
@@ -485,8 +482,24 @@ def show_breadcrumb(task_code: str, logic: pd.DataFrame) -> None:
     """The tasks opened in the panel, then the predecessors and successors of the one shown, as P6 stored
     their floats and constraints in each update."""
     trail = trail_with(task_code)
-    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
         st.markdown(" › ".join(ui.md_text(code) for code in trail))
+        st.number_input(
+            "Levels",
+            min_value=1,
+            max_value=TRAIL_MAX_LEVELS,
+            value=1,
+            key=TRAIL_LEVELS_KEY,
+            width=110,
+            help="How many links to follow from the task shown: 1 lists its predecessors and successors, 2 "
+            "adds theirs, and so on. The Level column says how far each one is.",
+        )
+        st.toggle(
+            "Driving links only",
+            key=TRAIL_DRIVING_KEY,
+            help="Follow only the links that set their successor's date: the chain that drives the task "
+            "(P6's Driving checkbox, recalculated by the CPM because the XER does not export it).",
+        )
         back = st.button(
             "Back",
             icon=":material/arrow_back:",
@@ -529,7 +542,9 @@ def chart_and_task() -> None:
         with st.container(border=True):
             if shown != picked:
                 st.caption(f"Task {ui.md_text(shown)} is not drawn in the chart with the filters above.")
-            logic = logic_by_update(store, shown)  # its neighbours in each update: breadcrumb and float chart
+            # its neighbours in each update, as far as the breadcrumb's settings ask: breadcrumb and float chart
+            depth = int(st.session_state.get(TRAIL_LEVELS_KEY, 1))
+            logic = logic_by_update(store, shown, depth, bool(st.session_state.get(TRAIL_DRIVING_KEY, False)))
             ui.section("Tasks opened, predecessors and successors, by update")
             show_breadcrumb(shown, logic)
             show_card(snapshot, shown, open_task=open_from_panel)

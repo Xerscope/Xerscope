@@ -81,6 +81,7 @@ APP_EDGES = {  # module -> exactly the app modules it imports
     "ui": {"glossary", "table_filters", "theme"},
     "explanation_panel": {"ui"},
     "task_panel": {"ui"},
+    "activity_details": {"ui"},
     "xml_baselines": {"ui"},
     "session": {"ui"},
     "baseline_file": {"session"},

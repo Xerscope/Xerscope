@@ -13,6 +13,13 @@ export default function (component) {
   // page colours come from the theme in gantt.css; the bars' from the data
   root.style.setProperty("--Normal", palette.Normal);
   root.style.setProperty("--row", payload.rowPx + "px"); // the row height gantt.css reads
+  // the grid's columns after the name (viz/gantt.py: GRID_COLUMNS), each COLUMN_PX wide
+  const columns = payload.columns;
+  const COLUMN_PX = { number: 88, date: 108 };
+  const columnsPx = columns.reduce((total, column) => total + COLUMN_PX[column.kind], 0);
+  root.style.setProperty("--cols", ["1fr", ...columns.map((column) => COLUMN_PX[column.kind] + "px")].join(" "));
+  // without the timeline the grid takes the whole width (the Tasks page, P6's Activities view)
+  if (!payload.timeline) root.classList.add("grid-only");
 
   // --- helpers -------------------------------------------------------------------------
   const element = (tag, className, text) => {
@@ -56,11 +63,10 @@ export default function (component) {
   const maxDepth = Math.max(0, ...rows.filter((row) => row.kind === "wbs").map((row) => row.depth));
 
   // --- tree grid width -------------------------------------------------------------------
-  // The grid fits its longest WBS label (indent, toggle, code and name, in bold) and the two
-  // number columns, so a WBS name is read whole; at least 320 px, at most 60 % of the page so the
+  // The grid fits its longest WBS label (indent, toggle, code and name, in bold) and its
+  // columns, so a WBS name is read whole; at least 320 px, at most 60 % of the page so the
   // timeline keeps its share. An activity's name is still cut, its full text in its tooltip.
   // Measured on a hidden WBS row with the page's own styles, again once the fonts are loaded.
-  const NUMBER_COLUMNS_PX = 2 * 88; // % complete and Float (wd), gantt.css .cols
   const fitGridWidth = () => {
     const probe = element("div", "row wbs");
     probe.style.cssText = "position: absolute; visibility: hidden; display: block; width: max-content;";
@@ -76,11 +82,13 @@ export default function (component) {
     }
     probe.remove();
     // + 4 px: widths are fractional, and a label 1 px short of its width is cut with an ellipsis
-    const gridPx = Math.max(320, Math.ceil(widest) + 4 + NUMBER_COLUMNS_PX);
+    const gridPx = Math.max(320, Math.ceil(widest) + 4 + columnsPx);
     root.style.setProperty("--grid-w", "min(" + gridPx + "px, 60vw)");
   };
-  fitGridWidth();
-  if (document.fonts) document.fonts.ready.then(fitGridWidth);
+  if (payload.timeline) {
+    fitGridWidth();
+    if (document.fonts) document.fonts.ready.then(fitGridWidth);
+  }
 
   const visibleRows = () => {
     const shownIds = new Set();
@@ -133,7 +141,7 @@ export default function (component) {
   scroll.tabIndex = 0; // the rows scroll from the keyboard (arrow and page keys)
   const header = element("div", "head");
   const gridHeader = element("div", "ghead cols");
-  gridHeader.append(element("div", null, "Activity / WBS"), element("div", null, "% complete"), element("div", null, "Float (wd)"));
+  gridHeader.append(element("div", null, "Activity / WBS"), ...columns.map((column) => element("div", null, column.label)));
   const scale = element("div", "scale");
   header.append(gridHeader, scale);
   const body = element("div", "body");
@@ -264,15 +272,25 @@ export default function (component) {
   };
 
   // the opening both columns share: its class (the row's kind, "sel" when picked), place and data-i
-  const rowShell = (className, index, isSelected) => {
-    const shell = element("div", className + (isSelected ? " sel" : ""));
+  // a WBS row is shaded by its level when the page asks for P6's bands (gantt.css .band0 to .band4)
+  const rowShell = (className, row, index) => {
+    let classes = className + " " + row.kind;
+    if (row.id === payload.selected) classes += " sel";
+    if (payload.levelBands && row.kind === "wbs") classes += " band" + Math.min(row.depth, 4);
+    const shell = element("div", classes);
     shell.style.top = index * payload.rowPx + "px";
     shell.dataset.i = String(index);
     return shell;
   };
 
+  const cellText = (row, column) => {
+    const value = row[column.key];
+    if (value === null || value === undefined) return "";
+    return column.kind === "date" ? dayText(value) : value;
+  };
+
   const gridRow = (row, index) => {
-    const shell = rowShell("row cols " + row.kind, index, row.id === payload.selected);
+    const shell = rowShell("row cols", row, index);
     const name = element("div", "name");
     name.style.paddingLeft = 8 + row.depth * 16 + "px";
     let arrow = "";
@@ -282,7 +300,7 @@ export default function (component) {
     const text = element("span", "text", row.name);
     text.title = row.name;
     name.append(text);
-    shell.append(name, element("div", "num", row.pct === null ? "" : row.pct), element("div", "num", row.float_d === null ? "" : row.float_d));
+    shell.append(name, ...columns.map((column) => element("div", "num", cellText(row, column))));
     return shell;
   };
 
@@ -295,7 +313,7 @@ export default function (component) {
   };
 
   const timelineRow = (row, index) => {
-    const shell = rowShell("trow " + row.kind, index, row.id === payload.selected);
+    const shell = rowShell("trow", row, index);
     if (row.kind === "wbs") {
       if (row.startMs !== null && row.finishMs !== null) shell.append(box("summary", row.startMs, row.finishMs));
       return shell;
@@ -364,7 +382,7 @@ export default function (component) {
     const timelineRows = [];
     for (let index = firstIndex; index <= lastIndex; index++) {
       gridRows.push(gridRow(shown[index], index));
-      timelineRows.push(timelineRow(shown[index], index));
+      if (payload.timeline) timelineRows.push(timelineRow(shown[index], index));
     }
     gridLayer.replaceChildren(...gridRows);
     timeLayer.replaceChildren(...timelineRows);

@@ -142,3 +142,61 @@ def test_logic_by_update_follows_each_update_s_own_links():
 def test_logic_by_update_skips_an_update_without_the_task():
     store = SnapshotStore([snap([todo("A", **hours(8))], data_date="2026-03-02 08:00")])
     assert logic_by_update(store, "missing").empty
+
+
+def _chain_store() -> SnapshotStore:
+    """P1 (40 h) -> P2 (8 h) -> X (8 h) -> S1 (8 h) -> S2 (8 h), all FS 0, and Q (8 h) -> X FS 0.
+    On C8 from Mon 2026-03-02 08:00: P1 finishes Fri 17:00, P2 runs Mon 03-09, X Tue 03-10: P2 -> X
+    drives; Q finishes Mon 03-02 17:00, 6 working days before X starts: Q -> X does not drive."""
+    tasks = [todo("P1", **hours(40))] + [todo(code, **hours(8)) for code in ("P2", "X", "S1", "S2", "Q")]
+    links = [
+        ("P1", "P2", "FS", 0),
+        ("P2", "X", "FS", 0),
+        ("X", "S1", "FS", 0),
+        ("S1", "S2", "FS", 0),
+        ("Q", "X", "FS", 0),
+    ]
+    return SnapshotStore([snap(tasks, links, data_date="2026-03-02 08:00")])
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(
+    ("depth", "driving_only", "expected"),
+    [
+        (1, False, [("predecessor", 1, "P2"), ("predecessor", 1, "Q"), ("successor", 1, "S1")]),
+        (
+            2,
+            False,
+            [
+                ("predecessor", 1, "P2"),
+                ("predecessor", 1, "Q"),
+                ("predecessor", 2, "P1"),
+                ("successor", 1, "S1"),
+                ("successor", 2, "S2"),
+            ],
+        ),
+        (2, True, [("predecessor", 1, "P2"), ("predecessor", 2, "P1"), ("successor", 1, "S1"), ("successor", 2, "S2")]),
+    ],
+)
+def test_logic_by_update_follows_the_links_as_deep_as_asked(depth, driving_only, expected):
+    """Level 1: the direct neighbours; level 2: theirs too; driving only drops Q, whose link to X does
+    not drive (the chain that drives X is P1 -> P2 -> X)."""
+    logic = logic_by_update(_chain_store(), "X", depth, driving_only)
+    rows = logic[logic["role"] != "task"]
+    assert list(zip(rows["role"], rows["level"], rows["task_code"], strict=True)) == expected
+
+
+@pytest.mark.oracle("property")
+def test_a_neighbour_reached_twice_is_listed_once_at_its_nearest_level():
+    """A -> B -> X and A -> X: A is a direct predecessor of X (level 1), not listed again at level 2."""
+    store = SnapshotStore(
+        [
+            snap(
+                [todo(code, **hours(8)) for code in "ABX"],
+                [("A", "B", "FS", 0), ("B", "X", "FS", 0), ("A", "X", "FS", 0)],
+            )
+        ]
+    )
+    logic = logic_by_update(store, "X", 2)
+    rows = logic[logic["role"] == "predecessor"]
+    assert sorted(zip(rows["task_code"], rows["level"], strict=True)) == [("A", 1), ("B", 1)]

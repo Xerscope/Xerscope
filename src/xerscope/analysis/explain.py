@@ -927,12 +927,26 @@ READINGS: dict[str, Reading] = {
     ),
     "task_resources": TASK_TABLES_READING,
     "task_logic": TASK_TABLES_READING,
+    "tasks_table": Reading(
+        how=(
+            "P6's Activities view without its bars: the WBS tree, each node followed by its tasks, in P6's WBS "
+            "order; a WBS row folds open and closed (▸ / ▾, Collapse all, Expand all, Level), its band shaded by "
+            "its level, the top darkest. Columns: original and remaining duration in working days, % complete, "
+            "start, finish, total float in working days; a WBS row carries the roll-up of the tasks under it "
+            "(% complete weighted by hours, else duration; earliest start, latest finish, lowest total float) and "
+            "no duration. A click on a task shows its details below; Previous task and Next task step through the "
+            "tree's tasks."
+        ),
+        source="P6 TASK and PROJWBS of the update; roll-up: xerscope (`wbs.rollup`)",
+    ),
     "task_trail": Reading(
         how=(
             "one row per task opened from this panel, in the order they were opened (the one shown last), then "
-            "one per predecessor and successor of the task shown; one column per update: the link as that update "
-            "holds it (type, and driving when it sets the successor's date: recalculated by the CPM, the XER does "
-            "not export it), P6's total float (TF) and free float (FF) in working days, then the primary / "
+            "one per predecessor and successor of the task shown, as far as Levels asks (1: its direct ones; 2: "
+            "theirs too; the Level column says how far, Driving links only keeps the chain that drives the task); "
+            "one column per update: the link (toward the task) as that update holds it (type, and driving when "
+            "it sets the successor's date: recalculated by the CPM, the XER does not export it), P6's total "
+            "float (TF) and free float (FF) in working days, then the primary / "
             "secondary constraint with its date. A blank cell: not in that update, or not linked to the task "
             "there. Select a row to open that task."
         ),
