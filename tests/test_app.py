@@ -3267,20 +3267,35 @@ def test_uploaded_standard_is_in_the_picker_on_the_run_that_loads_it(app):
 
 
 def test_tasks_lists_the_wbs_and_its_tasks_and_details_the_one_picked(app):
-    """The Tasks page, P6's Activities view, on the demo: the project row first (type WBS), each WBS node before its
-    activities; C3020 picked shows the Activity Details tabs, its predecessors (C3010, E1020) left of its
-    successors (C3030, C3040); a predecessor picked in the Relationships tab becomes the activity shown."""
+    """The Tasks page, P6's Activities view, on the demo: the Gantt's tree without its timeline, WBS bands
+    shaded by level, P6's columns; the project row first, each WBS node before its activities; C3020 picked
+    (what a click on its row stores) shows the Activity Details tabs, its predecessors (C3010, E1020) left of
+    its successors (C3030, C3040), and opens the branch that holds it; a task picked in the Relationships tab
+    becomes the task shown."""
     app.switch_page("views/tasks.py").run()
     _ok(app)
-    table = next(d.value for d in app.dataframe if {"task_code", "original_d", "remaining_d"} <= set(d.value.columns))
-    assert table["type"].iloc[0] == "WBS"
-    civ = table.index[table["task_code"] == "CIV"][0]
-    assert table.loc[civ + 1 :, "task_code"].iloc[0].startswith("C")  # the CIV node, then its activities
-    assert table["task_name"].str.startswith("\u2003").any()  # names indented by WBS level
+    data = _gantt_data(app)
+    assert (data["timeline"], data["levelBands"]) == (False, True)
+    assert [column["key"] for column in data["columns"]] == [
+        "original_d",
+        "remaining_d",
+        "pct",
+        "start",
+        "finish",
+        "float_d",
+    ]
+    rows = data["rows"]
+    assert rows[0]["kind"] == "wbs" and rows[0]["parent"] is None
+    civ = next(index for index, row in enumerate(rows) if row["code"] == "CIV")
+    assert rows[civ + 1]["kind"] == "task" and rows[civ + 1]["code"].startswith("C")  # the CIV node, then its tasks
+    assert data["selected"] is None
     assert any("Select a task" in caption.value for caption in app.caption)
-    app.session_state["tasks_picked"] = "C3020"  # what a click on its row stores
+    app.session_state["tasks_picked"] = "C3020"
     app.run()
     _ok(app)
+    data = _gantt_data(app)
+    assert data["selected"] == "a:C3020"
+    assert rows[civ]["id"] in data["open"]  # the branch holding C3020 is drawn open
     assert [tab.label for tab in app.tabs] == ["General", "Status", "Resources", "Relationships", "Constraints"]
     predecessors, successors = _relationship_tables(app)
     assert predecessors["task_code"].tolist() == ["C3010", "E1020"]
@@ -3289,8 +3304,8 @@ def test_tasks_lists_the_wbs_and_its_tasks_and_details_the_one_picked(app):
     app.run()
     _ok(app)
     assert "C3020" in _relationship_tables(app)[1]["task_code"].tolist()  # C3010's successor
-    # Next / Previous step through the table's tasks, WBS rows skipped: C3010 is the first task under CIV
-    tasks = table[table["type"] != "WBS"]["task_code"].tolist()
+    # Next / Previous step through the tree's tasks, WBS rows skipped
+    tasks = [row["code"] for row in rows if row["kind"] == "task"]
     app.button(key="tasks_next").click().run()
     _ok(app)
     assert app.session_state["tasks_picked"] == tasks[tasks.index("C3010") + 1]

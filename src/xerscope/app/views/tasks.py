@@ -1,35 +1,28 @@
 """Tasks: P6's Activities view.
 
-Above, the WBS and the activities under each node in P6 order, as the Gantt's tree draws them
-(viz.gantt_rows): Activity ID, name, type, original and remaining duration, % complete, start, finish,
-total float. Below, for the activity picked in it, P6's Activity Details tabs (activity_details): General,
-Status, Resources, Relationships (predecessors on the left, successors on the right, the driving flag
-recalculated by the CPM), Constraints. Every value is read from the update picked.
+Above, the WBS tree and the activities under each node in P6 order, drawn by the Gantt's component
+without its timeline (viz.gantt_data): a WBS row folds open and closed, its band shaded by its level;
+the columns are original and remaining duration, % complete, start, finish, total float. A click on an
+activity selects it. Below, for the activity selected, P6's Activity Details tabs (activity_details):
+General, Status, Resources, Relationships (predecessors on the left, successors on the right, the driving
+flag recalculated by the CPM), Constraints. Every value is read from the update picked.
 """
 
 import pandas as pd
 import streamlit as st
 
-from xerscope.analysis.wbs import rollup
+from xerscope.analysis.wbs import ROOT, rollup
 from xerscope.app import ui
 from xerscope.app.activity_details import show_activity_details
 from xerscope.app.cache import memo
 from xerscope.app.state import page_header, require_store, snapshot_picker
+from xerscope.app.task_panel import task_from_row_id
 from xerscope.viz import categorise, gantt_rows
+from xerscope.viz.gantt import ACTIVITIES_COLUMNS, gantt_data, open_row_ids
 
 PICKED_KEY = "tasks_picked"  # the Activity ID whose details are shown, kept across reruns
-INDENT = " "  # one em space per WBS level, as P6 indents its rows
-TABLE_COLUMNS = [
-    "task_code",
-    "task_name",
-    "type",
-    "original_d",
-    "remaining_d",
-    "pct_complete",
-    "start",
-    "finish",
-    "total_float_d",
-]
+TREE_KEY = "tasks_tree"  # the component's state: the row id of the last click
+TREE_HEIGHT = 560  # px at most; the tree scrolls inside
 
 store = require_store()
 top = st.container()
@@ -39,59 +32,56 @@ with top:
         "Tasks",
         store,
         snapshot,
-        lead="The WBS and its tasks as P6's Activities view lists them. Select a task for its details: "
+        lead="The WBS and its tasks as P6's Activities view lists them. Click a task for its details: "
         "General, Status, Resources, Relationships (predecessors on the left, successors on the right), Constraints.",
     )
 
 
-def table_rows(snapshot) -> pd.DataFrame:
-    """Return the WBS nodes and the activities under each, in P6 order (the Gantt's tree), one row each.
-
-    TABLE_COLUMNS, the name indented by its WBS level. A WBS row carries the node's code, its roll-up of %
-    complete, dates and lowest total float; an activity row the activity's own values.
-    """
-    tasks = snapshot.activities
-    tree = gantt_rows(tasks.assign(category=categorise(tasks)), rollup(snapshot))
-    by_code = snapshot.by_code[~snapshot.by_code.index.duplicated()]
-    return pd.DataFrame([_table_row(row, by_code) for row in tree], columns=TABLE_COLUMNS)
-
-
-def _table_row(row: dict, by_code: pd.DataFrame) -> dict:
-    name = INDENT * int(row["depth"]) + row["name"]
-    if row["kind"] == "task":
-        task = by_code.loc[row["code"]]
-        return {column: task.get(column) for column in TABLE_COLUMNS} | {"task_code": row["code"], "task_name": name}
-    return {
-        "task_code": row["code"] or snapshot.project_code,  # the project row: P6 shows the project's code
-        "task_name": name,
-        "type": "WBS",
-        "pct_complete": row["pct"],
-        "start": pd.to_datetime(row["start"]),
-        "finish": pd.to_datetime(row["finish"]),
-        "total_float_d": row["float_d"],
-    }
-
-
 def pick(task_code: str) -> None:
-    """Show the details of a row picked in a table of the page, when it is an activity of the update."""
+    """Show the details of a task picked on the page (tree, relationships, buttons), when it is one of the update."""
     if task_code in set(snapshot.activities["task_code"]):
         st.session_state[PICKED_KEY] = task_code
 
 
-rows = memo(("tasks", snapshot.source), table_rows, snapshot)
-ui.table(
-    rows,
-    key="tasks_table",
-    reading="tasks_table",
-    pick_task=pick,
-    empty=f"{snapshot.label} holds no task.",
-)
+def _clicked() -> None:
+    """Select the activity clicked in the tree: the browser sends its row id ("a:<Activity ID>"), nothing else."""
+    pick(task_from_row_id(st.session_state[TREE_KEY].get("picked")) or "")
+
+
+def tree_rows(snapshot) -> tuple[list[dict], pd.DataFrame]:
+    """Return the Gantt's rows for the whole WBS and the WBS roll-up they are drawn from.
+
+    Each node is followed by its activities, in P6 order.
+    """
+    tasks = snapshot.activities
+    nodes = rollup(snapshot)
+    return gantt_rows(tasks.assign(category=categorise(tasks)), nodes), nodes
+
+
+def show_tree(rows: list[dict], nodes: pd.DataFrame, picked: str | None) -> None:
+    """Show the WBS tree, the top level open and, with an activity selected, the branch that holds it."""
+    tasks = snapshot.activities
+    picked_wbs_id = tasks.loc[tasks["task_code"] == picked, "wbs_id"].iloc[0] if picked else None
+    ui.GANTT(
+        data=gantt_data(
+            rows,
+            open_ids=open_row_ids(rows, nodes, set(nodes["wbs_id"]), ROOT, picked_wbs_id),
+            selected=f"a:{picked}" if picked else None,
+            height=TREE_HEIGHT,
+            columns=ACTIVITIES_COLUMNS,
+            timeline=False,
+            level_bands=True,
+        ),
+        key=TREE_KEY,
+        on_picked_change=_clicked,
+        on_focus_change=lambda: None,  # a double click on a WBS row: the Gantt page's focus, not used here
+    )
 
 
 def show_details_header(task_codes: list[str], picked: str) -> None:
     """Show P6's details header: the task, by Task ID and name, and buttons to the tasks before and after it.
 
-    ``task_codes``: the table's tasks, in table order.
+    ``task_codes``: the tree's tasks, in its order.
     """
     position = task_codes.index(picked)
     previous_code = task_codes[max(position - 1, 0)]
@@ -105,7 +95,7 @@ def show_details_header(task_codes: list[str], picked: str) -> None:
             disabled=position == 0,
             on_click=pick,
             args=(previous_code,),
-            help="Shows the task above this one in the table.",
+            help="Shows the task above this one in the tree.",
         )
         st.button(
             "Next task",
@@ -115,17 +105,23 @@ def show_details_header(task_codes: list[str], picked: str) -> None:
             disabled=position == len(task_codes) - 1,
             on_click=pick,
             args=(next_code,),
-            help="Shows the task below this one in the table.",
+            help="Shows the task below this one in the tree.",
         )
         name = snapshot.by_code.loc[[picked], "task_name"].iloc[0]
         st.markdown(f"**{ui.md_text(picked)}** · {ui.md_text(name)}")
 
 
+rows, nodes = memo(("tasks", snapshot.source), tree_rows, snapshot)
+ui.reading_popover("tasks_table")
 picked = st.session_state.get(PICKED_KEY)
-known = set(snapshot.activities["task_code"])
-task_codes = [code for code in rows["task_code"] if code in known]  # the table's tasks, WBS rows left out
-if picked in task_codes:
+task_codes = [row["code"] for row in rows if row["kind"] == "task"]  # the tree's activities, in its order
+if picked not in task_codes:
+    picked = None
+show_tree(rows, nodes, picked)
+if picked:
     show_details_header(task_codes, picked)
     show_activity_details(snapshot, picked, pick_task=pick)
+elif task_codes:
+    st.caption("Select a task in the tree for its details.")
 else:
-    st.caption("Select a task in the table for its details.")
+    st.caption(f"{ui.md_text(snapshot.label)} holds no task.")

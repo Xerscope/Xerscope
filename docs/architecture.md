@@ -322,7 +322,10 @@ or from the `verify/` modules themselves (`shapes`, `p6_corpus`, `mpxj_reader`).
   comparison dates and finish shifts; `gantt_data` hands them, with the options and, when asked, the
   logic links between the activities drawn, to a
   Streamlit component (`app/ui.py: GANTT`, `st.components.v2`) mounted in the page; `gantt_assets`
-  reads `gantt.js` and `gantt.css`.
+  reads `gantt.js` and `gantt.css`. Three options serve the Tasks page with the same
+  component: `columns` (the grid's columns after the name, `GRID_COLUMNS` by default,
+  `ACTIVITIES_COLUMNS` there), `timeline=False` (the grid alone, the page's width) and
+  `level_bands` (each WBS row shaded by its level, as P6 colours its WBS bands).
   A click on a WBS row opens or closes it; a click on an activity row or bar sends its row
   id (`"a:<Activity ID>"`) and nothing else.
   WBS rows open and close in the browser, without a rerun; only the rows in view are
@@ -520,9 +523,10 @@ or from the `verify/` modules themselves (`shapes`, `p6_corpus`, `mpxj_reader`).
   on the right, the driving flag of each link recalculated by the CPM); as one block under the
   Gantt (`show_card`) or as P6's tabs General, Status, Resources, Relationships, Constraints on
   the Tasks page (`show_activity_details`).
-- **`views/tasks.py`:** P6's Activities view: the WBS and its tasks in P6 order (the Gantt's tree,
-  `viz.gantt_rows`), a task picked in it detailed below with `activity_details`, and buttons to
-  the task before and after it.
+- **`views/tasks.py`:** P6's Activities view: the WBS tree and its tasks in P6 order, drawn by the
+  Gantt's component without its timeline (`viz.gantt_data`: `ACTIVITIES_COLUMNS`, level bands); a
+  click on a task details it below with `activity_details`, and buttons step to the task before and
+  after it in the tree.
 - **`task_panel.py`:** the Gantt's panel around one task (its card from `activity_details`) and its
   history across updates. Opened under the Gantt for the activity picked there
   (`task_from_row_id` accepts an `a:` row id only, and the page only an activity the chart

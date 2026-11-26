@@ -929,11 +929,13 @@ READINGS: dict[str, Reading] = {
     "task_logic": TASK_TABLES_READING,
     "tasks_table": Reading(
         how=(
-            "P6's Activities view: one row per WBS node, then the tasks under it, in P6's WBS order, the name "
-            "indented by its level. Task ID (a WBS row: its code), name, type, original and remaining duration "
-            "in working days, % complete, start, finish, total float; a WBS row carries the roll-up of the "
-            "tasks under it (% complete weighted by hours, else duration; earliest start, latest finish, "
-            "lowest total float). Select a task for its details below."
+            "P6's Activities view without its bars: the WBS tree, each node followed by its tasks, in P6's WBS "
+            "order; a WBS row folds open and closed (▸ / ▾, Collapse all, Expand all, Level), its band shaded by "
+            "its level, the top darkest. Columns: original and remaining duration in working days, % complete, "
+            "start, finish, total float in working days; a WBS row carries the roll-up of the tasks under it "
+            "(% complete weighted by hours, else duration; earliest start, latest finish, lowest total float) and "
+            "no duration. A click on a task shows its details below; Previous task and Next task step through the "
+            "tree's tasks."
         ),
         source="P6 TASK and PROJWBS of the update; roll-up: xerscope (`wbs.rollup`)",
     ),

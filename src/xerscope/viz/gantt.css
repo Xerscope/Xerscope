@@ -35,11 +35,11 @@
 .head { position: sticky; top: 0; z-index: 3; display: flex; background: var(--band); border-bottom: 1px solid var(--axis); }
 .ghead { display: grid; width: var(--grid-w); flex: none; border-right: 1px solid var(--axis); }
 .ghead div { padding: 0 8px; align-self: end; height: var(--row); line-height: var(--row); color: var(--secondary); font-weight: 600; white-space: nowrap; }
-.ghead div + div { text-align: right; }
-.cols { grid-template-columns: 1fr 88px 88px; }
+.ghead div + div { text-align: right; white-space: normal; line-height: 1.2; height: auto; padding-bottom: 4px; } /* a long header on two lines */
+.cols { grid-template-columns: var(--cols); } /* the name, then the columns of the data (gantt.js) */
 @media (max-width: 640px) {
   .cols { grid-template-columns: 1fr; }
-  .ghead div + div, .row .num { display: none; } /* % complete and Float (wd) */
+  .ghead div + div, .row .num { display: none; } /* the columns after the name */
 }
 .scale { position: relative; flex: 1; height: 52px; overflow: hidden; }
 .scale .tick { position: absolute; color: var(--secondary); white-space: nowrap; padding-left: 4px; border-left: 1px solid var(--axis); height: var(--row); line-height: var(--row); }
@@ -54,6 +54,12 @@
 .row > div { padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--secondary); }
 .row.wbs { background: var(--band); font-weight: 600; cursor: pointer; }
+/* P6's WBS bands, one shade per level, the top darkest; :where keeps the hover rule below ahead */
+.row.wbs:where(.band0) { background: color-mix(in srgb, var(--Normal) 30%, var(--background)); }
+.row.wbs:where(.band1) { background: color-mix(in srgb, var(--Normal) 22%, var(--background)); }
+.row.wbs:where(.band2) { background: color-mix(in srgb, var(--Normal) 15%, var(--background)); }
+.row.wbs:where(.band3) { background: color-mix(in srgb, var(--Normal) 9%, var(--background)); }
+.row.wbs:where(.band4) { background: color-mix(in srgb, var(--Normal) 5%, var(--background)); }
 .row.task, .trow.task { cursor: pointer; } /* a click opens the activity below the chart */
 .row.sel, .trow.sel { box-shadow: inset 3px 0 0 var(--Normal); }
 .row.hover, .trow.hover { background: color-mix(in srgb, var(--Normal) 8%, transparent); }
@@ -65,6 +71,11 @@
 
 .trow { position: absolute; left: 0; right: 0; border-bottom: 1px solid var(--grid); }
 .trow.wbs { background: var(--band); }
+.trow.wbs:where(.band0) { background: color-mix(in srgb, var(--Normal) 30%, var(--background)); }
+.trow.wbs:where(.band1) { background: color-mix(in srgb, var(--Normal) 22%, var(--background)); }
+.trow.wbs:where(.band2) { background: color-mix(in srgb, var(--Normal) 15%, var(--background)); }
+.trow.wbs:where(.band3) { background: color-mix(in srgb, var(--Normal) 9%, var(--background)); }
+.trow.wbs:where(.band4) { background: color-mix(in srgb, var(--Normal) 5%, var(--background)); }
 .bar, .outline, .summary, .diamond { position: absolute; }
 .bar { top: 7px; height: 12px; border-radius: 3px; }
 .outline { top: 4px; height: 18px; border: 1px solid var(--secondary); border-radius: 3px; }
@@ -87,3 +98,7 @@ svg.links marker path { fill: var(--muted); stroke: none; }
 .tip .title { font-weight: 600; margin-bottom: 3px; }
 .tip .line { color: var(--secondary); }
 .empty { padding: 16px; color: var(--muted); }
+
+/* the grid alone (gantt_data timeline=False): no time scale, no bars, no bar legend */
+.grid-only .scale, .grid-only .tcol, .grid-only .legend { display: none; }
+.grid-only .ghead, .grid-only .gcol { flex: 1; width: auto; border-right: none; }

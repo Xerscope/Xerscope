@@ -40,6 +40,18 @@ WEEK_WINDOW = (pd.Timedelta(weeks=2), pd.Timedelta(weeks=10))  # week timescale:
 SPAN_PAD = pd.Timedelta(days=7)  # month timescale: margin around the schedule
 ISO_MINUTE = "%Y-%m-%dT%H:%M"  # the date text gantt.js reads: date and time to the minute
 
+# The tree grid's columns after the name: (row key, header, kind). "number" is right-aligned as sent,
+# "date" shows the day of the row's ISO_MINUTE text. A WBS row has no original or remaining duration.
+GRID_COLUMNS = [("pct", "% complete", "number"), ("float_d", "Float (wd)", "number")]
+ACTIVITIES_COLUMNS = [
+    ("original_d", "Original (wd)", "number"),
+    ("remaining_d", "Remaining (wd)", "number"),
+    ("pct", "% complete", "number"),
+    ("start", "Start", "date"),
+    ("finish", "Finish", "date"),
+    ("float_d", "Total float (wd)", "number"),
+]
+
 
 def categorise(tasks: pd.DataFrame, settings: Settings = DEFAULT_SETTINGS) -> pd.Series:
     """The category of each task, one of ``CATEGORY_ORDER``: complete first, then critical, then
@@ -157,6 +169,8 @@ def _task_rows(activities: pd.DataFrame) -> list[dict]:
         "status": activities["status"].astype(str).tolist(),
         "pct": _rounded_number_column(activities["pct_complete"], 0),
         "float_d": _rounded_number_column(activities["total_float_d"]),
+        "original_d": _rounded_number_column(activities["original_d"]),
+        "remaining_d": _rounded_number_column(activities["remaining_d"]),
         "shift_wd": _rounded_number_column(activities["shift_wd"]),
     }
     return [dict(zip(columns, values, strict=True)) for values in zip(*columns.values(), strict=True)]
@@ -235,6 +249,19 @@ def fitted_height(rows: list[dict], open_ids: set[str], height: int) -> int:
     return min(height, CHROME_PX + ROW_PX * max(MIN_ROWS, visible_rows(rows, open_ids)))
 
 
+def _drawn_links(rows: list[dict], relationships: pd.DataFrame | None) -> list[list[str]]:
+    """Return the logic links between two activities of ``rows``: [predecessor row id, successor row id, type]."""
+    if relationships is None or relationships.empty:
+        return []
+    ids = {row["id"] for row in rows}
+    pairs = relationships[["pred_code", "succ_code", "type"]].itertuples(index=False)
+    return [
+        [f"a:{predecessor}", f"a:{successor}", str(link_type)]
+        for predecessor, successor, link_type in pairs
+        if f"a:{predecessor}" in ids and f"a:{successor}" in ids
+    ]
+
+
 def gantt_data(
     rows: list[dict],
     *,
@@ -248,6 +275,9 @@ def gantt_data(
     links: bool = False,
     height: int = 640,
     open_epoch: int = 0,
+    columns: list[tuple[str, str, str]] | None = None,
+    timeline: bool = True,
+    level_bands: bool = False,
 ) -> dict:
     """The component's data: rows, links, window and options, all plain JSON values.
 
@@ -258,17 +288,11 @@ def gantt_data(
     ``open_ids`` are the row ids drawn open (default: the top row). ``span`` (start,
     finish) sets the month timescale; "week" shows WEEK_WINDOW around the data date.
     Logic links join the activities drawn, from the predecessor's driving end to the
-    successor's driven end.
+    successor's driven end. ``columns`` are the grid's columns after the name (default
+    ``GRID_COLUMNS``); ``timeline`` False draws the grid alone, the page's full width (the Tasks page);
+    ``level_bands`` shades each WBS row by its level, as P6's Activities view colours its WBS bands.
     """
-    ids = {row["id"] for row in rows}
-    link_rows = []
-    if links and relationships is not None and not relationships.empty:
-        pairs = relationships[["pred_code", "succ_code", "type"]].itertuples(index=False)
-        link_rows = [
-            [f"a:{predecessor}", f"a:{successor}", str(link_type)]
-            for predecessor, successor, link_type in pairs
-            if f"a:{predecessor}" in ids and f"a:{successor}" in ids
-        ]
+    link_rows = _drawn_links(rows, relationships) if links else []
     window = _window(rows, timescale, data_date, span)
     open_rows = open_ids if open_ids is not None else {row["id"] for row in rows[:1]}
     payload = {
@@ -287,6 +311,9 @@ def gantt_data(
         "rowPx": ROW_PX,
         "chromePx": CHROME_PX,
         "openEpoch": open_epoch,
+        "columns": [{"key": key, "label": label, "kind": kind} for key, label, kind in columns or GRID_COLUMNS],
+        "timeline": timeline,
+        "levelBands": level_bands,
     }
     return payload
 

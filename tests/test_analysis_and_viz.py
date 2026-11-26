@@ -29,6 +29,7 @@ from xerscope.viz.charts import (
     build_activity_float,
     build_activity_history,
 )
+from xerscope.viz.gantt import ACTIVITIES_COLUMNS
 
 
 def test_planted_lead_open_end_and_missing_resources(store):
@@ -84,6 +85,27 @@ def test_gantt_rows_on_the_demo_series(store):
     assert {r["category"] for r in rows if r["kind"] == "task"} >= {"Critical", "Complete"}
     data = gantt_data(rows, relationships=s.relationships, data_date=s.data_date, links=True)
     assert "Critical" in data["palette"] and data["links"]
+
+
+@pytest.mark.oracle("property")
+def test_gantt_task_rows_carry_p6_durations_and_the_grid_options(store):
+    """An activity row carries P6's original and remaining duration in working days (TASK
+    target_drtn_hr_cnt, remain_drtn_hr_cnt over the calendar's hours per day: xer.model), to one
+    decimal; a WBS row has none. The defaults draw the Gantt page's grid: % complete and float, the
+    timeline, no level bands."""
+    s = store.latest
+    tasks = s.activities.assign(category=categorise(s.activities))
+    rows = gantt_rows(tasks, rollup(s))
+    by_code = s.by_code
+    for row in (r for r in rows if r["kind"] == "task"):
+        assert row["original_d"] == round(float(by_code.loc[row["code"], "original_d"]), 1)
+        assert row["remaining_d"] == round(float(by_code.loc[row["code"], "remaining_d"]), 1)
+    assert all("original_d" not in r for r in rows if r["kind"] == "wbs")
+    data = gantt_data(rows)
+    assert [column["key"] for column in data["columns"]] == ["pct", "float_d"]
+    assert (data["timeline"], data["levelBands"]) == (True, False)
+    tasks_page = gantt_data(rows, columns=ACTIVITIES_COLUMNS, timeline=False, level_bands=True)
+    assert [column["label"] for column in tasks_page["columns"]][:2] == ["Original (wd)", "Remaining (wd)"]
 
 
 def test_gantt_compare_with_no_common_tasks(store):
