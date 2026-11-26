@@ -528,3 +528,16 @@ def test_scurve_percent_of_bac_is_each_update_s_own_as_in_the_kpis():
     assert list(ev.y) == pytest.approx(list(series["ev_pct"]))
     mark = next(t for t in fig.data if t.name == "SV (EV − PV)")
     assert list(mark.y) == pytest.approx([series["pv_pct"].iloc[-1], series["ev_pct"].iloc[-1]])
+
+
+@pytest.mark.oracle("property")
+def test_gantt_grid_fits_the_longest_wbs_label_within_bounds():
+    """The tree grid's width (--grid-w) is set from the WBS rows' labels, measured on a hidden row
+    drawn with the page's own styles and again once the fonts are loaded, with at least 320 px and at
+    most 60 % of the page. A static check of the script: the browser rendering was checked by hand
+    (a 64-character WBS name read whole at 1400 px)."""
+    script = (Path(gantt_module.__file__).parent / "gantt.js").read_text(encoding="utf-8")
+    fit = script[script.index("const fitGridWidth") : script.index("fitGridWidth();")]
+    assert 'row.kind !== "wbs"' in fit and "getBoundingClientRect" in fit and "probe.remove()" in fit
+    assert "Math.max(320," in fit and '"min(" + gridPx + "px, 60vw)"' in fit
+    assert "document.fonts.ready.then(fitGridWidth)" in script
