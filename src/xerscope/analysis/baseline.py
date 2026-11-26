@@ -6,8 +6,9 @@ the snapshot itself (target_*), for files that carry no separate baseline.
 
 Two sets of baseline dates, as in P6:
 
-- ``bl_start`` / ``bl_finish``: the baseline's current Start / Finish (P6 "BL Project
-  Start / Finish"), what variances and the schedule checks compare against;
+- ``bl_start`` / ``bl_finish``: P6's "BL Project Start / Finish", what variances and the schedule
+  checks compare against: the planned dates of the baseline's activities with "Budgeted values with
+  planned dates", their current Start / Finish with the two "current dates" options (``EV_BASES``);
 - ``bl_cost``: the budgeted cost of the activity (P6 "Budget At Completion" cost fields, Pro 26
   glossary): Σ ``TASKRSRC.target_cost`` of its assignments, every resource type, plus
   Σ ``PROJCOST.target_cost`` of its expenses. ``Baseline.assignment_costs`` keeps the assignments
@@ -30,7 +31,7 @@ from ..xer.model import to_number
 
 COLS = ["bl_start", "bl_finish", "bl_labor_hr", "bl_duration_hr", "bl_clndr_id", "bl_name",
         "ev_start", "ev_finish", "ev_labor_hr", "bl_cost"]  # fmt: skip
-EV_COLS = ["ev_start", "ev_finish", "ev_labor_hr"]  # set by the EV basis; no schedule check reads them
+EV_COLS = ["ev_start", "ev_finish", "ev_labor_hr"]  # what earned value spreads; no schedule check reads them
 ASSIGNMENT_COST_COLS = ["task_code", "cost", "start", "finish", "clndr_id", "curve", "labor", "labor_hr"]
 EV_BASES = {
     "budgeted_planned": "Budgeted values with planned dates",
@@ -48,6 +49,21 @@ KIND_FALLBACK = "fallback"  # the window's "When a file has no baseline"
 KIND_PLANNED = "planned"  # the planned dates (target_*) of the update itself
 KIND_SERIES = "series"  # one baseline for every update: a separate file or a loaded update
 KIND_NONE = "none"
+
+
+def _baseline_dates(activities: pd.DataFrame, ev_basis: str) -> tuple[pd.Series, pd.Series]:
+    """Start and finish of each activity of a separate baseline, as P6 shows them in "BL Project Start /
+    Finish": its planned dates (target_*) on the planned basis, else its current Start / Finish. An
+    activity without planned dates keeps its current dates. Sources: Nasui and Winter, "When is a
+    Baseline Not a Baseline?" (2020); P. Harris, "Oracle Primavera P6 Planned Date Issues" (2022); Oracle
+    P6 EPPM help 88388 "Updating Baselines" (docs/standards.md, P6 Check Schedule)."""
+    if ev_basis not in EV_BASES:
+        raise ValueError(f"ev_basis must be one of {sorted(EV_BASES)}")
+    if ev_basis != "budgeted_planned":
+        return activities["start"], activities["finish"]
+    start = activities["target_start_date"].combine_first(activities["start"])
+    finish = activities["target_end_date"].combine_first(activities["finish"])
+    return start, finish
 
 
 def _frame(activities: pd.DataFrame, start: pd.Series, finish: pd.Series, ev_basis: str) -> pd.DataFrame:
@@ -135,7 +151,8 @@ class Baseline:
     @classmethod
     def from_snapshot(cls, baseline_snapshot: Snapshot, ev_basis: str = DEFAULT_EV_BASIS) -> Baseline:
         activities = baseline_snapshot.activities
-        frame = _frame(activities, activities["start"], activities["finish"], ev_basis)
+        start, finish = _baseline_dates(activities, ev_basis)
+        frame = _frame(activities, start, finish, ev_basis)
         frame, costs = _with_costs(baseline_snapshot, frame, current_dates=ev_basis != "budgeted_planned")
         return cls(frame, f"BL {baseline_snapshot.label}", baseline_snapshot, ev_basis, assignment_costs=costs)
 

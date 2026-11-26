@@ -1144,7 +1144,9 @@ def test_kept_count_counts_the_commitments_kept():
     ],
 )
 def test_ev_basis_follows_p6_admin_preference(basis, hours, first_day):
-    """P6 Admin Preferences > Earned Value: "When calculating earned value from a baseline use"."""
+    """P6 Admin Preferences > Earned Value: "When calculating earned value from a baseline use". The
+    baseline dates the variances read follow the same setting
+    (tests/test_baseline_dates_follow_ev_setting.py)."""
     bl_snap = snap(
         [
             active(
@@ -1166,7 +1168,7 @@ def test_ev_basis_follows_p6_admin_preference(basis, hours, first_day):
     assert bl.bac_hours == hours
     curve = pv_curve(bl)
     assert curve.loc[curve["pv_hr"] > 0, "date"].min() == pd.Timestamp(first_day) + pd.Timedelta(days=1)
-    assert bl.frame.at["A", "bl_start"] == pd.Timestamp("2026-03-02 08:00")  # variances: current dates
+    assert bl.frame.at["A", "bl_start"] == pd.Timestamp(f"{first_day} 08:00")
 
 
 @pytest.mark.parametrize(
