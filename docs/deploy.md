@@ -581,11 +581,11 @@ template active, llama.cpp's `response_format` grammar has been reported not enf
 landing in `reasoning_content` (issue 20345 and later reports); the agent asks for it off on each
 request (`chat_template_kwargs`).
 
-| Order | Model | GGUF (unsloth) | `.env` | Evidence | Risk |
+| Order | Model | GGUF | `.env` | Evidence | Risk |
 |---|---|---|---|---|---|
-| 1 | Qwen3.6-35B-A3B (MoE, 3B active, Apache-2.0) | `Qwen3.6-35B-A3B-GGUF`, `UD-Q4_K_M` (22.1 GB) | `XERSCOPE_LLM_CPU_MOE=24` (22 to 26) | thinking off documented on its card; about 20-30 tok/s reported with expert offload | weaker instruction following (IFBench 63.7, NVIDIA's measurement) |
-| 2 | Qwen3.8-27B (dense, Apache-2.0, 14 August 2026) | community Q4_K_M (16-19 GB) | `XERSCOPE_LLM_GPU_LAYERS=48`, raised while VRAM is free | strongest without reasoning of the three (Artificial Analysis, rank 10 non-reasoning; IFBench 79.5, Qwen's) | its card lists reasoning efforts xhigh/medium/low only: check that thinking really turns off; slowest (5-9 tok/s, estimate) |
-| 3 | Gemma 4 26B-A4B-it (MoE, 3.8B active, Apache-2.0) | `gemma-4-26B-A4B-it-GGUF`, `UD-Q4_K_M` (16.9 GB) | `XERSCOPE_LLM_CPU_MOE=14` (12 to 16) | best instruction following measured independently (IFBench 77.25) | llama.cpp issue 30256: a `json_schema` grammar lets it open a thought channel and return empty content on long prompts (closed without fix); the agent then says "no answer" |
+| 1 | Qwen3.8-27B (dense, Apache-2.0, 14 August 2026) | community Q4_K_M (16-19 GB) | `XERSCOPE_LLM_GPU_LAYERS=48`, raised while VRAM is free | strongest without reasoning of the three (Artificial Analysis, rank 10 non-reasoning; IFBench 79.5, Qwen's); its official chat template turns thinking off on `enable_thinking: false` (an empty think block, lines 167-173 of `chat_template.jinja`) | slowest (5-9 tok/s, estimate); never send `reasoning_effort: "none"` (the template raises: only xhigh, medium, low) |
+| 2 | Qwen3.6-35B-A3B (MoE, 3B active, Apache-2.0) | unsloth `Qwen3.6-35B-A3B-GGUF`, `UD-Q4_K_M` (22.1 GB) | `XERSCOPE_LLM_CPU_MOE=24` (22 to 26) | thinking off documented on its card; about 20-30 tok/s reported with expert offload | weaker instruction following (IFBench 63.7, NVIDIA's measurement) |
+| 3 | Gemma 4 26B-A4B-it (MoE, 3.8B active, Apache-2.0) | unsloth `gemma-4-26B-A4B-it-GGUF`, `UD-Q4_K_M` (16.9 GB) | `XERSCOPE_LLM_CPU_MOE=14` (12 to 16) | best instruction following measured independently (IFBench 77.25) | llama.cpp issue 30256: a `json_schema` grammar lets it open a thought channel and return empty content on long prompts (closed without fix); the agent then says "no answer" |
 
 Choose by a measurement on the maintainer's questions (the most answered right; the faster when
 close). Do not enable MTP speculative decoding (issue 30419), nor `--reasoning-budget 0` (a reported
