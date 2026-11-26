@@ -2764,8 +2764,9 @@ def _trail(app, store) -> pd.DataFrame:
 
 def test_gantt_panel_drills_through_logic_breadcrumb_constraints_and_chain(app, store):
     """C3020 on the demo: its Logic rows carry the driving flag (recalculated: the XER has none) and the
-    other task's longest path flag and float; opening a predecessor adds it to the breadcrumb, a matrix
-    with a column per update; Back returns; the chain button draws the chain alone in the Gantt."""
+    other task's longest path flag and float; the breadcrumb, a matrix with a column per update, holds the
+    tasks opened then the predecessors and successors of the one shown; opening a predecessor adds it;
+    Back returns; the chain button draws the chain alone in the Gantt."""
     app.switch_page("views/gantt.py").run()
     app.session_state["gantt_task"] = "C3020"
     app.run()
@@ -2773,15 +2774,25 @@ def test_gantt_panel_drills_through_logic_breadcrumb_constraints_and_chain(app, 
     logic = _panel_table(app, {"relationship", "driving_link", "on_longest_path", "total_float_d"})
     predecessor = logic.loc[logic["relationship"] == "Predecessor", "task_code"].iloc[0]
     trail = _trail(app, store)
-    assert trail["task_code"].tolist() == ["C3020"]
-    assert len(trail.columns) == 1 + len(store)  # Task ID, then one column per update
-    assert trail.iloc[0, 1].startswith("TF ")
+    # the task opened, then its predecessors and successors (demo: C3010, E1020; C3030, C3040)
+    assert list(zip(trail["role"], trail["task_code"], strict=True)) == [
+        ("opened", "C3020"),
+        ("predecessor", "C3010"),
+        ("predecessor", "E1020"),
+        ("successor", "C3030"),
+        ("successor", "C3040"),
+    ]
+    assert len(trail.columns) == 2 + len(store)  # role, Task ID, then one column per update
+    assert trail.iloc[0, 2].startswith("TF ")
+    assert trail.iloc[2, 2].startswith("FS driving · TF ")  # E1020 -> C3020 drives in the first update
     # the demo changes no constraint (tests/test_activity_trail.py covers a change): the panel says so
     assert any("No constraint added" in caption.value for caption in app.caption)
     app.session_state["gantt_task"] = predecessor  # what a Logic row's button stores
     app.run()
     _ok(app)
-    assert _trail(app, store)["task_code"].tolist() == ["C3020", predecessor]
+    after = _trail(app, store)
+    assert after.loc[after["role"] == "opened", "task_code"].tolist() == ["C3020", predecessor]
+    assert "C3020" in after.loc[after["role"] == "successor", "task_code"].tolist()  # the predecessor's successor
     app.button(key="gantt_trail_back").click().run()
     _ok(app)
     assert app.session_state["gantt_task"] == "C3020"

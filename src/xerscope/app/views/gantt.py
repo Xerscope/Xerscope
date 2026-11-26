@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from xerscope.analysis import query
-from xerscope.analysis.activity_trail import linked_chain
+from xerscope.analysis.activity_trail import linked_chain, logic_by_update
 from xerscope.analysis.explain import KPI_FORMULAS
 from xerscope.analysis.task_filters import branch_tasks, filtered_tasks
 from xerscope.analysis.wbs import ROOT, path_to, rollup, subtree_ids
@@ -481,8 +481,9 @@ def open_from_panel(task_code: str) -> None:
     st.rerun()  # scope "fragment" is refused when the whole page runs, as on the first run
 
 
-def show_breadcrumb(task_code: str) -> None:
-    """The tasks opened in the panel, as P6 stored their floats and constraints in each update."""
+def show_breadcrumb(task_code: str, logic: pd.DataFrame) -> None:
+    """The tasks opened in the panel, then the predecessors and successors of the one shown, as P6 stored
+    their floats and constraints in each update."""
     trail = trail_with(task_code)
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         st.markdown(" › ".join(ui.md_text(code) for code in trail))
@@ -497,7 +498,7 @@ def show_breadcrumb(task_code: str) -> None:
     if back:
         st.session_state[TRAIL_KEY] = trail[:-1]
         open_from_panel(trail[-2])
-    show_trail(store, trail, open_task=open_from_panel)
+    show_trail(store, trail, logic, open_task=open_from_panel)
 
 
 def show_chain(task_code: str) -> None:
@@ -528,12 +529,13 @@ def chart_and_task() -> None:
         with st.container(border=True):
             if shown != picked:
                 st.caption(f"Task {ui.md_text(shown)} is not drawn in the chart with the filters above.")
-            ui.section("Tasks opened, by update")
-            show_breadcrumb(shown)
+            logic = logic_by_update(store, shown)  # its neighbours in each update: breadcrumb and float chart
+            ui.section("Tasks opened, predecessors and successors, by update")
+            show_breadcrumb(shown, logic)
             show_card(snapshot, shown, open_task=open_from_panel)
             show_chain(shown)
             ui.section("History across updates")
-            show_history(store, shown)
+            show_history(store, shown, logic)
 
 
 chart_and_task()

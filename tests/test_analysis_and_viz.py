@@ -111,6 +111,7 @@ def test_activity_charts_follow_the_history(store):
     assert "<b>Predecessors</b>" in predecessors and "E1020 FS driving · TF 20.0 wd" in predecessors
     assert "C3040 SS driving · TF 85.0 wd" in successors
     assert float_chart.layout.yaxis.title.text == "Working days"
+    assert float_chart.layout.hovermode == "x unified"  # one box per status date for every line drawn
     picked = build_activity_float(logic, shown=["C3030"])
     assert [trace.name for trace in picked.data] == ["C3020 · task", "C3030 · succ"]
 

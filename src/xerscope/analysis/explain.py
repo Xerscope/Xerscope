@@ -908,20 +908,15 @@ READINGS: dict[str, Reading] = {
     "task_logic": TASK_TABLES_READING,
     "task_trail": Reading(
         how=(
-            "one row per task opened from this panel, in the order they were opened; one column per update: "
-            "P6's total float (TF) and free float (FF) in working days, then the primary / secondary constraint "
-            "with its date. Select a row to open that task."
+            "one row per task opened from this panel, in the order they were opened (the one shown last), then "
+            "one per predecessor and successor of the task shown; one column per update: the link as that update "
+            "holds it (type, and driving when it sets the successor's date: recalculated by the CPM, the XER does "
+            "not export it), P6's total float (TF) and free float (FF) in working days, then the primary / "
+            "secondary constraint with its date. A blank cell: not in that update, or not linked to the task "
+            "there. Select a row to open that task."
         ),
-        source="P6 TASK (total_float_hr_cnt, free_float_hr_cnt, cstr_type, cstr_date, cstr_type2, cstr_date2)",
-    ),
-    "task_logic_by_update": Reading(
-        how=(
-            "the task, then its direct predecessors and successors, one row each; one column per update: the "
-            "link as that update holds it (type, and driving when it sets the successor's date: recalculated by "
-            "the CPM, the XER does not export it), P6's total float (TF) and free float (FF) in working days, "
-            "the constraints. A blank cell: the activity is not linked to the task in that update."
-        ),
-        source="P6 TASK and TASKPRED of each update; driving: xerscope CPM (`cpm.Schedule.links`)",
+        source="P6 TASK (total_float_hr_cnt, free_float_hr_cnt, cstr_type, cstr_date, cstr_type2, cstr_date2) and "
+        "TASKPRED of each update; driving: xerscope CPM (`cpm.Schedule.links`)",
     ),
     "task_constraints": Reading(
         how=(

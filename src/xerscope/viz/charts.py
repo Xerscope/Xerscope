@@ -489,7 +489,7 @@ def build_activity_float(logic: pd.DataFrame, shown: Sequence[str] = ()) -> go.F
         annotation_position="bottom left",
     )
     figure = _with_house_style(figure, "activity_float", 380, "Working days", legend=bool(len(neighbours)))
-    figure.update_layout(hovermode="x")  # the hover opens anywhere above or below a status date
+    # hovermode stays "x unified" (house style): one box per status date lists every line drawn there
     return figure
 
 
@@ -513,7 +513,7 @@ def _logic_line(rows: pd.DataFrame, role: str, colour: str, notes: Sequence[str]
             opacity=[NOT_DRIVING_OPACITY if flag is False else 1.0 for flag in rows["driving_link"]],
         ),
         customdata=np.stack([link, [_hover_line(text) for text in constraints], notes], axis=-1) if len(rows) else None,
-        hovertemplate=f"<b>{code}</b> · {LOGIC_ROLE[role]} %{{customdata[0]}}<br>%{{x|%Y-%m-%d}}: TF %{{y}} wd"
+        hovertemplate=f"<b>{code}</b> · {LOGIC_ROLE[role]} %{{customdata[0]}}: TF %{{y}} wd"
         "%{customdata[1]}%{customdata[2]}<extra></extra>",
     )
 

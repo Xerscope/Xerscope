@@ -22,7 +22,6 @@ from xerscope.analysis.activity_trail import (
     UPSTREAM,
     constraint_history,
     driving_flags,
-    logic_by_update,
     trail_by_update,
 )
 from xerscope.analysis.cpm import ScheduleError, schedule
@@ -39,7 +38,7 @@ HARD_CONSTRAINT_LABEL = "Hard constraint (DCMA-05 set)"
 ROW_PREFIX = "a:"  # Gantt row id of an activity (viz/gantt.py); "w:" is a WBS row
 MAX_ID = 200  # characters: longer than any Activity ID P6 stores, shorter than a forged payload
 
-ROLE_ORDER = {TASK: 0, PREDECESSOR: 1, SUCCESSOR: 2}  # rows of Logic by update: the task, then its neighbours
+OPENED = "opened"  # a breadcrumb row: a task opened in the panel, before its neighbours
 ROLE_LABEL = {PREDECESSOR: "predecessor", SUCCESSOR: "successor"}
 CHAIN_DIRECTIONS = {UPSTREAM: "Predecessors", DOWNSTREAM: "Successors", BOTH: "Both"}
 CHAIN_DEPTH = 3  # links followed by default: a reader's usual look around a task, a few dozen tasks at most
@@ -292,20 +291,36 @@ def chain_request(task_code: str) -> tuple[str, int, bool] | None:
     return (direction or BOTH, int(depth), driving_only) if asked else None
 
 
-def show_trail(store, trail: list[str], open_task: Callable[[str], None]) -> None:
-    """The tasks visited, one row each, a column per update: total float, free float and constraints."""
-    by_update = trail_by_update(store, trail)
-    if by_update.empty:
+def show_trail(store, trail: list[str], logic: pd.DataFrame, open_task: Callable[[str], None]) -> None:
+    """The breadcrumb, one row per task and a column per status date: the tasks opened (the one shown
+    last), then the predecessors and successors of the one shown, as each update links them (link type,
+    driving), with P6's total and free float and the constraints. A blank cell: not in that update, or
+    not linked to the task there. Selecting a row opens its task."""
+    opened = trail_by_update(store, trail).assign(role=OPENED, link_type=None, driving_link=None)
+    neighbours = logic[logic["role"] != TASK]
+    rows = pd.concat([opened, neighbours], ignore_index=True)
+    if rows.empty:
         return
     # one column per status date (a store holds one update per data date): short headers, in date order
-    cells = by_update.assign(
-        cell=[_trail_cell(row) for row in by_update.itertuples()],
-        status_date=by_update["data_date"].map(ui.fmt_date),
+    cells = rows.assign(
+        cell=[_logic_cell(row) for row in rows.itertuples()],
+        status_date=rows["data_date"].map(ui.fmt_date),
     )
-    matrix = cells.pivot(index="task_code", columns="status_date", values="cell")
+    matrix = cells.pivot_table(index=["role", "task_code"], columns="status_date", values="cell", aggfunc="first")
     order = sorted(set(cells["status_date"]), key=dict(zip(cells["status_date"], cells["data_date"], strict=True)).get)
-    matrix = matrix.reindex(index=[code for code in trail if code in matrix.index], columns=order)
-    ui.table(matrix.reset_index(), key="task_trail", reading="task_trail", open_task=open_task)
+    matrix = matrix.reindex(index=pd.MultiIndex.from_tuples(_trail_rows(trail, opened, neighbours)), columns=order)
+    shown = matrix.reset_index(names=["role", "task_code"])
+    ui.table(shown, key="task_trail", reading="task_trail", open_task=open_task)
+
+
+def _trail_rows(trail: list[str], opened: pd.DataFrame, neighbours: pd.DataFrame) -> list[tuple[str, str]]:
+    """The breadcrumb's rows in order: the tasks opened as they were opened, then predecessors, then successors."""
+    present = set(opened["task_code"])
+    rows = [(OPENED, code) for code in trail if code in present]
+    for role in (PREDECESSOR, SUCCESSOR):
+        codes = neighbours.loc[neighbours["role"] == role, "task_code"].drop_duplicates()
+        rows += [(role, code) for code in codes]
+    return rows
 
 
 def pick_neighbours(logic: pd.DataFrame, task_code: str) -> list[str]:
@@ -323,21 +338,6 @@ def pick_neighbours(logic: pd.DataFrame, task_code: str) -> list[str]:
     )
 
 
-def show_logic_by_update(logic: pd.DataFrame) -> None:
-    """The task and its direct neighbours, a column per status date: the link as that update holds it
-    (type, driving), P6's total and free float, the constraints. A blank cell: not linked that update."""
-    cells = logic.assign(
-        cell=[_logic_cell(row) for row in logic.itertuples()],
-        status_date=logic["data_date"].map(ui.fmt_date),
-    )
-    matrix = cells.pivot_table(index=["role", "task_code"], columns="status_date", values="cell", aggfunc="first")
-    order = sorted(set(cells["status_date"]), key=dict(zip(cells["status_date"], cells["data_date"], strict=True)).get)
-    rows = logic[["role", "task_code"]].drop_duplicates()
-    rows = rows.sort_values("role", key=lambda roles: roles.map(ROLE_ORDER), kind="stable")
-    matrix = matrix.reindex(index=pd.MultiIndex.from_frame(rows), columns=order)
-    ui.table(matrix.reset_index(), key="task_logic_by_update", reading="task_logic_by_update")
-
-
 def _logic_cell(row) -> str:
     link = link_text(row.link_type, row.driving_link)
     return f"{link} · {_trail_cell(row)}" if link else _trail_cell(row)
@@ -353,8 +353,9 @@ def _trail_cell(row) -> str:
 # --- history ----------------------------------------------------------------------------
 
 
-def show_history(store, task_code: str) -> None:
-    """KPIs, dates and float charts, and the table of the activity across every update."""
+def show_history(store, task_code: str, logic: pd.DataFrame) -> None:
+    """KPIs, dates and float charts, and the table of the activity across every update. ``logic``: its
+    neighbours in each update (``activity_trail.logic_by_update``), for the float chart."""
     history = store.history[store.history["task_code"] == task_code].sort_values("data_date")
     if history.empty:
         st.caption("This Task ID is in no loaded update.")
@@ -376,7 +377,6 @@ def show_history(store, task_code: str) -> None:
             ("% complete", ui.fmt_number(last["pct_complete"], "{:.0f} %")),
         ]
     )
-    logic = logic_by_update(store, task_code)
     dates_column, float_column = st.columns(2, gap="large")
     with dates_column:
         ui.section("Forecast start and finish")
@@ -385,8 +385,6 @@ def show_history(store, task_code: str) -> None:
         ui.section("Total float (working days)")
         shown = pick_neighbours(logic, task_code)
         ui.chart(build_activity_float(logic, shown))
-    ui.section("Logic by update")
-    show_logic_by_update(logic)
     ui.section("By update")
     ui.table(history, columns=HISTORY_COLUMNS, key="task_history", reading="task_history")
     ui.section("Constraint changes")
