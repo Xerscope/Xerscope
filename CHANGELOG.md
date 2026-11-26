@@ -18,6 +18,15 @@ reports are kept outside the repository; what remains open is in `docs/quality-p
 
 ### Added
 
+- Documentation: a user guide (`docs/user-guide.md`, French in `docs/user-guide.fr.md`) laid out as
+  concepts, a first run on the demo series, one how-to per goal, reference, troubleshooting, limits and
+  glossary; an IT deployment guide (`docs/it-deployment-guide.md`, French in
+  `docs/it-deployment-guide.fr.md`) for hosting on an internal server: flow matrix, accounts and secrets,
+  container hardening against ANSSI-FT-082, origin of the images, procedures, known gaps; a formula sheet
+  (`docs/formula-sheet.md`, French in `docs/formula-sheet.fr.md`): every calculation with the funnel that
+  cuts its population, and funnel diagrams per standard. The README
+  sections "Command line", "Web app" and "Definitions that matter" moved to the user guide.
+
 - Reader (XER-01): a cell the file fills but the reader cannot type (a number or a date it cannot read, an
   infinite number, a date outside 1900-2200) still reads as blank, and is now warned of by table, column,
   count and Activity ID; an unreadable PROJECT.last_recalc_date says where the status date was taken from.

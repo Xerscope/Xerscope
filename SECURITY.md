@@ -11,8 +11,10 @@ In scope:
 - the parser and the analyses: a crafted `.xer` or P6 XML file must not do more than fail to
   load;
 - the web app's defaults: `localhost` only, XSRF on, telemetry off, uploads held in the
-  session's memory and never written to disk, a folder typed in the Files window read only
-  under `XERSCOPE_FOLDER_ROOT`;
+  session's memory and never saved by xerscope's own code (while a file over 1 MB arrives,
+  Streamlit's upload handler passes it through a temporary file of the system's temporary
+  directory, deleted once read), a folder typed in the Files window read only under
+  `XERSCOPE_FOLDER_ROOT`;
 - what leaves the app: every CSV neutralised against formula injection (`csv_safe.py`),
   downloads anonymised by default (*Anonymous exports*);
 - the container image: non-root, read-only root filesystem; port 8501 published on

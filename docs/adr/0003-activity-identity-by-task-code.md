@@ -101,7 +101,7 @@ a link from the local activity: the successor waited for the wrong predecessor.
 - `src/xerscope/analysis/baseline.py`: `renumbered`, `relinked`
 - `src/xerscope/app/baseline_window.py` (option "Link renumbered tasks by GUID")
 - `docs/architecture.md` §2 table ("Identity", "Links" rows)
-- `README.md` "Definitions that matter" (Activity matching)
+- `docs/user-guide.md` "Concepts" (How activities are matched between files)
 - `CONTRIBUTING.md` "Units" paragraph
 - Related: [ADR-0002](0002-format-parser-then-p6-model-with-load-contract.md),
   [ADR-0006](0006-weekly-series-store-one-snapshot-per-data-date.md),

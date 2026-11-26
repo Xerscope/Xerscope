@@ -2,7 +2,8 @@
 
 Every number xerscope computes, as the code computes it. File and function names refer
 to `src/xerscope/`; test names to `tests/`. Where this document and the code differ, the
-code is right and this document is wrong.
+code is right and this document is wrong. The compact view, one entry per calculation with its
+funnel and diagrams, is the [formula sheet](formula-sheet.md).
 
 ## 1. Conventions
 
