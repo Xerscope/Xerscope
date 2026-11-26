@@ -473,6 +473,11 @@ ASSIGNMENT_COLS_MODEL = [
 ]
 
 
+def _filled_cells(table: pd.DataFrame) -> dict[str, int]:
+    """Per column of a table as read (strings), the rows whose cell is not blank."""
+    return {column: int((table[column].astype("string").str.strip().fillna("") != "").sum()) for column in table}
+
+
 def _check_snapshot_columns(snap: Snapshot) -> None:
     """Raise XerError when a built frame lacks a declared column (a model change dropped it)."""
     for name, declared, frame in (
@@ -604,6 +609,8 @@ class Snapshot:
     udf_fields: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=UDF_FIELD_COLUMNS))
     file_projects: pd.DataFrame = field(default_factory=lambda: pd.DataFrame(columns=FILE_PROJECT_COLUMNS))
     xer_tables: dict[str, tuple[int, int]] = field(default_factory=dict)  # every %T table: (rows, columns)
+    # every %F column of every %T table: the rows of the whole file holding a value in it
+    xer_columns: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def calendar(self, clndr_id: str | None = None) -> WorkCalendar:
         """Calendar by id; the project's default calendar when id is blank or unknown."""
@@ -1723,6 +1730,7 @@ def build_snapshot(
         udf_fields=_udf_fields(raw, tasks, inputs.project_id),
         file_projects=_file_projects(projects, all_tasks),
         xer_tables={name: (len(table), len(table.columns)) for name, table in raw.tables.items()},
+        xer_columns={name: _filled_cells(table) for name, table in raw.tables.items()},
     )
     _check_snapshot_columns(snapshot)
     return snapshot

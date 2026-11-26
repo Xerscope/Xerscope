@@ -333,6 +333,18 @@ with st.expander("9 · XER tables and planned value labor units", key="debug_pv_
         "the task value). Resource curves (curv_id) are counted, not modelled. gap_hr = assignment - task."
     )
     table(frames["09_xer_tables"], max_height=ui.TABLE_SHORT, key="debug_09_xer_tables")
+    st.caption(
+        "Every column of every table of the file, in the file's order, with the rows holding a value in it "
+        "(every project of the file): what this export carries, whether xerscope reads it or not."
+    )
+    table(frames["09_xer_columns"], max_height=ui.TABLE_SHORT, key="debug_09_xer_columns")
+    st.caption(
+        "TASK columns holding a date or named after a baseline (base_*, bl_*): label in the XER data map v26 "
+        "(table TASK), tasks holding a value, earliest and latest date. The data map lists no baseline date "
+        "in TASK: such a column is read as stored, its meaning in P6 unverified. Added By and Last Modified By "
+        "are counted, never shown."
+    )
+    table(frames["09_task_dates"], key="debug_09_task_dates")
     if frames["09_udf_fields"].empty:
         st.caption("No user defined field (UDFVALUE) holds a value in the project read.")
     else:
