@@ -85,6 +85,11 @@ def _yes(value) -> str:
     return "Yes" if bool(value) else "No"
 
 
+def _constraint_cell(kind, date) -> str:
+    """A constraint on the card: P6's name and its date, a dash without one."""
+    return constraint_text(kind, date) or "–"
+
+
 def task_rows(snapshot, task_code: str) -> pd.DataFrame:
     """The activity's rows in ``snapshot`` (one, unless the file repeats the Activity ID)."""
     activities = snapshot.activities
@@ -150,8 +155,8 @@ def card_sections(snapshot, task: pd.Series) -> list[tuple[str, list[tuple[str, 
         (
             "Constraints",
             [
-                ("Primary constraint", constraint_text(task["cstr_type"], task["cstr_date"]) or "–"),
-                ("Secondary constraint", constraint_text(task["cstr_type2"], task["cstr_date2"]) or "–"),
+                ("Primary constraint", _constraint_cell(task["cstr_type"], task["cstr_date"])),
+                ("Secondary constraint", _constraint_cell(task["cstr_type2"], task["cstr_date2"])),
                 (HARD_CONSTRAINT_LABEL, _yes(task["has_hard_constraint"])),
             ],
         ),
