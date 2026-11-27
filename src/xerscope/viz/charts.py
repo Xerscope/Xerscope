@@ -333,7 +333,9 @@ def build_mta(
     its position in ``order`` (the user's pick order, so the picker's tags can match), else
     of its position in ``trend``. The drift since the first update (``total_shift_wd``, working
     days, ``milestone_slips.slip_wd``: negative = later) marks the last point and the end label:
-    red later, green earlier, line colour unchanged. The label adds the move in the last update
+    red later, green earlier, line colour unchanged; grey when the date did not move in the last
+    update (``last_shift_wd`` is 0), the point staying bigger as the end of a drifting line. The
+    label adds the move in the last update
     (``last_shift_wd``, ``milestone_slips.last_week_wd``): a milestone back 7 wd after a jump of
     25 still drifts 18 wd later, and reads red.
     Lines with the same dates hide each other: the unified hover lists every line at a
@@ -369,15 +371,11 @@ def build_mta(
             continue
         line_colour = SERIES[order.index(code) % len(SERIES)]
         drift_wd = total_shift_wd.get(code, 0.0)
-        # the colour of the drift: later is red, earlier green, none when the date did not move
-        move_colour = None
-        if drift_wd < 0:
-            move_colour = STATUS["critical"]
-        elif drift_wd > 0:
-            move_colour = STATUS["good"]
+        last_wd = (last_shift_wd or {}).get(code)
+        move_colour = _mta_move_colour(drift_wd, last_wd)
         drawn = rows.loc[: rows["forecast"].last_valid_index()]  # blank forecast = hidden update: the line breaks
         figure.add_trace(_mta_trace(code, drawn, line_colour, move_colour))
-        label = _mta_end_label(code, drift_wd, (last_shift_wd or {}).get(code), move_colour)
+        label = _mta_end_label(code, drift_wd, last_wd, move_colour)
         ends.append((drawn["data_date"].iloc[-1], drawn["forecast"].iloc[-1], label))
     _add_end_labels(figure, ends, (last_date - first_date).value)
     figure = _with_house_style(
@@ -391,9 +389,20 @@ def build_mta(
     return figure
 
 
+def _mta_move_colour(drift_wd: float, last_wd: float | None) -> str | None:
+    """The colour of a milestone's last point and arrow: none when the date never drifted; grey
+    when it drifted but did not move in the last update; else red when later than at the first
+    update, green when earlier. A missing last move (milestone deleted) is not "did not move"."""
+    if not drift_wd:
+        return None
+    if last_wd is not None and not pd.isna(last_wd) and last_wd == 0:
+        return NEUTRAL
+    return STATUS["critical"] if drift_wd < 0 else STATUS["good"]
+
+
 def _mta_trace(code: str, drawn: pd.DataFrame, line_colour: str, move_colour: str | None) -> go.Scatter:
     """The line of one milestone: its forecast at each update, the last point in ``move_colour``
-    (and bigger) when the date moved in the last update."""
+    (and bigger) when the date drifted since the first update."""
     earlier_points = len(drawn) - 1
     return go.Scatter(
         x=drawn["data_date"],
@@ -402,7 +411,7 @@ def _mta_trace(code: str, drawn: pd.DataFrame, line_colour: str, move_colour: st
         name=f"{code} {drawn['task_name'].iloc[-1]}",
         line=dict(color=line_colour, width=LINE),
         marker=dict(
-            # the last point bigger when it moved: red / orange series stay apart
+            # the last point bigger when it drifted: red / orange series stay apart
             size=[9] * earlier_points + [13 if move_colour else 9],
             symbol=["diamond" if is_complete else "circle" for is_complete in drawn["is_complete"].to_numpy()],
             color=[line_colour] * earlier_points + [move_colour or line_colour],

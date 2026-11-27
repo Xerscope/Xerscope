@@ -547,7 +547,8 @@ READINGS: dict[str, Reading] = {
             "x = reporting (status) date, y = forecast date of the milestone, both axes over the same dates so the "
             "line forecast = status date is the diagonal; below it is the past (shaded). One line per milestone "
             "in its tag colour; a diamond where the update reports it complete, where the line meets the diagonal. "
-            "The last point is bigger and red when the date is later than at the first update, green when earlier; "
+            "The last point is bigger and red when the date is later than at the first update, green when earlier, "
+            "grey when it did not move in the last update; "
             "the end label gives the code, that drift and the move in the last update, in wd."
         ),
         meaning=(
