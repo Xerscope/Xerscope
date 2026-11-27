@@ -391,6 +391,23 @@ def test_file_fields_lists_every_field_of_the_raw_file_in_its_order_without_the_
     assert (extra["column"], extra["rows"], extra["rows_with_value"]) == ("zz_field", 1, 0)
 
 
+@pytest.mark.oracle("characterization")
+def test_file_fields_of_says_why_a_file_has_no_field():
+    """No file held: NO_FILE. A P6 XML file: XML_FILE. A text without ERMHDR: the parser's refusal, named
+    after the file. A readable XER: its fields and no note."""
+    from xerkit import xer_text
+
+    from xerscope.app.xer_columns import NO_FILE, XML_FILE, file_fields_of
+
+    assert file_fields_of(None, None)[1] == NO_FILE
+    xml = b'<?xml version="1.0"?><APIBusinessObjects xmlns="http://xmlns.oracle.com/Primavera/P6/V8.3/API/BusinessObjects"/>'
+    assert file_fields_of("b.xml", xml)[1] == XML_FILE
+    fields, note = file_fields_of("bad.xer", b"not an export")
+    assert fields.empty and note.startswith("bad.xer cannot be read: ")
+    fields, note = file_fields_of("u.xer", xer_text([todo("A")]).encode())
+    assert note == "" and "TASK" in set(fields["table"])
+
+
 # --- Debug block 11: project settings ----------------------------------------------------------
 
 COUNTS = ["tasks_CP_Phys", "tasks_CP_Drtn", "tasks_CP_Units", "tasks_pct_blank", "tasks_pct_other"]

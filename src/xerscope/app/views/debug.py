@@ -48,9 +48,8 @@ from xerscope.app.state import (
     snapshot_picker,
     standards,
 )
-from xerscope.app.xer_columns import file_fields_table
+from xerscope.app.xer_columns import file_fields_of
 from xerscope.export import zip_frames
-from xerscope.xer import XerError, is_pmxml, parse_bytes
 
 store = require_store()
 top = st.container()  # header above the picker, as on the other pages
@@ -620,33 +619,23 @@ with st.expander("14 · Ask vocabulary (variants generated per source column)", 
         st.warning(ui.md_text(_where(error)))
 
 
-def show_file_fields() -> None:
-    """Block 15: every field of one loaded file, read by the parser alone, and its CSV."""
-    files = dict(st.session_state.get("items") or [])
-    if not files:
-        st.caption("No file held in this session: load the updates from the sidebar.")
-        return
-    name = st.selectbox("File", sorted(files), key="debug_15_file")
-    data = files[name]
-    if is_pmxml(data):
-        st.caption("A P6 XML file: its fields are XML elements, not %T tables. Pick an XER file.")
-        return
-    try:
-        fields = file_fields_table(parse_bytes(data[:], source=name))
-    except XerError as error:
-        st.warning(ui.md_text(str(error)))
-        return
-    table(fields, max_height=ui.TABLE_SHORT, key="debug_15_file_fields")
-    csv_download(fields, "xer_fields.csv", key="debug_15_download", sources=[name], sensitive=False)
-
-
 with st.expander("15 · Fields of a source file (every %T table and %F field, as written)", key="debug_file_fields"):
     st.caption(
         "Every field of every table of the file picked, in the order of its %F lines, read by the parser alone: "
         "whatever the data map says and whatever xerscope reads. rows_with_value: the rows whose cell is not "
         "blank. Field names and counts only."
     )
-    show_file_fields()
+    held = dict(st.session_state.get("items") or [])
+    picked = st.selectbox(
+        "File",
+        sorted(held),
+        key="debug_15_file",
+        help="One of the files held in this session. Its fields are read again from the file itself, not from "
+        "what xerscope built of it.",
+    )
+    fields, note = file_fields_of(picked, held.get(picked))
+    table(fields, max_height=ui.TABLE_SHORT, key="debug_15_file_fields", reason=note)
+    csv_download(fields, "xer_fields.csv", key="debug_15_download", sources=[picked or ""], sensitive=False)
 
 
 anonymous = anonymous_exports()
