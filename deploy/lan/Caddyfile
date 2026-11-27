@@ -1,0 +1,58 @@
+# LAN only (deploy/lan/compose.yaml): Caddy holds the certificate, authenticates and proxies.
+# The site answers to the NAS's LAN address alone: a request for any other name gets no
+# site, which also stops a page elsewhere from reaching the app through a DNS name it
+# points at this address. rate_limit is not in the stock caddy image: this file runs on
+# deploy/caddy/Dockerfile's.
+{
+    admin off                                   # the admin API can rewrite the config, basic_auth included
+    auto_https disable_redirects                # no listener on port 80: nothing is published there
+    skip_install_trust                          # the authority is trusted by the visitors, not by this container
+    default_sni {$XERSCOPE_LAN_IP}              # a browser sends no server name for an IP address
+    log {                                       # default logger: proxy errors print the request too
+        format filter {
+            wrap json
+            request>headers>Sec-Websocket-Protocol delete
+        }
+    }
+}
+
+https://{$XERSCOPE_LAN_IP}:8443 {
+    tls internal                         # Caddy's own authority: no ACME, no outbound request
+    header {                             # every response, 401 included
+        Referrer-Policy no-referrer
+        X-Content-Type-Options nosniff   # a response is read as the type it declares, never guessed
+        # no other site can frame the app (clickjacking); no plug-in content, and no <base> to move the
+        # page's relative URLs elsewhere (the page uses neither)
+        Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'none'"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"   # the app uses none of them
+    }
+    header -Server   # a deletion is deferred, so it stays out of the block above, which must also reach the 401
+    rate_limit {                         # runs before basic_auth (the module's directive order): a client over
+        zone per_visitor {               # the limit gets 429 without a bcrypt run on the NAS's CPU
+            key {client_ip}
+            ipv6_prefix 64
+            events 300                   # every request counts, not only wrong passwords: a first visit with
+            window 1m                    # a cold cache fetches ~125 JS chunks within 20 s, each later page ~15
+        }
+    }
+    basic_auth {
+        {$XERSCOPE_USER} {$XERSCOPE_PASSWORD_HASH}
+    }
+    @download path /media/*              # st.download_button files: schedule data, never kept on the visitor's disk
+    header @download >Cache-Control no-store   # ">": applied after the upstream's own headers
+    @page path / /index.html             # the page names the hashed JS chunks of the running image
+    header @page >Cache-Control no-store
+    header >Set-Cookie (.*) "$1; Secure"   # Streamlit marks its XSRF cookie Secure only when it holds the
+                                           # certificate itself; here Caddy does
+    @unused path /_stcore/metrics /_stcore/agent/*   # the page asks for neither
+    respond @unused 404                              # after basic_auth: 401 without the password
+    reverse_proxy app:8501               # the app's alias on `internal`
+    log {
+        output stdout
+        format filter {
+            wrap console
+            request>headers>Sec-Websocket-Protocol delete   # Streamlit's XSRF token and session id
+            resp_headers>Content-Disposition delete         # the export's file name carries the project code
+        }
+    }
+}

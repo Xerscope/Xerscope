@@ -866,3 +866,44 @@ def test_no_lexicon_file_goes_into_the_image():
         assert "standard" in data or path.name == "config.toml", path
     ignore = (ROOT / ".dockerignore").read_text().splitlines()
     assert [x for x in ignore if x.startswith("!")] == ["!pyproject.toml", "!uv.lock", "!README.md", "!src/"]
+
+
+def _compose_service(compose: str, name: str) -> list[str]:
+    """The lines of one service of a compose file, without comments, blank lines and alignment."""
+    block = re.search(rf"^  {name}:.*?(?=^  \S|^\S)", compose, re.M | re.S).group(0)
+    lines = [re.sub(r"\s+#.*$", "", line).rstrip() for line in block.splitlines()]
+    return [line for line in lines if line.strip()]
+
+
+def test_lan_stack_reaches_nothing_and_is_reached_from_the_nas_address_only():
+    """deploy/lan: no registry, no Tailscale, no route out; one port, on the NAS's LAN address, behind
+    Caddy's password. The app and lexicon-init are deploy/compose.yaml's but for the image."""
+    lan = (ROOT / "deploy" / "lan" / "compose.yaml").read_text()
+    ports = re.findall(r'^\s+- "([^"]*:8443)"', lan, re.M)
+    assert ports == ["${XERSCOPE_LAN_IP:?the NAS's own address on the LAN}:${XERSCOPE_LAN_PORT:-8443}:8443"]
+    assert lan.count("ports:") == 1 and "0.0.0.0" not in lan and "network_mode: host" not in lan
+    # a missing image is an error, never a download; nothing names a registry or builds
+    assert lan.count("pull_policy: never") == 3 == len(re.findall(r"^    image:", lan, re.M))
+    assert not re.search(r"^\s+image:.*(ghcr\.io|docker\.io|:-)", lan, re.M) and "build:" not in lan
+    assert "tailscale" not in lan.lower().replace("no tailscale", "")
+    # the app's only network has no gateway; Caddy's bridge does not masquerade
+    assert re.search(r"^  internal:\n    internal: true", lan, re.M)
+    assert 'com.docker.network.bridge.enable_ip_masquerade: "false"' in lan
+    assert "    networks: [lan, internal]" in _compose_service(lan, "caddy")
+    base = (ROOT / "deploy" / "compose.yaml").read_text()
+    for name in ("xerscope", "lexicon-init"):
+        mine = [line for line in _compose_service(lan, name) if "pull_policy:" not in line and "image:" not in line]
+        theirs = [line.replace("../exports", "../../exports") for line in _compose_service(base, name)]
+        assert mine == [line for line in theirs if "image:" not in line], name
+    assert lan.count("cap_drop: [ALL]") == 3 == lan.count("no-new-privileges") == lan.count("read_only: true")
+    assert lan.count("mem_limit:") == 3 == lan.count("pids_limit:") and not re.search(r"^\s+logging:", lan, re.M)
+    assert not re.search(r"\$2a\$", lan)  # no secret written in the file
+    caddy = (ROOT / "deploy" / "lan" / "Caddyfile").read_text()
+    assert "https://{$XERSCOPE_LAN_IP}:8443 {" in caddy  # the site answers to that address, not to any Host
+    assert "tls internal" in caddy and "default_sni {$XERSCOPE_LAN_IP}" in caddy  # no ACME, no request out
+    assert "admin off" in caddy and "auto_https disable_redirects" in caddy
+    assert caddy.index("rate_limit {") < caddy.index("basic_auth {") < caddy.index("reverse_proxy app:8501")
+    assert "XERSCOPE_PATH" not in caddy and "XERSCOPE_PATH" not in lan  # no secret prefix: nothing public to hide from
+    env = (ROOT / "deploy" / "lan" / ".env.example").read_text()
+    assert "XERSCOPE_PASSWORD_HASH='$2a$10$...'" in env and "--bcrypt-cost 10" in env
+    assert "hash-password --plaintext" not in env

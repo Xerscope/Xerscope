@@ -1,0 +1,125 @@
+# LAN only: https://<XERSCOPE_LAN_IP>:8443 from the NAS's own network, behind a username and a
+# password. No Tailscale, no registry, no internet: the two images are built elsewhere and
+# loaded on the NAS (docs/deploy-lan.md), and nothing here can pull or call out.
+#
+# NAS:  load the two images, copy this folder, then Container Manager > Project > Create from
+#       it, with a .env next to this file (cp .env.example .env). PC: the same, then
+#       docker compose up -d from this folder.
+#
+# Variables: XERSCOPE_LAN_IP (the NAS's address on the LAN: the only address the port is
+#   bound to and the only name the certificate and Caddy answer to), XERSCOPE_IMAGE and
+#   XERSCOPE_CADDY_IMAGE (the local tags loaded on the NAS), XERSCOPE_USER,
+#   XERSCOPE_PASSWORD_HASH, XERSCOPE_EXPORTS; optional XERSCOPE_LAN_PORT (default 8443) and
+#   the app's optional variables, as in ../compose.yaml.
+#
+# What reaches what:
+#   browser on the LAN ──https──▶ <XERSCOPE_LAN_IP>:8443 ──▶ caddy ──▶ xerscope
+#   - xerscope and lexicon-init are the services of ../compose.yaml but for the image (the
+#     tests hold them equal): `internal` has no gateway, so the app reaches neither the LAN
+#     nor the internet, and nothing but Caddy reaches the app.
+#   - caddy needs an ordinary bridge (`lan`) for its published port. That bridge does not
+#     masquerade: a packet Caddy would send out leaves with a Docker address nobody on the
+#     LAN can answer, so Caddy opens no connection of its own; answers to a visitor follow
+#     the published port's translation and are unaffected.
+#   - pull_policy never: a missing image is an error, never a download.
+# TLS is Caddy's own authority (tls internal, no ACME, no outbound request): the browser warns
+# until the root certificate is trusted on the visitor's machine (docs/deploy-lan.md). The
+# authority lives in the named volume caddy-data; removing it makes a new one.
+services:
+  caddy:
+    image: ${XERSCOPE_CADDY_IMAGE:?local tag of the Caddy image loaded on the NAS, e.g. xerscope-caddy:custom}
+    pull_policy: never
+    ports:                                          # the NAS's LAN address only, not every interface (a VPN, a WAN)
+      - "${XERSCOPE_LAN_IP:?the NAS's own address on the LAN}:${XERSCOPE_LAN_PORT:-8443}:8443"
+    environment:
+      XERSCOPE_LAN_IP: ${XERSCOPE_LAN_IP}
+      XERSCOPE_USER: ${XERSCOPE_USER:?login for the password prompt}
+      XERSCOPE_PASSWORD_HASH: ${XERSCOPE_PASSWORD_HASH:?bcrypt hash from caddy hash-password}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data                            # named volume: Caddy's authority and certificate, root-owned like the container's user
+    networks: [lan, internal]
+    depends_on: [xerscope]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+      - /config:size=16m
+    cap_drop: [ALL]                                 # the binary carries the file capability cap_net_bind_service:
+    cap_add: [NET_BIND_SERVICE]                     # with an empty bounding set the kernel refuses to exec it
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 128
+    restart: unless-stopped
+
+  lexicon-init:                                     # on demand only: docker compose run --rm lexicon-init
+                                                    # (`xerscope lexicon build`, docs/deploy.md §10) rewrites
+                                                    # generated/ (the exports' variants, a report) and purges
+                                                    # suggested/ (90 days, not copied into curated/)
+    profiles: [lexicon]                             # left out of `up`: the app starts with the last generated/
+    image: ${XERSCOPE_IMAGE:?local tag of the app image loaded on the NAS, e.g. xerscope:custom}
+    pull_policy: never
+    user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"
+    command: ["lexicon", "build", "/data", "--out", "/lexicon"]
+    volumes:                                        # Docker mounts the parent first, then the two writable folders
+      - ${XERSCOPE_EXPORTS:-../../exports}:/data:ro
+      - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}:/lexicon:ro      # curated/ stays read-only
+      - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}/generated:/lexicon/generated
+      - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}/suggested:/lexicon/suggested
+    network_mode: none                              # reads files, writes files: no network at all
+    read_only: true                                 # writes only the two folders above, files 0600 (mkstemp)
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      disable: true                                 # the image's healthcheck polls the app's port
+    mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}            # reads every export, one at a time
+    pids_limit: 64
+    restart: "no"                                   # runs once per `run`
+
+  xerscope:
+    image: ${XERSCOPE_IMAGE:?local tag of the app image loaded on the NAS, e.g. xerscope:custom}
+    pull_policy: never
+    user: "${XERSCOPE_UID:-65532}:${XERSCOPE_GID:-65532}"   # NAS: a dedicated DSM account, the only one allowed to
+                                                    # read the exports folder; default: the image's nonroot user
+    environment:
+      XERSCOPE_DATA: /data
+      HOME: /home/nonroot                           # an uid outside the image's /etc/passwd would get HOME=/
+      XERSCOPE_DATA_LOCKED: "true"                  # the visitor reads /data only: no folder field, no XER upload
+      XERSCOPE_DEBUG_PAGE: ${XERSCOPE_DEBUG_PAGE:-}  # 1 in .env: the Debug page, to whoever holds the URL; off when unset
+      XERSCOPE_LOAD_WORKERS: ${XERSCOPE_LOAD_WORKERS:-1}  # files read at once, each held while read (~1 GB for a
+                                                    # 40 MB export): raise it with XERSCOPE_MEM_LIMIT (docs/deploy.md §7)
+      STREAMLIT_SERVER_MAX_UPLOAD_SIZE: "1"         # MB per uploaded file: only a standard (.toml) can be uploaded
+      STREAMLIT_SERVER_MAX_WIDGET_STATE_SIZE: "1"   # MB per message from the browser (default 25): a sentence, a click;
+                                                    # not maxMessageSize, which also caps what the app sends (the Gantt)
+      STREAMLIT_CLIENT_SHOW_ERROR_DETAILS: none     # tracebacks go to the log, not to the visitor's page
+      # XERSCOPE_BASELINE: /data/BL.xer
+      XERSCOPE_STANDARDS: /data                     # your own standards (.toml) beside the exports (docs/deploy.md §5)
+      XERSCOPE_LEXICON: /lexicon                    # the Ask field reads curated/ and generated/ (docs/deploy.md §10)
+    volumes:
+      - ${XERSCOPE_EXPORTS:-../../exports}:/data:ro    # NAS: readable by the XERSCOPE_UID account only
+      - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}:/lexicon:ro
+      - ${XERSCOPE_LEXICON_DIR:-/docker/xerscope/lexicon}/suggested:/lexicon/suggested   # Ask corrections, appended
+    networks:                                       # nothing published: reachable from Caddy only
+      internal:
+        aliases: [app]                              # Caddy's upstream (reverse_proxy app:8501)
+    read_only: true
+    tmpfs:                                          # owned by the app's user: some Docker builds (Synology's)
+                                                    # mount a bare tmpfs root-only, and Streamlit then fails
+                                                    # reading ~/.streamlit/secrets.toml
+      - /tmp:uid=${XERSCOPE_UID:-65532},gid=${XERSCOPE_GID:-65532},mode=1777,size=256m
+      - /home/nonroot:uid=${XERSCOPE_UID:-65532},gid=${XERSCOPE_GID:-65532},mode=700,size=16m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${XERSCOPE_MEM_LIMIT:-2g}            # one 40 MB export needs about 1 GB parsed (docs/deploy.md §7);
+                                                    # past the cap the kernel kills the app alone and Docker restarts it
+    pids_limit: 256
+    restart: unless-stopped
+
+volumes:
+  caddy-data: {}
+
+networks:
+  lan:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"   # no way out for Caddy; the published port still answers
+  internal:
+    internal: true                                  # no gateway: xerscope reaches neither the LAN nor the internet

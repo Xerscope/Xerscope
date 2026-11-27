@@ -166,6 +166,12 @@ identical (234 differ).
 
 ## Deployment and CI
 
+- [ ] Verify the LAN-only stack (`deploy/lan/`, docs/deploy-lan.md), never started so far: only
+      `docker compose config` resolved it. To check with the built Caddy image: `caddy validate` on
+      `deploy/lan/Caddyfile`; the certificate served for a visit by IP address (`default_sni`); 401
+      without the password and the page with it; from the Caddy container, no connection out with
+      the bridge's masquerade off, on the Synology kernel; the visitor's own address in the access
+      log (the rate limit's key); Container Manager accepting `pull_policy: never` and the image import.
 - [ ] Verify on the NAS, after the next pull: `TS_AUTH_ONCE` across a restart; the Docker
       Hub login step now conditioned on a job-level secret; the tailscale state in its
       named volume (`tailscale-state`) kept across a Build; the hardened sidecars

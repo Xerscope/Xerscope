@@ -18,6 +18,10 @@ reports are kept outside the repository; what remains open is in `docs/quality-p
 
 ### Added
 
+- Deployment: a LAN-only stack, `deploy/lan/` (compose, Caddyfile, `.env.example`), for a NAS that must reach
+  nothing: one port on the NAS's LAN address behind Caddy's password and its own certificate authority, no
+  Tailscale, images loaded locally and never pulled, no route out of either network. Guide for Container
+  Manager, in French: `docs/deploy-lan.md`. Not yet started on a NAS (docs/backlog.md).
 - Reader (XER-01): a cell the file fills but the reader cannot type (a number or a date it cannot read, an
   infinite number, a date outside 1900-2200) still reads as blank, and is now warned of by table, column,
   count and Activity ID; an unreadable PROJECT.last_recalc_date says where the status date was taken from.

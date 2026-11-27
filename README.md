@@ -305,6 +305,11 @@ schedules, and any gap names a rule to fix.
   `tests/test_docker.py` and the CI job `deploy` pin those properties. The Ask field's
   lexicon is built from the exports on demand (`docker compose run --rm lexicon-init`,
   `xerscope lexicon build`, docs/deploy.md §10).
+- **LAN only, no internet** (`deploy/lan/`): the same app behind Caddy's password on the NAS's own
+  LAN address, `https://<nas-lan-ip>:8443`, with a certificate from Caddy's own authority. No
+  Tailscale and no registry: the two images are built on a PC and imported, `pull_policy: never`;
+  the app's network has no gateway and Caddy's bridge does not masquerade. Step by step for
+  Container Manager, in French: `docs/deploy-lan.md`.
 
 ```bash
 cd deploy && cp .env.example .env    # TS_AUTHKEY, XERSCOPE_USER, XERSCOPE_PASSWORD_HASH, XERSCOPE_PATH, XERSCOPE_EXPORTS
