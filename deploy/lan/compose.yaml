@@ -9,7 +9,8 @@
 # Variables: XERSCOPE_LAN_IP (the NAS's address on the LAN: the only address the port is
 #   bound to and the only name the certificate and Caddy answer to), XERSCOPE_IMAGE and
 #   XERSCOPE_CADDY_IMAGE (the local tags loaded on the NAS), XERSCOPE_USER,
-#   XERSCOPE_PASSWORD_HASH, XERSCOPE_EXPORTS; optional XERSCOPE_LAN_PORT (default 8443) and
+#   XERSCOPE_PASSWORD_HASH, XERSCOPE_SESSION (a random token, letters and digits only: the cookie
+#   that opens the app's WebSocket once the password has passed), XERSCOPE_EXPORTS; optional XERSCOPE_LAN_PORT (default 8443) and
 #   the app's optional variables, as in ../compose.yaml.
 #
 # What reaches what:
@@ -35,6 +36,7 @@ services:
       XERSCOPE_LAN_IP: ${XERSCOPE_LAN_IP}
       XERSCOPE_USER: ${XERSCOPE_USER:?login for the password prompt}
       XERSCOPE_PASSWORD_HASH: ${XERSCOPE_PASSWORD_HASH:?bcrypt hash from caddy hash-password}
+      XERSCOPE_SESSION: ${XERSCOPE_SESSION:?random token of the session cookie, e.g. openssl rand -hex 32}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data                            # named volume: Caddy's authority and certificate, root-owned like the container's user

@@ -41,8 +41,22 @@ https://{$XERSCOPE_LAN_IP}:8443 {
             window 1m                    # a cold cache fetches ~125 JS chunks within 20 s, each later page ~15
         }
     }
-    basic_auth {
-        {$XERSCOPE_USER} {$XERSCOPE_PASSWORD_HASH}
+    # Safari (and every browser on iOS) sends no Authorization header with a WebSocket handshake:
+    # behind basic_auth alone, Streamlit's /_stcore/stream gets 401 and the page stays on "connecting".
+    # A response that passed the password carries a cookie; that cookie opens the stream, and only it.
+    @needs_password {
+        not {
+            path /_stcore/stream
+            header_regexp Cookie (^|;\s*)xerscope_session={$XERSCOPE_SESSION}(;|$)
+        }
+    }
+    route {                              # in this order: a 401 ends the route before the cookie is set
+        basic_auth @needs_password {
+            {$XERSCOPE_USER} {$XERSCOPE_PASSWORD_HASH}
+        }
+        # HttpOnly: not readable by a script; SameSite=Strict: never sent from another site's page;
+        # Secure is appended to every cookie by the Set-Cookie line below
+        header @needs_password +Set-Cookie "xerscope_session={$XERSCOPE_SESSION}; Path=/; HttpOnly; SameSite=Strict"
     }
     @download path /media/*              # st.download_button files: schedule data, never kept on the visitor's disk
     header @download >Cache-Control no-store   # ">": applied after the upstream's own headers
@@ -51,7 +65,7 @@ https://{$XERSCOPE_LAN_IP}:8443 {
     header >Set-Cookie (.*) "$1; Secure"   # Streamlit marks its XSRF cookie Secure only when it holds the
                                            # certificate itself; here Caddy does
     @unused path /_stcore/metrics /_stcore/agent/*   # the page asks for neither
-    respond @unused 404                              # after basic_auth: 401 without the password
+    respond @unused 404                              # after the route above: 401 without the password
     reverse_proxy app:8501               # the app's alias on `internal`
     log {
         output stdout

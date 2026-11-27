@@ -95,7 +95,7 @@ Dans **File Station** :
 
 ### B4. Adapter `.env`
 
-Ouvrir le `.env` téléchargé avec le Bloc-notes. Supprimer deux lignes, en ajouter trois,
+Ouvrir le `.env` téléchargé avec le Bloc-notes. Supprimer deux lignes, en ajouter quatre,
 ne pas toucher aux autres :
 
 ```
@@ -105,6 +105,7 @@ XERSCOPE_PATH=...                               # à supprimer
 XERSCOPE_LAN_IP=192.168.1.50                    # à ajouter : l'adresse notée en B1
 XERSCOPE_IMAGE=xerscope:custom                  # à ajouter, tel quel
 XERSCOPE_CADDY_IMAGE=xerscope-caddy:custom      # à ajouter, tel quel
+XERSCOPE_SESSION=<jeton>                        # à ajouter : le jeton fourni avec le kit (lettres et chiffres)
 
 XERSCOPE_USER=<identifiant>                     # inchangé : même identifiant, même mot de passe
 XERSCOPE_PASSWORD_HASH='$2a$10$...'             # inchangé, garder les apostrophes

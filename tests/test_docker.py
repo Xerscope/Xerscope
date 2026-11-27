@@ -904,7 +904,20 @@ def test_lan_stack_reaches_nothing_and_is_reached_from_the_nas_address_only():
     assert "admin off" in caddy and "auto_https disable_redirects" in caddy
     # the same port answers an address typed without https:// by a redirect; http_redirect comes before tls
     assert re.search(r"listener_wrappers \{\s+http_redirect\s[^}]*\btls\b", caddy)
-    assert caddy.index("rate_limit {") < caddy.index("basic_auth {") < caddy.index("reverse_proxy app:8501")
+    env_lan = (ROOT / "deploy" / "lan" / ".env.example").read_text()
+    assert (
+        caddy.index("rate_limit {")
+        < caddy.index("basic_auth @needs_password {")
+        < caddy.index("reverse_proxy app:8501")
+    )
+    # Safari sends no credentials with a WebSocket handshake: the stream, and nothing else, opens on a cookie
+    # that only a response past basic_auth sets (a route: a 401 ends it before the header handler)
+    needs_password = re.search(r"@needs_password \{\s+not \{(.*?)\}\s+\}", caddy, re.S).group(1)
+    assert "path /_stcore/stream" in needs_password and "xerscope_session={$XERSCOPE_SESSION}(;|$)" in needs_password
+    route = re.search(r"\n    route \{.*?\n    \}\n", caddy, re.S).group(0)
+    assert route.index("basic_auth @needs_password {") < route.index("header @needs_password +Set-Cookie")
+    assert caddy.count('Set-Cookie "xerscope_session=') == 1 and "HttpOnly; SameSite=Strict" in route
+    assert "XERSCOPE_SESSION: ${XERSCOPE_SESSION:?" in lan and "XERSCOPE_SESSION=<random>" in env_lan
     assert "XERSCOPE_PATH" not in caddy and "XERSCOPE_PATH" not in lan  # no secret prefix: nothing public to hide from
     env = (ROOT / "deploy" / "lan" / ".env.example").read_text()
     assert "XERSCOPE_PASSWORD_HASH='$2a$10$...'" in env and "--bcrypt-cost 10" in env
