@@ -682,9 +682,9 @@ def test_changelog_and_ppc_pick_weeks(app, store):
     PPC page reads the week picked, not the last one. Expected tables come from the analysis layer
     called on the picked snapshots, and must differ from what the default pick would show."""
     app.switch_page("views/changelog.py").run()
-    labels = app.selectbox(key="cl_new").options
-    app.selectbox(key="cl_old").set_value(labels[1]).run()
+    labels = store.labels  # To lists labels[1:], From the updates before To (#369)
     app.selectbox(key="cl_new").set_value(labels[4]).run()
+    app.selectbox(key="cl_old").set_value(labels[1]).run()
     _ok(app)
 
     def categories_between(old_index: int, new_index: int) -> pd.DataFrame:
@@ -3495,14 +3495,15 @@ def test_changelog_offset_buttons_are_drawn_as_buttons(app):
 
 
 @pytest.mark.oracle("property")
-def test_changelog_offset_buttons_set_from_by_counting_back_from_to(app):
+def test_changelog_offset_buttons_set_from_by_counting_back_from_to(app, store):
     """From = To minus 1 (Previous), minus 4 (4 back) or the first update, never before the first
     (changelog.py `_from`: labels[0 if back is None else max(index - back, 0)]). The 8 updates of the
     sample give labels[0..7]: To = labels[5] reads from labels[4], labels[1] and labels[0]; To = labels[2]
     clamps 4 back to labels[0]."""
     app.switch_page("views/changelog.py").run()
-    labels = app.selectbox(key="cl_new").options
+    labels = store.labels
     assert len(labels) == 8
+    assert app.selectbox(key="cl_new").options == labels[1:]  # the first update has nothing before it
     app.selectbox(key="cl_new").set_value(labels[5]).run()
     for button, expected_from in (("Previous", labels[4]), ("4 back", labels[1]), ("First", labels[0])):
         app.button(key=f"cl_from_{button}").click().run()
