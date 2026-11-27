@@ -80,3 +80,20 @@ def test_as_late_as_possible_work_with_no_work_left_sits_at_the_next_opening_aft
         pd.Timestamp("2026-03-09 08:00"),
         pd.Timestamp("2026-03-09 08:00"),
     )
+
+
+def test_a_lag_with_no_work_gives_the_earlier_of_the_bound_and_its_lag_back_from_the_finish():
+    """T (C8, Mandatory Start Wed 4 Mar 08:00, no work) holds one assignment on a resource of C10 with
+    0 units and a lag of 4.5 h; Z (C8, 80 h) ends the project. The bound, Wed 08:00, binds. The assignment
+    starts a lag after it, Wed 08:00 + 4.5 h on C10 = Wed 12:30; its finish is the last working time of C8
+    at or before that, Wed 12:00 (C8 is closed 12:00-13:00). Back from Wed 12:00 on C10 by the 4.5 h lag:
+    Wed 08:00-12:00 is 4 h, 0.5 h more is Tue 17:30. The late start is the earlier of the bound and that,
+    Tue 17:30; the late finish Wed 12:00 (rule of resource_placement.lag_only_at_bound, probes ZZ-CPP-ZLA,
+    -ZBS)."""
+    lagged = {**labour_assignment("T", "R1", 0), "target_lag_drtn_hr_cnt": "4.5", "relag_drtn_hr_cnt": "4.5"}
+    task = todo("T", task_type="TT_Rsrc", cstr_type="CS_MSO", cstr_date="2026-03-04 08:00", clndr_id="C8", **hours(0))
+    frame = frame_of([task, todo("Z", **hours(80))], resources=[resource("R1", "C10")], assignments=[lagged])
+    assert (frame.at["T", "ls"], frame.at["T", "lf"]) == (
+        pd.Timestamp("2026-03-03 17:30"),
+        pd.Timestamp("2026-03-04 12:00"),
+    )

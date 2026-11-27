@@ -98,3 +98,15 @@ def test_the_plan_of_an_earlier_update_for_the_week_is_its_commitments_due_by_w(
     two_before = planned_for_week(store, 3, 2, False)
     assert two_before["task_code"].tolist() == ["A", "B", "D"] and two_before["kept"].tolist() == [True, False, False]
     assert sorted(planned_for_week(store, 3, 2, True)["task_code"]) == ["A", "B", "D", "G"]
+
+
+def test_a_start_on_the_data_date_before_the_week_is_overdue_not_in_the_week():
+    """The week is (W-1's data date 02-23 08:00, W's data date 03-02 08:00]. H, planned to start at
+    02-23 08:00 in every update, is not after the week's opening: without overdue dates it is out
+    of the plan, with them it is in. A, planned 02-24, is in the week either way."""
+    h, a = planned("H", MONDAYS[2]), planned("A", "2026-02-24 08:00")
+    updates = [snap([a, h], data_date=monday) for monday in MONDAYS[:3]]
+    updates.append(snap([started("A", "2026-02-24 08:00"), h], data_date=MONDAYS[3]))
+    store = SnapshotStore(updates)
+    assert planned_for_week(store, 3, 2, include_overdue=False)["task_code"].tolist() == ["A"]
+    assert sorted(planned_for_week(store, 3, 2, include_overdue=True)["task_code"]) == ["A", "H"]
