@@ -84,6 +84,42 @@ def test_dcma_01_follows_pam_200_1():
     assert (r.numerator, r.denominator) == (2, 4)
 
 
+@pytest.mark.oracle("standard")
+def test_dcma_01_counts_a_link_to_another_project_as_logic():
+    """DCMA-01 (dcma_01_logic docstring): "a link to another project counts as logic". An external
+    predecessor answers the predecessor test of its task, an external successor the successor test, and
+    each only its own end."""
+
+    # A: external predecessor X9 and successor B, passes; B: predecessor A, no successor, flagged -> 1 / 2
+    r = run(DCMA, "DCMA-01", snap([todo("A"), todo("B")], [("A", "B", "FS", 0), ("X9", "A", "FS", 0, "2")]))
+    assert (dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True)), counts(r)) == (
+        {"B": "no successor"},
+        (1, 2),
+    )
+    # B: predecessor A and an external successor Y1 (a task of project 2 that B drives, written as a
+    # TASKPRED row of project 2), passes; A: no predecessor, flagged -> 1 / 2
+    text = with_second_project(
+        xer_text([todo("A"), todo("B")], [("A", "B", "FS", 0)]), "P2", ["Y1"], "2026-03-02 08:00"
+    )
+    lines = text.splitlines()
+    at = lines.index("%T\tTASKPRED")
+    header = lines[at + 1].split("\t")[1:]
+    row = dict.fromkeys(header, "")
+    row.update(task_pred_id="99", task_id="100", pred_task_id=snap([todo("A"), todo("B")]).by_code.at["B", "task_id"])
+    row.update(proj_id="2", pred_proj_id="1", pred_type="PR_FS", lag_hr_cnt="0")
+    lines.insert(at + 2, "%R\t" + "\t".join(row[column] for column in header))
+    with_successor = build_snapshot(parse_text("\n".join(lines) + "\n", source="t.xer"), "T")
+    assert with_successor.by_code.at["B", "has_external_succ"]
+    r = run(DCMA, "DCMA-01", with_successor)
+    assert (dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True)), counts(r)) == (
+        {"A": "no predecessor"},
+        (1, 2),
+    )
+    # an external predecessor alone leaves A without a successor
+    only_predecessor = run(DCMA, "DCMA-01", snap([todo("A")], [("X9", "A", "FS", 0, "2")]))
+    assert (codes(only_predecessor), counts(only_predecessor)) == (["A"], (1, 1))
+
+
 def test_missing_logic_keeps_exemptions_and_dangling_for_custom_standards():
     """The parameters DCMA-01 no longer uses stay available (custom-template.toml CUS-01)."""
     from xerscope.analysis.rules import RULES
@@ -104,6 +140,29 @@ def test_missing_logic_keeps_exemptions_and_dangling_for_custom_standards():
         "A": "dangling finish (no FS/FF successor)",
     }
     assert r.denominator == 6
+
+
+@pytest.mark.oracle("standard")
+def test_missing_logic_dangling_start_ignores_a_started_task():
+    """With dangling=True a task whose only predecessor is FF has a dangling start (no FS/SS predecessor), unless it
+    has started: its start is an actual date. S and N both follow P by FF only; S has started, N has not. P has no
+    predecessor and Z no successor, both exempt as the project start and finish."""
+    from xerscope.analysis.rules import RULES
+
+    s = snap(
+        [todo("P"), active("S"), todo("N"), todo("Z")],
+        [("P", "S", "FF", 0), ("P", "N", "FF", 0), ("S", "Z", "FS", 0), ("N", "Z", "FS", 0)],
+    )
+    r = RULES["missing_logic"].fn(
+        AnalysisContext(s),
+        exclude=["complete", "loe"],
+        pred_exempt=["project_start"],
+        succ_exempt=["project_finish"],
+        dangling=True,
+    )
+    assert dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True)) == {
+        "N": "dangling start (no FS/SS predecessor)"
+    }
 
 
 def test_dangling_start_and_finish_rule():
@@ -274,6 +333,10 @@ def test_dcma_05_follows_pam_200_1():
     r = run(DCMA, "DCMA-05", s)
     assert codes(r) == ["LB", "MF", "MS", "SEC", "STB"]
     assert (r.numerator, r.denominator) == (5, 6)
+    # the "Secondary constraint" column names the secondary type: SEC has only that one, MS only a primary
+    flagged = r.flagged.set_index("task_code")
+    assert flagged.at["SEC", "constraint2"] == "Mandatory start"
+    assert pd.isna(flagged.at["MS", "constraint2"])
 
 
 @pytest.mark.oracle("characterization")
@@ -457,6 +520,30 @@ def test_dcma_08_uses_the_baseline_duration_not_the_re_estimated_one():
     assert (n.status, n.numerator, n.note) == ("n/a", None, "needs a baseline")
 
 
+@pytest.mark.oracle("characterization")
+def test_generic_duration_rule_on_the_baseline_duration_converts_hours_to_days():
+    """The generic ``duration`` rule with field="baseline" (rules.py docstring): in days the baseline hours are
+    divided by the task's hours per day (8 h). Baseline BL8: A 800 h = 100 d, B 360 h = 45 d, C 352 h = 44 d.
+    Above 44 d flags A and B, not C (44 is not above); above 352 h flags A and B, not C. NEWD is not in the
+    baseline: never flagged, but it stays in the denominator."""
+    import dataclasses
+
+    s = snap([todo("A"), todo("B"), todo("C"), todo("NEWD", target_drtn_hr_cnt="800")])
+    baseline = Baseline.from_snapshot(BL8)
+    on_baseline = dataclasses.replace(
+        STANDARDS["DCMA"]["DCMA-08"],
+        rule="duration",
+        params={"field": "baseline", "unit": "days", "op": ">", "value": 44},
+    )
+    in_days = run_metric(on_baseline, AnalysisContext(s, baseline=baseline))
+    assert (codes(in_days), counts(in_days)) == (["A", "B"], (2, 4))
+    in_hours = dataclasses.replace(on_baseline, params={**on_baseline.params, "unit": "hours", "value": 352})
+    result = run_metric(in_hours, AnalysisContext(s, baseline=baseline))
+    assert (codes(result), counts(result)) == (["A", "B"], (2, 4))
+    without = run_metric(on_baseline, AnalysisContext(s))
+    assert (without.status, without.note) == ("n/a", "needs a baseline")
+
+
 # --- progress, resources --------------------------------------------------------------------
 
 
@@ -477,6 +564,32 @@ def test_invalid_progress_dates():
     assert codes(run(P6, "P6-10b", s)) == ["FUT"]
     assert run(P6, "P6-10a", s).denominator == run(P6, "P6-10b", s).denominator == 5  # OK finished: removed
     assert run(DCMA, "DCMA-09", s).numerator == 2  # remaining finish: LATE passes; FUT complete: out (§4.0)
+
+
+@pytest.mark.oracle("standard")
+def test_dcma_09_names_why_a_progress_date_is_invalid():
+    """PAM 200.1 4.9: a forecast before the status date, an actual beyond it, or both. The status date is Mon
+    2026-03-02 08:00. EARLY forecasts a start on 02-27; FUT is incomplete with an actual start on 03-04;
+    BOTH has a remaining finish on 02-27 and an actual start on 03-04."""
+    s = snap(
+        [
+            todo("EARLY", early_start_date="2026-02-27 08:00"),
+            active("FUT", act_start_date="2026-03-04 08:00"),
+            active(
+                "BOTH",
+                act_start_date="2026-03-04 08:00",
+                restart_date="2026-02-26 08:00",
+                reend_date="2026-02-27 17:00",
+            ),
+        ]
+    )
+    r = run(DCMA, "DCMA-09", s)
+    reasons = dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True))
+    assert reasons == {
+        "EARLY": "forecast before status date",
+        "FUT": "actual after status date",
+        "BOTH": "forecast before and actual after status date",
+    }
 
 
 def test_dcma_09_follows_pam_200_1():
@@ -588,6 +701,9 @@ def test_bei_p6_counts_due_in_the_baseline_dcma_in_the_schedule():
     dcma = run(DCMA, "DCMA-14", NOW, bl)
     assert (dcma.numerator, dcma.denominator) == (2, 4)
     assert dcma.value == pytest.approx(2 / 4)
+    # The funnel shows the same four: D (baseline finish after the status date) is out, NEW (no baseline
+    # finish) is in.
+    assert sorted(dcma.funnel.rows["task_code"]) == ["A", "B", "C", "NEW"]
 
 
 def test_missed_tasks_and_late_activities():
@@ -682,6 +798,23 @@ def test_critical_path_test_names_the_expected_finish_that_absorbs_the_delay():
     assert "expected finish dates absorb it" in r.note and "B (10 wd)" in r.note
     assert codes(r) == ["B"] and r.flagged.iloc[0]["reason"] == "expected finish"
     assert r.flagged.iloc[0]["absorbed_wd"] == 10
+
+
+@pytest.mark.oracle("standard")
+def test_critical_path_test_counts_the_absorbed_days_on_the_calendar_of_the_absorbing_activity():
+    """A, the delayed activity, runs 10 wd on C10 (a 10 h day) and ends Fri 13 Mar 18:00; B, on the 8 h
+    project calendar, holds an expected finish at its own early finish, Fri 27 Mar 17:00: 10 wd, 80 h.
+    Pushed by A, B gives up its 80 h, which is 80 / 8 = 10 wd of its own calendar, not 80 / 10 = 8 wd of
+    A's."""
+    a = dict(todo("A", **hours(100), total_float_hr_cnt="0"), clndr_id="C10")
+    b = todo(
+        "B", early_start_date="2026-03-16 08:00", early_end_date="2026-03-27 17:00", expect_end_date="2026-03-27 17:00"
+    )
+    s = snap([a, b, CHAIN[2]], [("A", "B", "FS", 0), ("B", "Z", "FS", 0)])
+    r = run(DCMA, "DCMA-12", s)
+    assert codes(r) == ["B"]
+    assert r.flagged.iloc[0]["absorbed_wd"] == 10
+    assert "B (10 wd)" in r.note
 
 
 def test_critical_path_test_reads_the_proportion_in_calendar_days_across_calendars():
@@ -786,6 +919,18 @@ def test_critical_path_test_delays_the_lowest_activity_id_among_the_tasks_starti
 
 
 @pytest.mark.oracle("standard")
+def test_critical_path_test_never_delays_a_start_milestone():
+    """A start milestone heads the longest path and starts on Mon 2 with B, the first task after it. It has
+    the lowest Activity ID, but a milestone has no duration to stretch: the first open task, B, is the one
+    delayed."""
+    from xerscope.analysis.cpm import critical_path_test
+
+    tasks = [todo("A0", **SM), todo("B", **hours(40)), todo("Z", **FM)]
+    r = critical_path_test(snap(tasks, [("A0", "B", "FS", 0), ("B", "Z", "FS", 0)]), 600)
+    assert (r.delayed, r.passed) == ("B", True)
+
+
+@pytest.mark.oracle("standard")
 def test_critical_path_test_does_not_take_a_level_of_effort_for_the_finish():
     """L (level of effort, no successor) spans A to B and ends with the project; Z, the finish milestone,
     holds a Mandatory Finish. +600 wd on A stretch L with B, but Z does not move: the delay did not reach
@@ -851,6 +996,19 @@ def test_cpli_reads_the_least_float_among_the_tasks_ending_last_together():
         assert r.status == "n/a" and "total float missing on Y" in r.note
 
 
+@pytest.mark.oracle("standard")
+def test_cpli_ignores_a_level_of_effort_task_ending_last():
+    """finish_driver (populations.py): 'the open, non-LOE task with the latest forecast finish'. L is a level of
+    effort ending at the same instant as Z with a smaller float: CPL 20 wd, Z's float -16 h = -2 d gives
+    (20 - 2) / 20 = 0.9; reading L's -80 h = -10 d would give 0.5."""
+    links = [("A", "B", "FS", 0), ("B", "Z", "FS", 0), ("A", "L", "SS", 0)]
+    behind = dict(CHAIN[2], total_float_hr_cnt="-16")
+    effort = dict(CHAIN[2], task_code="L", task_type="TT_LOE", total_float_hr_cnt="-80")
+    for last_two in ([behind, effort], [effort, behind]):
+        r = run(DCMA, "DCMA-13", snap(CHAIN[:2] + last_two, links, **MFB))
+        assert r.value == pytest.approx((20 - 2) / 20) and "to Z" in r.note and "to L" not in r.note
+
+
 def test_cpli_is_na_without_must_finish_by_or_baseline():
     """Without a Must Finish By, P6 gives the last activity 0 float (1.0 whatever the schedule); without a
     baseline there is no finish for the margin either: n/a. With a baseline, see the tests below."""
@@ -903,6 +1061,20 @@ def test_cpli_without_must_finish_by_is_below_one_when_the_end_is_after_its_base
     assert r.value == pytest.approx(0.9) and r.status == "fail"
 
 
+@pytest.mark.oracle("standard")
+def test_cpli_is_not_computed_when_the_status_date_is_on_the_finish():
+    """CPL = working days from the status date (Mon 2 Mar 08:00) to the finish: nothing is left to measure
+    when the finish is that very instant, and the quotient (CPL + TF) / CPL has no value (n/a), where one
+    working day later, Mon 2 Mar 17:00, the CPL is 1 wd and, with a baseline finish on the same day,
+    TF = 0: (1 + 0) / 1."""
+    on_status_date = _cpli([_end(finish="2026-03-02 08:00")], [], {"Z": "2026-03-02 08:00"})
+    assert on_status_date.value is None
+    assert on_status_date.note == "critical path length is 0"
+    one_day = _cpli([_end(finish="2026-03-02 17:00")], [], {"Z": "2026-03-02 17:00"})
+    assert one_day.value == pytest.approx(1.0)
+    assert "CPL 1 wd to Z" in one_day.note
+
+
 def test_cpli_takes_the_end_milestone_that_finishes_last():
     """Z1 ends Fri 27 Mar, Z2 (after B, 8 h) Mon 30 Mar: CPL 21 wd to Z2, baseline Wed 1 Apr = +2 wd,
     (21 + 2) / 21; Z1 (+2 wd on 20) would give 1.1."""
@@ -911,6 +1083,22 @@ def test_cpli_takes_the_end_milestone_that_finishes_last():
     preds = [("A", "Z1", "FS", 0), ("A", "B", "FS", 0), ("B", "Z2", "FS", 0)]
     r = _cpli(tasks, preds, {"Z1": "2026-03-31 17:00", "Z2": "2026-04-01 17:00"})
     assert r.value == pytest.approx(23 / 21) and "margin of Z2" in r.note
+
+
+@pytest.mark.oracle("standard")
+def test_cpli_measures_only_an_open_finish_milestone():
+    """PAM 200.1 §3.1.2.3: the end is a finish milestone still to come. Z2 (open TT_FinMile, ends Mon 30
+    Mar, baseline Wed 1 Apr) stays the end though other activities finish after it and have a baseline
+    finish: S, a start milestone (Fri 3 Apr, baseline Fri 10 Apr), and Zd, a completed finish milestone
+    (Fri 3 Apr, baseline Fri 10 Apr). CPL 21 wd to Z2, margin +2 wd: (21 + 2) / 21."""
+    b = dict(todo("B", **hours(8)), early_end_date="2026-03-30 17:00")
+    start_milestone = dict(todo("S"), **SM, early_end_date="2026-04-03 17:00")
+    finished_end = done("Zd", **FM, act_end_date="2026-04-03 17:00", early_end_date="2026-04-03 17:00")
+    tasks = [A160, b, _end("Z2", "2026-03-30 17:00"), start_milestone, finished_end]
+    preds = [("A", "B", "FS", 0), ("B", "Z2", "FS", 0)]
+    r = _cpli(tasks, preds, {"Z2": "2026-04-01 17:00", "S": "2026-04-10 17:00", "Zd": "2026-04-10 17:00"})
+    assert r.value == pytest.approx(23 / 21)
+    assert "CPL 21 wd to Z2" in r.note and "margin of Z2 to its BL finish 2026-04-01: 2 wd" in r.note
 
 
 def test_cpli_without_must_finish_by_reads_the_stored_finish_as_the_must_finish_by_branch_does():
@@ -1027,6 +1215,40 @@ def test_recalculated_flags_stale_dates():
     assert "total_float_hr_cnt: 40 -> 0.0" in r.flagged.iloc[0]["differences"]
 
 
+@pytest.mark.oracle("characterization")
+def test_recalculated_ignores_a_stored_free_float_that_differs():
+    """INT-01 compares the stored early and late dates and total float, not free float (integrity.py STORED_FIELDS).
+    B starts Tue 2026-03-03 08:00, the next working period after A's early finish Mon 17:00, so A's free float is
+    0 h: the stored 40 h differs, and every compared field of A and B matches."""
+    s = snap(
+        [
+            todo(
+                "A",
+                early_end_date="2026-03-02 17:00",
+                late_start_date="2026-03-02 08:00",
+                late_end_date="2026-03-02 17:00",
+                target_drtn_hr_cnt="8",
+                remain_drtn_hr_cnt="8",
+                total_float_hr_cnt="0",
+                free_float_hr_cnt="40",
+            ),
+            todo(
+                "B",
+                early_start_date="2026-03-03 08:00",
+                early_end_date="2026-03-03 17:00",
+                late_start_date="2026-03-03 08:00",
+                late_end_date="2026-03-03 17:00",
+                target_drtn_hr_cnt="8",
+                remain_drtn_hr_cnt="8",
+                total_float_hr_cnt="0",
+            ),
+        ],
+        [("A", "B", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-01", s)
+    assert codes(r) == [] and r.status == "pass"
+
+
 def test_recalculated_note_gives_the_latest_early_finish_and_external_dates():
     """Scheduling Results 'Latest Early Finish Date': stored (latest activity finish) against recalculated."""
     s = snap(
@@ -1111,6 +1333,31 @@ def test_log_lists_activities_without_predecessors_or_successors_unfiltered():
     assert codes(run(P6, "P6-01", s)) == ["B", "M", "S"]
 
 
+@pytest.mark.oracle("standard")
+def test_log_counts_a_link_to_another_project_as_a_predecessor_or_a_successor():
+    """INT-05 (integrity.py docstring): 'a relationship to another project counts'. Each external link answers
+    only its own end."""
+    # A: external predecessor X9 and successor B, flagged by nothing; B: predecessor A, no successor -> 1 / 2
+    r = run(INTEGRITY, "INT-05", snap([todo("A"), todo("B")], [("A", "B", "FS", 0), ("X9", "A", "FS", 0, "2")]))
+    reasons = dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True))
+    assert reasons == {"B": "no successor"} and counts(r) == (1, 2)
+    # B drives Y1, a task of project 2 (a TASKPRED row of project 2): B has an external successor; A has no predecessor
+    text = with_second_project(
+        xer_text([todo("A"), todo("B")], [("A", "B", "FS", 0)]), "P2", ["Y1"], "2026-03-02 08:00"
+    )
+    lines = text.splitlines()
+    at = lines.index("%T\tTASKPRED")
+    header = lines[at + 1].split("\t")[1:]
+    row = dict.fromkeys(header, "")
+    row.update(task_pred_id="99", task_id="100", pred_task_id=snap([todo("A"), todo("B")]).by_code.at["B", "task_id"])
+    row.update(proj_id="2", pred_proj_id="1", pred_type="PR_FS", lag_hr_cnt="0")
+    lines.insert(at + 2, "%R\t" + "\t".join(row[column] for column in header))
+    with_successor = build_snapshot(parse_text("\n".join(lines) + "\n", source="t.xer"), "T")
+    r = run(INTEGRITY, "INT-05", with_successor)
+    reasons = dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True))
+    assert reasons == {"A": "no predecessor"} and counts(r) == (1, 2)
+
+
 def test_log_lists_every_actual_date_after_the_data_date():
     """P6 log warning: 'The activities in which the data date is before the actual date'; no exclusion.
 
@@ -1145,6 +1392,43 @@ def test_unsatisfied_constraint_is_a_constraint_the_recalculated_date_misses():
     r = run(INTEGRITY, "INT-07", s)
     assert codes(r) == ["B"] and counts(r) == (1, 3) and r.status == "info"
     assert r.flagged.iloc[0]["unsatisfied"].startswith("Start on or before 2026-03-02 08:00: early start 2026-03-03")
+
+
+@pytest.mark.oracle("standard")
+def test_unsatisfied_constraint_reads_the_secondary_constraint_too():
+    """INT-07 reads the primary and the secondary constraint (cstr_type2, cstr_date2). B follows A (8 h each, FS), so
+    its early finish is Tue 2026-03-03 17:00: its secondary Finish on or before Mon 17:00 is missed, its primary
+    Start on or after Mon 08:00 is met. F has only a met secondary constraint. G has both missed (start and finish)."""
+    s = snap(
+        [
+            todo("A", **hours(8)),
+            todo(
+                "B",
+                cstr_type="CS_MSOA",
+                cstr_date="2026-03-02 08:00",
+                cstr_type2="CS_MEOB",
+                cstr_date2="2026-03-02 17:00",
+                **hours(8),
+            ),
+            todo("F", cstr_type2="CS_MSOB", cstr_date2="2026-03-10 08:00", **hours(8)),
+            todo(
+                "G",
+                cstr_type="CS_MSOB",
+                cstr_date="2026-03-02 08:00",
+                cstr_type2="CS_MEOB",
+                cstr_date2="2026-03-02 17:00",
+                **hours(8),
+            ),
+        ],
+        [("A", "B", "FS", 0), ("A", "G", "FS", 0)],
+    )
+    r = run(INTEGRITY, "INT-07", s)
+    assert codes(r) == ["B", "G"] and counts(r) == (2, 3)
+    texts = dict(zip(r.flagged["task_code"], r.flagged["unsatisfied"], strict=True))
+    assert "Finish on or before 2026-03-02 17:00: early finish 2026-03-03" in texts["B"]
+    assert "Start on or before" not in texts["B"]
+    assert texts["G"].startswith("Start on or before 2026-03-02 08:00: early start 2026-03-03")
+    assert "; Finish on or before 2026-03-02 17:00: early finish 2026-03-03" in texts["G"]
 
 
 def test_a_constraint_met_in_working_time_is_satisfied():
@@ -1184,6 +1468,30 @@ def test_unsatisfied_relationship_is_a_link_the_successor_dates_break():
         r.flagged.iloc[0]["reason"]
         == "successor start 2026-03-02 08:00:00 before predecessor finish 2026-03-13 17:00:00"
     )
+
+
+@pytest.mark.oracle("standard")
+def test_unsatisfied_relationship_reads_a_start_to_finish_link_against_the_predecessor_start():
+    """SF: the successor must not finish before the predecessor starts (integrity.py docstring, P6 log exception
+    'Tasks with unsatisfied relationships'). A (8 h) has a Mandatory start Mon 2026-03-16 08:00, so it starts 08:00
+    and finishes 17:00. B1 has a Mandatory finish Mon 2026-03-02 17:00, two weeks before A starts: broken.
+    B2 finishes Mon 2026-03-16 12:00, after A's start but before A's finish: not broken, which separates the
+    comparison against the predecessor start from one against its finish."""
+    a = todo("A", cstr_type="CS_MANDSTART", cstr_date="2026-03-16 08:00", **hours(8))
+    broken = snap(
+        [a, todo("B1", cstr_type="CS_MANDFIN", cstr_date="2026-03-02 17:00", **hours(8))], [("A", "B1", "SF", 0)]
+    )
+    r = run(INTEGRITY, "INT-08", broken)
+    assert links(r) == [("A", "B1")] and counts(r) == (1, 1)
+    assert (
+        r.flagged.iloc[0]["reason"]
+        == "successor finish 2026-03-02 17:00:00 before predecessor start 2026-03-16 08:00:00"
+    )
+    met = snap(
+        [a, todo("B2", cstr_type="CS_MANDFIN", cstr_date="2026-03-16 12:00", **hours(8))], [("A", "B2", "SF", 0)]
+    )
+    r = run(INTEGRITY, "INT-08", met)
+    assert links(r) == [] and counts(r) == (0, 1)
 
 
 def test_late_activities_use_working_time():
@@ -1295,6 +1603,32 @@ def test_decm_dangling_logic():
     assert r.denominator == 6 and r.status == "fail"
 
 
+@pytest.mark.oracle("standard")
+def test_decm_06a209a_flags_mandatory_constraints_on_either_slot_of_incomplete_tasks():
+    """06A209a: X/Y = 0 %, hard constraints = Mandatory Start, Mandatory Finish, on incomplete tasks.
+    A: mandatory start; B: mandatory finish as the secondary constraint; C: a soft constraint;
+    D: complete (out of the population); E: started, mandatory start (a started task still counts).
+    Flagged A, B, E: 3 of the 4 incomplete tasks (A, B, C, E)."""
+    s = snap(
+        [
+            todo("A", cstr_type="CS_MANDSTART", cstr_date="2026-03-04 08:00"),
+            todo(
+                "B",
+                cstr_type="CS_MSOA",
+                cstr_date="2026-03-04 08:00",
+                cstr_type2="CS_MANDFIN",
+                cstr_date2="2026-03-09 17:00",
+            ),
+            todo("C", cstr_type="CS_MSOA", cstr_date="2026-03-04 08:00"),
+            done("D", cstr_type="CS_MANDFIN", cstr_date="2026-02-13 17:00"),
+            active("E", cstr_type="CS_MANDSTART", cstr_date="2026-02-23 08:00"),
+        ]
+    )
+    r = run(DECM, "06A209a", s)
+    assert codes(r) == ["A", "B", "E"]
+    assert (r.numerator, r.denominator) == (3, 4)
+
+
 def test_decm_lags_summary_logic_and_loe():
     assert codes(run(DECM, "06A205a", D_NOW)) == ["Z"]  # E -> Z has an 8 h lag
     s = snap(
@@ -1374,6 +1708,18 @@ def test_decm_baseline_and_actual_dates():
     r = run(DECM, "06A501a", now, bl)
     assert codes(r) == ["F", "NEW", "P"] and "2 of 5 tasks" in r.note
     assert codes(run(DECM, "06A505a", now)) == ["P"]
+    # Progress is "% complete > 0, or status in progress": P shows it by percent only, S by status only
+    # (TK_Active, 0 %, no actual start), Q by both with its actual start; Z, not started at 0 %, shows none.
+    shows = snap(
+        [
+            todo("P", phys_complete_pct="50", complete_pct_type="CP_Phys"),
+            todo("S", status_code="TK_Active", target_drtn_hr_cnt="40", remain_drtn_hr_cnt="40"),
+            active("Q", target_drtn_hr_cnt="40"),
+            todo("Z"),
+        ]
+    )
+    r = run(DECM, "06A505a", shows)
+    assert (codes(r), r.denominator) == (["P", "S"], 3)
     r = run(DECM, "06A506a", now)
     assert codes(r) == ["F"] and r.denominator == 1  # of the activities with an actual start
 
@@ -1423,17 +1769,29 @@ def test_decm_riding_the_status_date():
     from xerscope.store import SnapshotStore
 
     # R's forecast start is the data date in both updates, a month apart: it rides.
-    m1 = snap([todo("R", early_start_date="2026-03-02 08:00"), todo("OK", early_start_date="2026-03-02 08:00")])
+    # NOW rides only in the current update (start 2026-03-30 is 20 wd after the first data date 2026-03-02,
+    # outside the 3 wd window; 2026-04-06 is the second data date): "in both updates" leaves it out.
+    # GONE is the mirror: it rode in the first update and starts 2026-05-04, 20 wd after the second.
+    m1 = snap(
+        [
+            todo("R", early_start_date="2026-03-02 08:00"),
+            todo("OK", early_start_date="2026-03-02 08:00"),
+            todo("NOW", early_start_date="2026-03-30 08:00"),
+            todo("GONE", early_start_date="2026-03-02 08:00"),
+        ]
+    )
     m2 = snap(
         [
             todo("R", early_start_date="2026-04-06 08:00"),
             active("OK", act_start_date="2026-03-02 08:00", remain_drtn_hr_cnt="16"),
+            todo("NOW", early_start_date="2026-04-06 08:00"),
+            todo("GONE", early_start_date="2026-05-04 08:00"),
         ],
         data_date="2026-04-06 08:00",
     )
     store = SnapshotStore([m1, m2])
     r = run_metric(DECM["06A506c"], AnalysisContext(store[1], store))
-    assert codes(r) == ["R"] and r.denominator == 2
+    assert codes(r) == ["R"] and r.denominator == 4
 
 
 def test_decm_riding_the_status_date_takes_the_status_period_as_a_parameter():
@@ -1843,7 +2201,8 @@ def test_dcma_11_missed_is_date_after_or_working_variance_above_zero():
     # SAT: date after, 0 h of working time; SAMEDAY: same date, 12:00 -> 17:00 = 4 working hours on the
     # fixture's calendar (12:00-13:00 is a break); MON: both; ONTIME: neither.
     assert (codes(r), r.denominator) == (["MON", "SAMEDAY", "SAT"], 4)
-    assert set(r.flagged["reason"]) == {"date after baseline finish", "finish variance 4 h", "both"}
+    reason_by_task = dict(zip(r.flagged["task_code"], r.flagged["reason"], strict=True))
+    assert reason_by_task == {"SAT": "date after baseline finish", "SAMEDAY": "finish variance 4 h", "MON": "both"}
 
 
 def test_cpli_without_must_finish_by_measures_cpl_and_float_on_the_same_milestone():
@@ -2177,3 +2536,29 @@ def test_cpli_names_the_baseline_its_margin_was_taken_from():
     r = _cpli([A160, _end()], [("A", "Z", "FS", 0)], {"Z": "2026-03-31 17:00"})
     assert r.baseline.startswith("BL ")
     assert run(DCMA, "DCMA-13", snap([A160, _end()], [("A", "Z", "FS", 0)])).baseline == "none"
+
+
+@pytest.mark.oracle("characterization")
+def test_custom_duration_rule_on_baseline_durations_names_the_baseline_it_reads():
+    """The generic ``duration`` rule with field="baseline" reads the baseline's durations without being
+    ``needs_baseline`` nor one of ``BASELINE_READERS``: ``checks.uses_baseline`` must still say so, or the
+    result carries no baseline in its note and no "against" name. field="original" does not read it."""
+    import dataclasses
+
+    from xerscope.analysis.checks import uses_baseline
+
+    on_baseline = dataclasses.replace(DCMA["DCMA-08"], rule="duration", params={"field": "baseline"})
+    on_original = dataclasses.replace(on_baseline, params={"field": "original"})
+    assert uses_baseline(on_baseline) is True
+    assert uses_baseline(on_original) is False
+
+    current = snap([todo("A")])
+    without = run_metric(on_baseline, AnalysisContext(current))
+    assert (without.baseline, without.against) == ("none", "none")
+
+    with_baseline = run_metric(
+        on_baseline, AnalysisContext(current, baseline=Baseline.from_snapshot(snap([todo("A")])))
+    )
+    assert with_baseline.baseline.startswith("BL ")
+    assert with_baseline.against != ""
+    assert "baseline: BL " in with_baseline.note_with_baseline
