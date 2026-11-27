@@ -17,6 +17,15 @@ NARRATIVE = {
     "INT-04": {"tasks downstream of a loop", "level of effort (its links are not part of the network)"},
     "INT-07": {"start constraints of started tasks"},
 }
+# Excludes items of a docstring stated in the rule's own words, each with the funnel step that applies it
+RULE_WORDED = {
+    "INT-08": {
+        "level of effort": "no level-of-effort end",
+        "relationships to other projects": "between recalculated tasks",
+        "relationships whose successor end is an actual date": "end not an actual date",
+        "relationships with a lead (negative lag)": "no lead",
+    },
+}
 LABEL_TO_KEY = {exclusion.label: key for key, exclusion in EXCLUSIONS.items()}
 
 
@@ -73,6 +82,12 @@ def test_docstring_exclusions_are_the_funnel_steps(results):
         assert len(unmatched_in_docstring) <= len(rule_worded_steps), (
             f"{metric_id}: docstring says more than the funnel: {unmatched_in_docstring} vs {rule_worded_steps}"
         )
+        # each such item is paired with its own step: a dropped step cannot hide behind an unrelated one
+        paired = RULE_WORDED.get(metric_id, {})
+        assert unmatched_in_docstring == set(paired), (
+            f"{metric_id}: {sorted(unmatched_in_docstring)} vs {sorted(paired)}"
+        )
+        assert set(paired.values()) <= set(step_labels), f"{metric_id}: no step {sorted(paired.values())}"
 
 
 def test_docs_targets_match_the_toml(results):

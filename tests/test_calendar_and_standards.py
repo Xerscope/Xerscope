@@ -3,10 +3,11 @@ from datetime import date
 
 import pandas as pd
 import pytest
-from xerkit import CALENDAR_IDS, MON_FRI_8H, clndr_data, snap, todo
+from xerkit import CALENDAR_IDS, MON_FRI_8H, clndr_data, snap, todo, xer_text
 from xerkit import hours as duration
 
 from xerscope.analysis import builtin_standards, loads_standard, template_text
+from xerscope.xer import build_snapshot, parse_text
 from xerscope.xer.calendar import LIMIT_MARK, WorkCalendar, parse_clndr_data
 
 # --- calendars ------------------------------------------------------------------------------
@@ -61,11 +62,34 @@ def test_work_hours_are_exact_within_days():
     assert cal.work_hours(pd.Timestamp("2026-04-02 17:00"), pd.Timestamp("2026-04-06 08:00")) == 0  # Good Friday
 
 
+@pytest.mark.oracle("characterization")
+def test_working_days_of_a_fractional_day_length_are_whole_when_the_hours_are_a_whole_number_of_days():
+    """hours_to_days (calendar.py): 3 days of 8.2 h are 24.6 h, and 24.6 / 8.2 is 3.0000000000000004 in
+    binary floating point; the days are rounded so that 3 days count as exactly 3, not more."""
+    cal = WorkCalendar.from_row(pd.Series({"clndr_id": "C", "day_hr_cnt": "8.2", "clndr_data": MON_FRI_8H}))
+    mon8, thu8_36 = pd.Timestamp("2026-03-02 08:00"), pd.Timestamp("2026-03-05 08:36")
+    assert cal.work_hours(mon8, thu8_36) == 24.6  # Mon, Tue, Wed 8 h each + 36 min of Thursday
+    assert 24.6 / 8.2 != 3  # the plain division is the trap
+    assert cal.working_days(mon8, thu8_36) == 3
+    assert cal.working_days(thu8_36, mon8) == -3
+
+
 def test_missing_blob_infers_workweek_from_hour_counts():
     seven = WorkCalendar.from_row(pd.Series({"clndr_id": "7", "day_hr_cnt": "8", "week_hr_cnt": "56"}))
     assert [hours(day) for day in seven.week] == [8] * 7
     five = WorkCalendar.from_row(pd.Series({"clndr_id": "5", "day_hr_cnt": "10", "week_hr_cnt": ""}))
     assert [hours(day) for day in five.week] == [10] * 5 + [0, 0]
+
+
+@pytest.mark.oracle("characterization")
+@pytest.mark.parametrize(
+    ("week_hr_cnt", "working_days"),
+    [("37.5", 5), ("33", 4)],  # 37.5 / 8 = 4.6875 rounds up to 5; 33 / 8 = 4.125 rounds down to 4
+)
+def test_inferred_workweek_rounds_the_week_hours_to_the_nearest_day(week_hr_cnt, working_days):
+    """calendar.py from_row: n = round(week_hr_cnt / day_hr_cnt), a whole number of days between 1 and 7."""
+    cal = WorkCalendar.from_row(pd.Series({"clndr_id": "R", "day_hr_cnt": "8", "week_hr_cnt": week_hr_cnt}))
+    assert [hours(day) for day in cal.week] == [8] * working_days + [0] * (7 - working_days)
 
 
 def test_a_blob_without_a_working_weekday_keeps_its_exceptions():
@@ -94,6 +118,20 @@ def test_unknown_task_calendar_falls_back_to_the_project_calendar():
     assert snapshot.calendar("999").hours_per_day == 10.0  # the project's calendar, not 8 h
     assert tasks.at["A", "hours_per_day"] == 10.0
     assert tasks.at["A", "original_d"] == tasks.at["B", "original_d"]  # same stored duration
+    assert any("999" in warning for warning in snapshot.warnings)
+
+
+@pytest.mark.oracle("characterization")
+def test_unknown_task_and_project_calendars_fall_back_to_the_files_first_calendar():
+    """model.py fallback_hours_per_day: project calendar, then the file's first calendar, then the
+    standard 8 h. Here the project's calendar (777) is not in the file either, and the 8 h calendar is
+    removed so that the first one left is the 10 h calendar."""
+    text = xer_text([{"task_code": "A", "clndr_id": "999"}], project={"clndr_id": "777"})
+    lines = [line for line in text.splitlines() if not line.startswith("%R\t8\tMon-Fri 8h")]
+    assert len(lines) == len(text.splitlines()) - 1
+    snapshot = build_snapshot(parse_text("\n".join(lines), source="test.xer"))
+    assert snapshot.tasks.set_index("task_code").at["A", "hours_per_day"] == 10.0
+    assert snapshot.calendar("999").hours_per_day == 10.0
     assert any("999" in warning for warning in snapshot.warnings)
 
 
