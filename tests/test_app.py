@@ -3176,12 +3176,31 @@ def test_reset_puts_every_setting_of_the_audit_back_and_a_rule_without_parameter
     assert [m.label for m in at.metric if m.label.startswith("Audit")]  # the audited result beside the standard's
     at.button(key=f"{FLOAT}:reset").click().run()
     _ok(at)
-    assert at.selectbox(key=f"{FLOAT}:op").value == ">" and at.text_input(key=f"{FLOAT}:target").value == "<= 10%"
+    assert at.selectbox(key=f"{FLOAT}:op@1").value == ">" and at.text_input(key=f"{FLOAT}:target@1").value == "<= 10%"
     assert not [m.label for m in at.metric if m.label.startswith("Audit")]
     at.get("button_group")[0].set_value("DCMA").run()
     at.selectbox(key="audit_check:DCMA").set_value("DCMA-01").run()  # dcma_01_logic: no parameter
     _ok(at)
     assert [m.value for m in at.markdown if m.value.startswith("##### ")] == ["##### Target"]
+
+
+@pytest.mark.oracle("property")
+def test_reset_gives_the_audit_widgets_new_keys(float_audit):
+    """Reset only dropped the server's copy: the browser kept the typed 40 in the widget and sent it
+    back at the next rerun, so the audit ran again on 40 with the form showing it. A widget under a
+    new key starts from the standard's value in the browser too; the old keys are gone."""
+    at = float_audit
+    at.number_input(key=f"{FLOAT}:value").set_value(40.0).run()
+    for resets in (1, 2):
+        at.button(key=f"{FLOAT}:reset").click().run()
+        _ok(at)
+        assert [n.key for n in at.number_input] == [f"{FLOAT}:value@{resets}"]
+        assert at.number_input(key=f"{FLOAT}:value@{resets}").value == 30.0  # the template's CUS-06
+        assert at.text_input(key=f"{FLOAT}:target@{resets}").value == "<= 10%"
+        assert f"{FLOAT}:value" not in at.session_state
+    at.text_input(key=f"{FLOAT}:target@2").set_value("< 5%").run()
+    assert at.number_input(key=f"{FLOAT}:value@2").value == 30.0
+    assert "Flagged when total float > 30 days." in _settings_in_words(at)
 
 
 def test_charts_hide_the_plotly_mode_bar(app):
@@ -3200,6 +3219,27 @@ def test_health_names_each_group_once_and_offers_one_prepare_button(app):
     assert titles and len(titles) == len(set(titles)), titles
     assert len(titles) == 3, titles  # the three groups of the P6 standard: no check's formula is a heading
     assert [b.label for b in app.button].count("Prepare anonymized downloads") == 1
+
+
+@pytest.mark.oracle("property")
+def test_changelog_from_is_always_older_than_to(app):
+    """From after To read the log backwards ("+15 wd" for a slip, actuals "removed"): From lists
+    only the updates before To, To never the first one, and moving To before From brings From
+    back to the update just before To."""
+    app.switch_page("views/changelog.py").run()
+    labels = list(app.selectbox(key="cl_new").options)
+    newer, older = app.selectbox(key="cl_new"), app.selectbox(key="cl_old")
+    first = older.options[0]
+    assert first not in newer.options and newer.value not in older.options
+    app.selectbox(key="cl_old").set_value(newer.options[-2]).run()  # the update just before the last
+    app.selectbox(key="cl_new").set_value(newer.options[1]).run()  # the third update
+    _ok(app)
+    older = app.selectbox(key="cl_old")
+    assert older.options == [first, labels[0]] and older.value == labels[0], (older.options, older.value)
+    for text in ("Previous", "4 back", "First"):
+        app.button(key=f"cl_from_{text}").click().run()
+        assert app.selectbox(key="cl_old").value in app.selectbox(key="cl_old").options
+    _ok(app)
 
 
 def test_changelog_offset_buttons_are_drawn_as_buttons(app):

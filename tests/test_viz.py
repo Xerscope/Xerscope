@@ -40,15 +40,17 @@ def test_mta_close_end_labels_are_pushed_apart():
     assert shift["M3"] == 0
 
 
-def test_mta_spans_the_project_on_both_axes_with_a_45_degree_reporting_line():
-    """x and y run from the project start to its finish on one scale: the reporting line
-    (forecast = data date) is the diagonal of a square plot."""
+@pytest.mark.oracle("property")
+def test_mta_spans_the_project_on_both_axes_and_fills_the_width():
+    """x and y run from the project start to its finish: the reporting line (forecast = data date)
+    joins the plot's corners. No 1:1 scale: a square plot sat in a third of a wide page and in
+    145 px of a phone's 760 px box."""
     trend = _mta_frame({"M1": ["2026-08-03"] * 3})  # updates 2026-03-02..16
     start, finish = pd.Timestamp("2026-01-05"), pd.Timestamp("2027-06-30")
     fig = build_mta(trend, {}, bounds=(start, finish))
     assert [pd.Timestamp(v) for v in fig.layout.xaxis.range] == [start, finish]
     assert [pd.Timestamp(v) for v in fig.layout.yaxis.range] == [start, finish]
-    assert fig.layout.yaxis.scaleanchor == "x" and fig.layout.yaxis.scaleratio == 1
+    assert fig.layout.yaxis.scaleanchor is None and fig.layout.xaxis.constrain is None
     line = next(t for t in fig.data if t.name and t.name.startswith("Reporting line"))
     assert [pd.Timestamp(v) for v in line.x] == [start, finish] == [pd.Timestamp(v) for v in line.y]
 
@@ -74,28 +76,44 @@ def test_mta_line_breaks_at_a_hidden_update_and_ends_at_its_last_shown_one():
     assert any(pd.Timestamp(a.x) == pd.Timestamp("2026-03-09") and "M2" in a.text for a in fig.layout.annotations)
 
 
-def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_move():
-    lines = {"LATE": ["2026-06-01"] * 3, "EARLY": ["2026-07-01"] * 3, "SAME": ["2026-08-01"] * 3}
-    # the move in the last update: a milestone that went later reads negative
-    fig = build_mta(_mta_frame(lines), {"LATE": -2.0, "EARLY": 1.5, "SAME": 0.0})
+@pytest.mark.oracle("property")
+def test_mta_lines_keep_their_own_colour_and_the_last_point_shows_the_drift_since_the_first():
+    """The colour followed the last update's move alone: a milestone 18 wd later than at the first
+    update, back 7 wd after a jump, read green with a down arrow. Colour and arrow follow the drift
+    since the first update (``milestone_slips.slip_wd``, later = negative); the label adds the
+    last move."""
+    lines = {"DRIFT": ["2026-06-01"] * 3, "AHEAD": ["2026-07-01"] * 3, "SAME": ["2026-08-01"] * 3}
+    total = {"DRIFT": -18.0, "AHEAD": 1.5, "SAME": 0.0}
+    last = {"DRIFT": 7.0, "AHEAD": 1.5, "SAME": 0.0}
+    fig = build_mta(_mta_frame(lines), total, last)
     traces = {t.name.split()[0]: t for t in fig.data if t.name and t.name.split()[0] in lines}
     red, green = STATUS["critical"], STATUS["good"]
     # one series colour per milestone, in order, so lines stay distinguishable
     assert [traces[code].line.color for code in lines] == SERIES[:3]
-    # earlier points in the line colour, the last one red (later) / green (earlier) / unchanged
-    assert list(traces["LATE"].marker.color) == [SERIES[0]] * 2 + [red]
-    assert list(traces["EARLY"].marker.color) == [SERIES[1]] * 2 + [green]
+    # earlier points in the line colour, the last one red (later since the first) / green / unchanged
+    assert list(traces["DRIFT"].marker.color) == [SERIES[0]] * 2 + [red]
+    assert list(traces["AHEAD"].marker.color) == [SERIES[1]] * 2 + [green]
     assert list(traces["SAME"].marker.color) == [SERIES[2]] * 3
-    assert list(traces["LATE"].marker.size) == [9, 9, 13] and list(traces["SAME"].marker.size) == [9, 9, 9]
+    assert list(traces["DRIFT"].marker.size) == [9, 9, 13] and list(traces["SAME"].marker.size) == [9, 9, 9]
     texts = sorted(a.text for a in fig.layout.annotations)
     # the arrow carries the colour; the text keeps the theme's, so it follows a theme switch
     assert texts == sorted(
         [
             "SAME",
-            f'<span style="color:{red}">▲</span> LATE (-2.0 wd)',
-            f'<span style="color:{green}">▼</span> EARLY (+1.5 wd)',
+            f'<span style="color:{red}">▲</span> DRIFT (-18.0 wd · last +7.0)',
+            f'<span style="color:{green}">▼</span> AHEAD (+1.5 wd · last +1.5)',
         ]
     )
+
+
+@pytest.mark.oracle("property")
+def test_mta_label_without_a_last_move_shows_the_drift_alone():
+    """A milestone deleted from the latest update has no last move (``last_week_wd`` blank)."""
+    fig = build_mta(_mta_frame({"M1": ["2026-06-01"] * 3}), {"M1": -3.0}, {"M1": float("nan")})
+    red = STATUS["critical"]
+    assert [a.text for a in fig.layout.annotations if "M1" in a.text] == [
+        f'<span style="color:{red}">▲</span> M1 (-3.0 wd)'
+    ]
 
 
 def test_mta_colour_follows_pick_order_even_with_a_line_missing():
@@ -446,6 +464,18 @@ def test_scurve_marks_the_schedule_variance_at_the_data_date():
     mark = next(t for t in behind.data if t.name == "SV (EV − PV)")
     assert mark.line.color == STATUS["critical"] and list(mark.y) == [20.0, 15.0]  # % of BAC
     assert any(a.text == "SV -5.0 % of BAC" for a in behind.layout.annotations)
+
+
+@pytest.mark.oracle("property")
+def test_scurve_hover_never_shows_the_schedule_variance_mark():
+    """The SV mark spans PV to EV at one x: under the pointer it would read "SV (EV − PV): 231"
+    (its EV end), not SV = +31. SV is read in the EV point's hover instead; the mark has none."""
+    curve = pd.DataFrame({"date": pd.date_range("2026-03-01", periods=30), "pv_cum_hr": range(0, 300, 10)})
+    series = _ev_series(pv=200.0, ev=231.0)
+    for percent in (False, True):
+        fig = build_scurve(curve, series, None, series["data_date"].iloc[-1], percent=percent)
+        mark = next(t for t in fig.data if t.name == "SV (EV − PV)")
+        assert mark.hoverinfo == "skip" and mark.hovertemplate is None
 
 
 def test_finish_trend_of_one_update_keeps_a_span_of_days_on_both_axes():
