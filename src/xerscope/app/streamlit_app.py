@@ -34,6 +34,7 @@ def main() -> None:
             "Schedule": [
                 st.Page(VIEWS / "overview.py", title="Overview", icon=":material/dashboard:", default=True),
                 st.Page(VIEWS / "gantt.py", title="Gantt & WBS", icon=":material/view_timeline:"),
+                st.Page(VIEWS / "tasks.py", title="Tasks", icon=":material/list_alt:"),
             ],
             "Analysis": [
                 st.Page(VIEWS / "health.py", title="Schedule health", icon=":material/fact_check:"),

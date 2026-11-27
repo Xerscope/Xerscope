@@ -336,8 +336,9 @@ finishes that absorbed the delay (`_what_stops_the_delay`).
 
 Units: labour hours, and cost for the rows marked cost. Baseline = a designated XER (`Baseline.from_snapshot`), the project the file names
 as its P6 Project Baseline (`PROJECT.sum_base_proj_id` of the analysed project, built as a snapshot and
-passed to `Baseline.from_snapshot`, so `bl_start` / `bl_finish` = its actual > remaining > early dates, P6's
-BL Project Start / Finish; used only when that project is in the file, has activities, and its
+passed to `Baseline.from_snapshot`, so `bl_start` / `bl_finish` = P6's BL Project Start / Finish: its planned dates
+(`target_*`) with "Budgeted values with planned dates", its actual > remaining > early dates with the two
+"current dates" options (the window's "Earned value basis"; sources in docs/standards.md, P6 Check Schedule); used only when that project is in the file, has activities, and its
 `orig_proj_id`, if filled, is the analysed project: `Snapshot.file_baseline`, `baseline_in_file`; Oracle P6
 EPPM XER Import/Export Data Map, table PROJECT, v23; v26 unverified) or the snapshot's own `target_*` dates
 (`Baseline.planned`), matched by `task_code` (first row per code kept). The app records how each update's

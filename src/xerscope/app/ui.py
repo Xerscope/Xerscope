@@ -221,6 +221,30 @@ COLUMNS: dict[str, tuple[str, str, str]] = {
             "(docs/formulas.md §1.3)."
         ),
     ),
+    "on_longest_path": (
+        "On longest path",
+        "bool",
+        "P6's Longest Path column (TASK.driving_path_flag), as P6 stored it when it scheduled the update.",
+    ),
+    "driving_link": (
+        "Driving",
+        "bool",
+        (
+            "P6's Driving checkbox of the Relationships tab: the link sets its successor's early date. P6 does "
+            "not export it in the XER (TASKPRED has no such field), so it is recalculated by xerscope's CPM "
+            "(`cpm.Schedule.links`); blank when the update cannot be scheduled and on a level-of-effort's "
+            "links, which place the LOE. Checked against P6's own relationship date (TASKPRED.aref) on "
+            "every reference export (docs/cpm.md)."
+        ),
+    ),
+    "primary": ("Primary constraint", "text", "TASK.cstr_type and cstr_date, under P6's name."),
+    "level": (
+        "Level",
+        "",
+        "How many links away from the task shown: 1 for its direct predecessors and successors, 2 for theirs, "
+        "and so on (the nearest in any update). Blank on a task opened.",
+    ),
+    "secondary": ("Secondary constraint", "text", "TASK.cstr_type2 and cstr_date2, under P6's name."),
     "is_critical": (
         "Critical",
         "bool",
@@ -876,6 +900,7 @@ def table(
     status: str | None = None,
     raw_labels: bool = False,
     open_task: Callable[[str], None] | None = None,
+    pick_task: Callable[[str], None] | None = None,
     reading: str | None = None,
     empty: str | None = None,
     **kwargs,
@@ -886,7 +911,9 @@ def table(
     column names as headers (see ``column_config``). A table longer than
     ``Settings.table_filter_min_rows`` gets column filters, kept under ``key``, the table's own name on its page.
     ``open_task`` (state.open_in_gantt) makes the rows selectable: a selected row's Task ID gets a
-    button that opens the Gantt on it. ``reading``, a READINGS key, puts a "How to read" popover above the table.
+    button that opens the Gantt on it. ``pick_task`` makes them selectable too: selecting a row hands its
+    Task ID to ``pick_task`` at once, with no button (a page's own pick). ``reading``, a READINGS key,
+    puts a "How to read" popover above the table.
     ``empty``, the page's sentence on what was looked for and why nothing came out, is shown in place of the grid
     when ``frame`` has no row: an empty grid is only a header.
     """
@@ -905,6 +932,8 @@ def table(
     linked = open_task is not None and "task_code" in frame.columns and not frame.empty
     if linked:
         kwargs.update(on_select="rerun", selection_mode="single-row")
+    elif pick_task is not None and "task_code" in frame.columns and not frame.empty:
+        kwargs.update(on_select=_picked_row(frame, key, pick_task), selection_mode="single-row")
     data = status_style(frame, status) if status else frame
     event = st.dataframe(data, column_config=config, key=key, **kwargs)
     if open_task is not None and linked:
@@ -923,6 +952,21 @@ def caption_why_empty(frame: pd.DataFrame, reason: str) -> None:
     """Under a grid kept although it has no row, because its header is the information: ``reason`` it is empty."""
     if frame.empty:
         st.caption(reason)
+
+
+def _picked_row(frame: pd.DataFrame, table_key: str, pick_task: Callable[[str], None]) -> Callable[[], None]:
+    """The callback of a selectable table: hands the Task ID of the row just selected to ``pick_task``.
+
+    It runs when the selection changes, before the page is drawn again; ``frame`` is the table as it was
+    shown (its filters applied), so a row number names the row the viewer clicked.
+    """
+
+    def picked() -> None:
+        rows = st.session_state[table_key].selection.rows
+        if rows:
+            pick_task(str(frame.iloc[rows[0]]["task_code"]))
+
+    return picked
 
 
 def _open_in_gantt_button(event, frame: pd.DataFrame, table_key: str, open_task: Callable[[str], None]) -> None:

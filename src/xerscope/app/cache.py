@@ -17,13 +17,13 @@ from xerscope.xer import Snapshot
 MEMO_SIZE = 128  # entries per session; a standard holds at most 18 metrics, each its own entry
 
 
-def memo(key: tuple, function, *arguments, keep: bool = True, baseline: bool = True, ev_basis: bool = True):
+def memo(key: tuple, function, *arguments, keep: bool = True, baseline: bool = True):
     """Return the value cached per session, keyed on the loaded files and the baseline.
 
     Heavy analyses run once per data set.
 
-    The full key: ``data_identity`` (files, projects, and the baseline and EV basis unless the
-    analysis reads neither: ``baseline`` / ``ev_basis`` False), then ``key``, which names the
+    The full key: ``data_identity`` (files, projects, and the baseline with its EV basis unless the
+    analysis reads no baseline: ``baseline`` False), then ``key``, which names the
     analysis and everything else it reads. ``function(*arguments)`` runs only on a cache miss;
     ``keep=False`` then returns the value without storing it (a series over every update that
     should not hold each update's frames). The cache lives in the session's state, never
@@ -31,7 +31,7 @@ def memo(key: tuple, function, *arguments, keep: bool = True, baseline: bool = T
     it returns: the next reader gets the same object.
     """
     cache = st.session_state.setdefault("_memo", {})
-    full_key = data_identity(baseline, ev_basis) + key
+    full_key = data_identity(baseline) + key
     if full_key in cache:
         cache[full_key] = cache.pop(full_key)  # most recently used last
         return cache[full_key]
@@ -48,14 +48,14 @@ def metric_result(metric: Metric, snapshot: Snapshot, store: SnapshotStore, keep
 
     ``baseline_for_checks``: the one assigned in the update's file when it holds one, else the sidebar's.
     Health, Audit and the BEI of Earned value read the same entry. Key (with ``memo``'s): the metric as
-    written (rule, parameters, target, standard: its repr) and the update (file, data date). Not the EV
-    basis: no rule reads what it sets (the ev_* columns, the assignment costs).
+    written (rule, parameters, target, standard: its repr) and the update (file, data date). The EV
+    basis is in ``memo``'s key: it sets the dates of a separate baseline (``Baseline.from_snapshot``).
     """
 
     def computed() -> CheckResult:  # built on a miss only
         return run_metric(metric, AnalysisContext(snapshot, store, baseline_for_checks(snapshot)))
 
-    return memo(_metric_key(metric, snapshot), computed, keep=keep, ev_basis=False)
+    return memo(_metric_key(metric, snapshot), computed, keep=keep)
 
 
 def _metric_key(metric: Metric, snapshot: Snapshot) -> tuple:
@@ -71,7 +71,7 @@ def standard_results(standard: Standard, snapshot: Snapshot, store: SnapshotStor
 def hold_standard_results(standard: Standard, snapshot: Snapshot, results: list[CheckResult]) -> None:
     """Store the results computed outside the script run (ScoreJob) where ``metric_result`` reads."""
     for metric, result in zip(standard.metrics, results, strict=True):
-        memo(_metric_key(metric, snapshot), lambda result=result: result, ev_basis=False)
+        memo(_metric_key(metric, snapshot), lambda result=result: result)
 
 
 @dataclass
@@ -114,7 +114,7 @@ def _score_identity(snapshot: Snapshot, standards_: dict[str, Standard]) -> tupl
     uploaded again under the same id with another threshold is another standard, and starts another job.
     """
     standards_as_written = tuple((key, repr(standard)) for key, standard in standards_.items())
-    return (*data_identity(ev_basis=False), snapshot.source, str(snapshot.data_date), standards_as_written)
+    return (*data_identity(), snapshot.source, str(snapshot.data_date), standards_as_written)
 
 
 def score_job(snapshot: Snapshot, store: SnapshotStore, standards_: dict[str, Standard]) -> ScoreJob:
@@ -156,7 +156,5 @@ def standard_results_held(standard: Standard, snapshot: Snapshot) -> list[CheckR
 
     Computes nothing.
     """
-    results = [
-        memo(_metric_key(metric, snapshot), lambda: None, keep=False, ev_basis=False) for metric in standard.metrics
-    ]
+    results = [memo(_metric_key(metric, snapshot), lambda: None, keep=False) for metric in standard.metrics]
     return None if any(result is None for result in results) else results

@@ -40,6 +40,11 @@ UNRESOLVED = {
     "assignment_lag": "assignment lag on a resource-dependent activity: MPXJ leaves it out of the activity dates",
     "free_float_lead": "free float of an activity with a lead to a successor",
     "free_float_mandatory": "free float of an activity with a mandatory constraint",
+    # Driving relationships (tests/test_driving.py). P6 does not export its Driving flag and the
+    # corpus files leave TASKPRED.aref blank: P6 Professional's Relationships tab settles it, the
+    # Driving column of the predecessors of corpus H1-01 A1130.
+    "driving_held_by_data_date": "a successor whose date no link reaches (the data date or its progress "
+    "sets it): MPXJ marks its latest predecessor driving, xerscope none",
 }
 
 
@@ -52,6 +57,9 @@ P6_SETTLED = {
     "lag_to_finished_successor": "lag on a link into a finished successor under Retained Logic: MPXJ drops an FS lag "
     "in the backward pass; P6 passes the full FS / FF lag back, the unexpired SS / SF lag, and nothing between "
     "two finished activities (corpus H1-08 A1020, A1050)",
+    "driving_alap": "a link into an As Late As Possible activity: MPXJ never marks it driving; P6's own "
+    "relationship date (TASKPRED.aref) reaches the successor's early start on all 7 such links of Hotel, as "
+    "xerscope reads it (tests/test_driving.py)",
     "expected_finish_edge": "an expected finish before the early start or on work with an FF / SF predecessor: "
     "MPXJ ignores it; P6 sets the remaining duration to zero, or lets a later FF / SF bound win "
     "(corpus H1-02 A1170, H4-10 A1040)",
@@ -250,6 +258,13 @@ def mpxj_schedule(path: str | Path, project_code: str | None = None) -> pd.DataF
     the at-completion duration is set to actual + remaining (MPXJ otherwise derives it
     from the stored dates), and the non-standard TT_StartMile is read as a start milestone.
     """
+    mpxj_project = _scheduled_project(path, project_code)
+    rows = _schedule_rows(mpxj_project, mpxj_project.getProjectProperties())
+    return pd.DataFrame.from_dict(rows, orient="index").rename_axis("task_code")
+
+
+def _scheduled_project(path: str | Path, project_code: str | None):
+    """Return the MPXJ project of ``path``, normalised (see ``mpxj_schedule``) and scheduled."""
     reader = start_jvm()  # first: the org.mpxj imports below need the JVM running
     from org.mpxj.cpm import PrimaveraScheduler
 
@@ -260,8 +275,33 @@ def mpxj_schedule(path: str | Path, project_code: str | None = None) -> pd.DataF
     mpxj_properties = mpxj_project.getProjectProperties()
     _normalise_tasks(mpxj_project, mpxj_properties)
     PrimaveraScheduler().schedule(mpxj_project, mpxj_properties.getStartDate())
-    rows = _schedule_rows(mpxj_project, mpxj_properties)
-    return pd.DataFrame.from_dict(rows, orient="index").rename_axis("task_code")
+    return mpxj_project
+
+
+MPXJ_LINK_TYPES = {"FINISH_START": "FS", "START_START": "SS", "FINISH_FINISH": "FF", "START_FINISH": "SF"}
+
+
+def mpxj_driving_links(path: str | Path, project_code: str | None = None) -> pd.DataFrame:
+    """Return every relationship between two activities of ``path``, MPXJ's driving flag on each.
+
+    MPXJ's Relation.getDriving, set by its PrimaveraScheduler on the forward pass.
+    """
+    rows = []
+    for mpxj_task in _scheduled_project(path, project_code).getTasks():
+        for relation in mpxj_task.getPredecessors():
+            predecessor, successor = relation.getPredecessorTask(), relation.getSuccessorTask()
+            if predecessor.getActivityID() is None or successor.getActivityID() is None:
+                continue
+            link_type = str(relation.getType())
+            rows.append(
+                {
+                    "pred_code": str(predecessor.getActivityID()),
+                    "succ_code": str(successor.getActivityID()),
+                    "type": MPXJ_LINK_TYPES.get(link_type, link_type),
+                    "driving": bool(relation.getDriving()),
+                }
+            )
+    return pd.DataFrame(rows, columns=["pred_code", "succ_code", "type", "driving"])
 
 
 def _normalise_tasks(mpxj_project, mpxj_properties) -> None:
@@ -443,3 +483,84 @@ def same_value(value, other) -> bool:
     if isinstance(value, pd.Timestamp) or isinstance(other, pd.Timestamp):
         return pd.Timestamp(value) == pd.Timestamp(other)
     return abs(float(value) - float(other)) < 0.01
+
+
+# --- driving relationships ---------------------------------------------------------------------
+
+
+def driving_crosscheck(path: str | Path, project_code: str | None = None) -> pd.DataFrame:
+    """Compare xerscope's and MPXJ's driving flag on each link between two unfinished activities.
+
+    A finished activity drives nothing (Oracle P6 help, Activity Network); MPXJ reads links of
+    finished work on their actual dates, so they are left out. Where the flags differ, ``reason``
+    says why: ``mpxj_dates`` when MPXJ placed the predecessor or the
+    successor elsewhere (a date difference, judged by ``cpm_crosscheck``), else a ``P6_SETTLED`` or ``UNRESOLVED``
+    key, else None: a difference no known case explains.
+    """
+    from ..analysis.cpm import _Axes, _date_range, schedule
+
+    path = Path(path)
+    snapshot = build_snapshot(read_xer(path), project_code)
+    recalculated = schedule(snapshot)
+    keys = ["pred_code", "succ_code", "type"]
+    both = recalculated.links.merge(
+        mpxj_driving_links(path, snapshot.project_code), on=keys, suffixes=("_xerscope", "_mpxj")
+    ).rename(columns={"driving_xerscope": "xerscope", "driving_mpxj": "mpxj"})
+    finished = set(snapshot.activities.loc[snapshot.activities["is_complete"], "task_code"])
+    both = both[~both["pred_code"].isin(finished) & ~both["succ_code"].isin(finished)].reset_index(drop=True)
+    moved = _codes_mpxj_places_elsewhere(
+        snapshot,
+        recalculated.frame,
+        mpxj_schedule(path, snapshot.project_code),
+        _Axes(snapshot, *_date_range(snapshot)),
+    )
+    driven = set(recalculated.links.loc[recalculated.links["driving"], "succ_code"])
+    as_late_as_possible = _as_late_as_possible(snapshot)
+    reasons = []
+    for row in both.itertuples():
+        reasons.append(_driving_reason(row, moved, driven, as_late_as_possible))
+    return both.assign(reason=reasons)
+
+
+def _driving_reason(row, moved: set[str], driven: set[str], as_late_as_possible: set[str]) -> str | None:
+    """Return why the two engines' driving flags differ on ``row``.
+
+    "" when they agree, None when no known case explains it.
+    """
+    if row.xerscope == row.mpxj:
+        return ""
+    if row.pred_code in moved or row.succ_code in moved:
+        return "mpxj_dates"
+    if row.succ_code in as_late_as_possible:
+        return "driving_alap"
+    if row.mpxj and row.succ_code not in driven:
+        return "driving_held_by_data_date"
+    return None
+
+
+def _codes_mpxj_places_elsewhere(snapshot, frame: pd.DataFrame, mpxj_results: pd.DataFrame, axes) -> set[str]:
+    """Activities whose remaining start or early finish MPXJ puts on another instant of working time."""
+    tasks = snapshot.by_code
+    moved = set()
+    for task_code in frame.index:
+        axis = axes.of(tasks.at[task_code, "clndr_id"])
+        if task_code not in mpxj_results.index or _is_placed_elsewhere(
+            axis, frame.loc[task_code], mpxj_results.loc[task_code]
+        ):
+            moved.add(task_code)
+    return moved
+
+
+def _is_placed_elsewhere(axis, mine: pd.Series, theirs: pd.Series) -> bool:
+    """Return whether MPXJ's start or early finish of one activity is another instant of work than xerscope's."""
+    start = mine["es"] if pd.isna(mine["remaining_start"]) else mine["remaining_start"]
+    for own, other in ((start, theirs["es"]), (mine["ef"], theirs["ef"])):
+        if not (same_value(own, other) or _is_same_work(axis, own, other)):
+            return True
+    return False
+
+
+def _as_late_as_possible(snapshot) -> set[str]:
+    tasks = snapshot.activities
+    alap = (tasks["cstr_type"] == "CS_ALAP") | (tasks["cstr_type2"] == "CS_ALAP")
+    return set(tasks.loc[alap, "task_code"])

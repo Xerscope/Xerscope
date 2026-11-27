@@ -135,7 +135,7 @@ def show_horizon(old, new) -> None:
     weeks = DEFAULT_SETTINGS.lookahead_weeks
     horizon = memo(
         ("forensics_horizon", old.label, new.label, weeks),
-        revisions_by_horizon, old, new, weeks, baseline=False, ev_basis=False,
+        revisions_by_horizon, old, new, weeks, baseline=False,
     )  # fmt: skip
     st.caption(
         f"Where the revisions fall: on tasks starting within {weeks:g} weeks of the status date (work under "
@@ -185,7 +185,7 @@ def show_longest_path(old, new) -> None:
 
 def show_path_series(store) -> None:
     """Longest path of every update against the one before it: table, CSV."""
-    churn = memo(("forensics_path_churn",), path_churn, store, baseline=False, ev_basis=False)
+    churn = memo(("forensics_path_churn",), path_churn, store, baseline=False)
     ui.table(churn, key="forensics_path_churn", reading="forensics_path_churn", max_height=ui.TABLE_SHORT)
     csv_download(churn, "longest_path_churn.csv", "Download longest path (CSV)", sources=sources_of(*list(store)))
 
@@ -197,7 +197,7 @@ def show_series(store) -> None:
         "Each update read against the one before it. A finish shown that holds still while the finish before "
         "replanning keeps slipping is a delay absorbed by replanning.",
     )
-    series = memo(("forensics_series",), half_step_series, store, baseline=False, ev_basis=False)
+    series = memo(("forensics_series",), half_step_series, store, baseline=False)
     ui.chart(build_slip_trend(series))
     ui.table(series, key="forensics_series", reading="forensics_series", max_height=ui.TABLE_SHORT)
     csv_download(series, "half_step_series.csv", "Download series (CSV)", sources=sources_of(*list(store)))
@@ -229,7 +229,7 @@ with top:
     )
 
 try:
-    read = memo(("forensics", old.label, new.label), half_step, old, new, baseline=False, ev_basis=False)
+    read = memo(("forensics", old.label, new.label), half_step, old, new, baseline=False)
 except ScheduleError as error:
     st.error(f"These two updates cannot be read: {ui.without_addresses(str(error))}", icon=":material/block:")
     st.stop()

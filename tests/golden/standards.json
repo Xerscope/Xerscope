@@ -4889,12 +4889,13 @@
    "DECM/06A204b": {
     "denominator": 26,
     "flagged": [
-     "K5040"
+     "K5040",
+     "M9999"
     ],
     "note": null,
-    "numerator": 1,
+    "numerator": 2,
     "status": "fail",
-    "value": 3.846154
+    "value": 7.692308
    },
    "DECM/06A205a": {
     "denominator": 27,
@@ -5435,12 +5436,13 @@
    "DECM/06A204b": {
     "denominator": 26,
     "flagged": [
-     "K5040"
+     "K5040",
+     "M9999"
     ],
     "note": null,
-    "numerator": 1,
+    "numerator": 2,
     "status": "fail",
-    "value": 3.846154
+    "value": 7.692308
    },
    "DECM/06A205a": {
     "denominator": 27,
@@ -5979,12 +5981,13 @@
    "DECM/06A204b": {
     "denominator": 25,
     "flagged": [
-     "K5040"
+     "K5040",
+     "M9999"
     ],
     "note": null,
-    "numerator": 1,
+    "numerator": 2,
     "status": "fail",
-    "value": 4.0
+    "value": 8.0
    },
    "DECM/06A205a": {
     "denominator": 26,
@@ -6529,12 +6532,13 @@
    "DECM/06A204b": {
     "denominator": 25,
     "flagged": [
-     "K5040"
+     "K5040",
+     "M9999"
     ],
     "note": null,
-    "numerator": 1,
+    "numerator": 2,
     "status": "fail",
-    "value": 4.0
+    "value": 8.0
    },
    "DECM/06A205a": {
     "denominator": 26,
@@ -7091,12 +7095,13 @@
    "DECM/06A204b": {
     "denominator": 24,
     "flagged": [
-     "K5040"
+     "K5040",
+     "M9999"
     ],
     "note": null,
-    "numerator": 1,
+    "numerator": 2,
     "status": "fail",
-    "value": 4.166667
+    "value": 8.333333
    },
    "DECM/06A205a": {
     "denominator": 25,
@@ -7667,12 +7672,13 @@
    "DECM/06A204b": {
     "denominator": 23,
     "flagged": [
-     "K5040"
+     "K5040",
+     "M9999"
     ],
     "note": null,
-    "numerator": 1,
+    "numerator": 2,
     "status": "fail",
-    "value": 4.347826
+    "value": 8.695652
    },
    "DECM/06A205a": {
     "denominator": 24,
@@ -8256,12 +8262,13 @@
    "DECM/06A204b": {
     "denominator": 22,
     "flagged": [
-     "K5040"
+     "K5040",
+     "M9999"
     ],
     "note": null,
-    "numerator": 1,
+    "numerator": 2,
     "status": "fail",
-    "value": 4.545455
+    "value": 9.090909
    },
    "DECM/06A205a": {
     "denominator": 23,

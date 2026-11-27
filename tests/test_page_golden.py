@@ -30,7 +30,7 @@ pytestmark = pytest.mark.oracle("characterization")
 
 APP = str(Path(xerscope.__file__).parent / "app" / "streamlit_app.py")
 GOLDEN = Path(__file__).parent / "golden" / "pages.json"
-PAGES = ["overview", "gantt", "health", "audit", "changelog", "forensics", "earned_value",
+PAGES = ["overview", "gantt", "tasks", "health", "audit", "changelog", "forensics", "earned_value",
          "milestones", "ppc", "export", "debug"]  # fmt: skip
 TEXTS = {"title", "header", "subheader", "caption", "markdown", "info", "warning", "error", "success", "code"}
 CHOICES = {"selectbox", "multiselect", "toggle", "checkbox", "text_input", "button_group"}

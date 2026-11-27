@@ -2734,7 +2734,7 @@ def test_table_column_filters_keep_the_matching_rows(app):
     assert len(task_table()) == len(everything)
 
 
-def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, store):
+def test_gantt_panel_keeps_the_picked_activity_when_the_filters_hide_it(app, store):
     app.switch_page("views/gantt.py").run()
     _ok(app)
     assert not any(
@@ -2748,8 +2748,76 @@ def test_gantt_panel_shows_the_picked_activity_and_follows_the_filters(app, stor
     assert app.selectbox(key="gantt_task_pick").value == "C3020"
     app.text_input[1].set_value("no task has this name").run()  # the Gantt search leaves C3020 out
     _ok(app)
-    assert not any({"data_date", "original_d"} <= set(d.value.columns) for d in app.dataframe)
+    # the panel stays on C3020, opened from the chart or from a row of the panel, and says it is not drawn
+    assert any({"data_date", "original_d"} <= set(d.value.columns) for d in app.dataframe)
     assert any("C3020" in caption.value and "not drawn" in caption.value for caption in app.caption)
+
+
+def _panel_table(app, columns: set[str]) -> pd.DataFrame:
+    return next(d.value for d in app.dataframe if columns <= set(d.value.columns))
+
+
+def _relationship_tables(app) -> list[pd.DataFrame]:
+    """The predecessors and successors tables of a task's relationships, in the order drawn (left, right)."""
+    columns = {"task_code", "link type", "driving_link", "status", "on_longest_path", "total_float_d"}
+    tables = [d.value for d in app.dataframe if columns <= set(d.value.columns)]
+    assert len(tables) == 2, len(tables)
+    return tables
+
+
+def _trail(app, store) -> pd.DataFrame:
+    """The breadcrumb matrix: a column per status date, headed as the panel writes a date."""
+    return _panel_table(app, {"task_code", f"{store.first.data_date:%d %b %Y}"})
+
+
+def test_gantt_panel_drills_through_logic_breadcrumb_constraints_and_chain(app, store):
+    """C3020 on the demo: its Logic rows carry the driving flag (recalculated: the XER has none) and the
+    other task's longest path flag and float; the breadcrumb, a matrix with a column per update, holds the
+    tasks opened then the predecessors and successors of the one shown; opening a predecessor adds it;
+    Back returns; the chain button draws the chain alone in the Gantt."""
+    app.switch_page("views/gantt.py").run()
+    app.session_state["gantt_task"] = "C3020"
+    app.run()
+    _ok(app)
+    predecessors, successors = _relationship_tables(app)  # P6's Relationships tab: predecessors left
+    assert predecessors["task_code"].tolist() == ["C3010", "E1020"]
+    assert successors["task_code"].tolist() == ["C3030", "C3040"]
+    predecessor = predecessors["task_code"].iloc[0]
+    trail = _trail(app, store)
+    # the task opened, then its predecessors and successors (demo: C3010, E1020; C3030, C3040)
+    assert list(zip(trail["role"], trail["task_code"], strict=True)) == [
+        ("opened", "C3020"),
+        ("predecessor", "C3010"),
+        ("predecessor", "E1020"),
+        ("successor", "C3030"),
+        ("successor", "C3040"),
+    ]
+    assert len(trail.columns) == 3 + len(store)  # role, level, Task ID, then one column per update
+    assert trail["level"].tolist()[1:] == [1, 1, 1, 1] and pd.isna(trail["level"].iloc[0])
+    assert trail.iloc[0, 3].startswith("TF ")
+    assert trail.iloc[2, 3].startswith("FS driving · TF ")  # E1020 -> C3020 drives in the first update
+    app.number_input(key="gantt_trail_levels").set_value(2).run()  # their neighbours too
+    _ok(app)
+    deeper = _trail(app, store)
+    assert (deeper["level"] == 2).any() and len(deeper) > len(trail)
+    assert set(trail["task_code"]) <= set(deeper["task_code"])
+    app.number_input(key="gantt_trail_levels").set_value(1).run()
+    _ok(app)
+    # the demo changes no constraint (tests/test_activity_trail.py covers a change): the panel says so
+    assert any("No constraint added" in caption.value for caption in app.caption)
+    app.session_state["gantt_task"] = predecessor  # what a Logic row's button stores
+    app.run()
+    _ok(app)
+    after = _trail(app, store)
+    assert after.loc[after["role"] == "opened", "task_code"].tolist() == ["C3020", predecessor]
+    assert "C3020" in after.loc[after["role"] == "successor", "task_code"].tolist()  # the predecessor's successor
+    app.button(key="gantt_trail_back").click().run()
+    _ok(app)
+    assert app.session_state["gantt_task"] == "C3020"
+    app.button(key="task_chain_show").click().run()
+    _ok(app)
+    focus = app.session_state["gantt_focus"]
+    assert focus["codes"][0] == "C3020" and predecessor in focus["codes"]
 
 
 def test_gantt_a_click_in_the_chart_picks_an_activity_drawn_only(app):
@@ -3196,3 +3264,51 @@ def test_uploaded_standard_is_in_the_picker_on_the_run_that_loads_it(app):
     _ok(app)
     assert any(s.value.startswith("Loaded") for s in app.success)
     assert "My standard" in app.segmented_control(key="health_std").options
+
+
+def test_tasks_lists_the_wbs_and_its_tasks_and_details_the_one_picked(app):
+    """The Tasks page, P6's Activities view, on the demo: the Gantt's tree without its timeline, WBS bands
+    shaded by level, P6's columns; the project row first, each WBS node before its activities; C3020 picked
+    (what a click on its row stores) shows the Activity Details tabs, its predecessors (C3010, E1020) left of
+    its successors (C3030, C3040), and opens the branch that holds it; a task picked in the Relationships tab
+    becomes the task shown."""
+    app.switch_page("views/tasks.py").run()
+    _ok(app)
+    data = _gantt_data(app)
+    assert (data["timeline"], data["levelBands"]) == (False, True)
+    assert [column["key"] for column in data["columns"]] == [
+        "original_d",
+        "remaining_d",
+        "pct",
+        "start",
+        "finish",
+        "float_d",
+    ]
+    rows = data["rows"]
+    assert rows[0]["kind"] == "wbs" and rows[0]["parent"] is None
+    civ = next(index for index, row in enumerate(rows) if row["code"] == "CIV")
+    assert rows[civ + 1]["kind"] == "task" and rows[civ + 1]["code"].startswith("C")  # the CIV node, then its tasks
+    assert data["selected"] is None
+    assert any("Select a task" in caption.value for caption in app.caption)
+    app.session_state["tasks_picked"] = "C3020"
+    app.run()
+    _ok(app)
+    data = _gantt_data(app)
+    assert data["selected"] == "a:C3020"
+    assert rows[civ]["id"] in data["open"]  # the branch holding C3020 is drawn open
+    assert [tab.label for tab in app.tabs] == ["General", "Status", "Resources", "Relationships", "Constraints"]
+    predecessors, successors = _relationship_tables(app)
+    assert predecessors["task_code"].tolist() == ["C3010", "E1020"]
+    assert successors["task_code"].tolist() == ["C3030", "C3040"]
+    app.session_state["tasks_picked"] = "C3010"
+    app.run()
+    _ok(app)
+    assert "C3020" in _relationship_tables(app)[1]["task_code"].tolist()  # C3010's successor
+    # Next / Previous step through the tree's tasks, WBS rows skipped
+    tasks = [row["code"] for row in rows if row["kind"] == "task"]
+    app.button(key="tasks_next").click().run()
+    _ok(app)
+    assert app.session_state["tasks_picked"] == tasks[tasks.index("C3010") + 1]
+    app.button(key="tasks_previous").click().run()
+    _ok(app)
+    assert app.session_state["tasks_picked"] == "C3010"

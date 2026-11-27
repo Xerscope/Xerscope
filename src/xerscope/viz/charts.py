@@ -7,6 +7,9 @@ markers, recessive grid, legend + direct end labels for a few series.
 
 from __future__ import annotations
 
+import html
+from collections.abc import Sequence
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -456,18 +459,156 @@ def _widen_dates(update_axis, low, high) -> None:
         update_axis(range=[low - DATE_PAD, high + DATE_PAD])
 
 
-def build_activity_float(history: pd.DataFrame) -> go.Figure:
-    """Total float of one activity in every update, zero marked as critical."""
-    figure = go.Figure(
-        _line(history, "total_float_d", "Total float", SERIES[0], hovertemplate="%{y} wd<extra></extra>")
-    )
+# How each kind of line of the float chart is drawn: the task, then the neighbours picked (the roles of
+# analysis.activity_trail.logic_by_update, written here as text: viz does not import that module).
+LOGIC_DASH = {"task": "solid", "predecessor": "dot", "successor": "dash"}
+LOGIC_ROLE = {"task": "task", "predecessor": "pred", "successor": "succ"}
+NOT_DRIVING_OPACITY = 0.35  # a point whose link does not drive, still readable on both themes
+NEIGHBOUR_HEADINGS = [("predecessor", "Predecessors"), ("successor", "Successors")]
+
+
+def build_activity_float(logic: pd.DataFrame, shown: Sequence[str] = ()) -> go.Figure:
+    """Total float of one activity in every update, zero marked as critical.
+
+    ``logic``: rows of ``activity_trail.logic_by_update``. The hover of each point of the task lists that
+    update's predecessors and successors (link, driving, total float, constraints). ``shown``: Activity
+    IDs of neighbours drawn as lines too, in the updates whose relationships link them; a faded point:
+    the link does not drive there; a diamond: the activity carries a constraint.
+    """
+    figure = go.Figure()
+    task = logic[logic["role"] == "task"].sort_values("data_date")
+    figure.add_trace(_logic_line(task, "task", SERIES[0], _neighbour_summaries(logic, task["data_date"])))
+    neighbours = logic[(logic["role"] != "task") & logic["task_code"].isin(shown)]
+    for number, (role, code) in enumerate(neighbours[["role", "task_code"]].drop_duplicates().itertuples(index=False)):
+        rows = neighbours[(neighbours["role"] == role) & (neighbours["task_code"] == code)].sort_values("data_date")
+        figure.add_trace(_logic_line(rows, role, SERIES[(number + 1) % len(SERIES)]))
     figure.add_hline(
         y=0,
         line=dict(color=STATUS["critical"], width=1, dash="dot"),
         annotation_text="critical",
         annotation_position="bottom left",
     )
-    return _with_house_style(figure, "activity_float", 380, "Working days")
+    figure = _with_house_style(figure, "activity_float", 380, "Working days", legend=bool(len(neighbours)))
+    # hovermode stays "x unified" (house style): one box per status date lists every line drawn there
+    return figure
+
+
+def build_activity_history(history: pd.DataFrame, logic: pd.DataFrame, shown: Sequence[str] = ()) -> go.Figure:
+    """Forecast start and finish (above) and total float (below) of one activity, on one status date axis.
+
+    The lines of ``build_activity_dates`` and ``build_activity_float`` drawn as two stacked plots that share
+    their x axis, so hovering a status date on either opens one box with both plots' values at that date
+    (Plotly ``hoversubplots="axis"`` with the unified hover).
+    """
+    dates = build_activity_dates(history)
+    floats = build_activity_float(logic, shown)
+    figure = go.Figure()
+    for trace in dates.data:
+        figure.add_trace(trace.update(yaxis="y"))
+    # the float lines take the colours after the dates' two, so no colour means two things in the hover
+    for number, trace in enumerate(floats.data):
+        colour = SERIES[(number + len(dates.data)) % len(SERIES)]
+        figure.add_trace(trace.update(yaxis="y2", line_color=colour, marker_color=colour))
+    figure = _with_house_style(figure, "activity_history", 640, legend=True)
+    figure.update_layout(
+        hovermode="x unified",
+        hoversubplots="axis",
+        xaxis=dict(anchor="y2"),
+        yaxis=dict(domain=[0.56, 1], title=dict(text="Forecast date", font=FONT), range=dates.layout.yaxis.range),
+        yaxis2=dict(domain=[0, 0.44], title=dict(text="Working days", font=FONT), tickfont=TICK),
+    )
+    figure.update_layout(yaxis=DATE_AXIS)
+    figure.add_shape(
+        type="line", xref="paper", x0=0, x1=1, yref="y2", y0=0, y1=0,
+        line=dict(color=STATUS["critical"], width=1, dash="dot"),
+    )  # fmt: skip
+    figure.add_annotation(
+        xref="paper", x=0, yref="y2", y=0, text="critical", showarrow=False, xanchor="left", yanchor="top"
+    )
+    return figure
+
+
+def _logic_line(rows: pd.DataFrame, role: str, colour: str, notes: Sequence[str] | None = None) -> go.Scatter:
+    """One activity's total float across the updates; ``notes``: a hover line per point, after the float."""
+    if rows.empty:
+        return go.Scatter(x=[], y=[], name=LOGIC_ROLE[role], line=dict(color=colour))
+    code = html.escape(str(rows["task_code"].iloc[0]))
+    role_text = _role_text(role, int(rows["level"].min()))
+    constraints = [
+        _constraints_text(first, second) for first, second in zip(rows["primary"], rows["secondary"], strict=True)
+    ]
+    link = [link_text(kind, driving) for kind, driving in zip(rows["link_type"], rows["driving_link"], strict=True)]
+    notes = [""] * len(rows) if notes is None else list(notes)
+    return go.Scatter(
+        x=rows["data_date"],
+        y=rows["total_float_d"],
+        name=f"{code} · {role_text}",
+        mode="lines+markers",
+        line=dict(color=colour, width=LINE * 2 if role == "task" else LINE, dash=LOGIC_DASH[role]),
+        marker=_logic_markers(constraints, rows["driving_link"]),
+        customdata=np.stack([link, [_hover_line(text) for text in constraints], notes], axis=-1),
+        hovertemplate=f"<b>{code}</b> · {role_text} %{{customdata[0]}}: TF %{{y}} wd"
+        "%{customdata[1]}%{customdata[2]}<extra></extra>",
+    )
+
+
+def _role_text(role: str, level: int) -> str:
+    """The role as a line is named: "pred", or "pred 2" for a predecessor's predecessor."""
+    return LOGIC_ROLE[role] + (f" {level}" if level > 1 else "")
+
+
+def _logic_markers(constraints: list[str], driving: pd.Series) -> dict:
+    """A diamond where the activity carries a constraint; faded where its link does not drive."""
+    return dict(
+        size=9,
+        symbol=["diamond" if text else "circle" for text in constraints],
+        opacity=[NOT_DRIVING_OPACITY if flag is False else 1.0 for flag in driving],
+    )
+
+
+def _hover_line(text: str) -> str:
+    """``text`` escaped on a hover line of its own; nothing for an empty text."""
+    return f"<br>{html.escape(text)}" if text else ""
+
+
+def _neighbour_summaries(logic: pd.DataFrame, dates: pd.Series) -> list[str]:
+    """For each status date of ``dates``: the update's predecessors, then its successors, under a heading
+    each, one hover line per activity with its total float in working days."""
+    summaries = []
+    for date in dates:
+        rows = logic[logic["data_date"] == date]
+        blocks = [_role_block(rows, role, heading) for role, heading in NEIGHBOUR_HEADINGS]
+        summaries.append("".join(blocks))
+    return summaries
+
+
+def _role_block(rows: pd.DataFrame, role: str, heading: str) -> str:
+    """One heading of the hover ("Predecessors") and its activities, "none" without one."""
+    lines = [_neighbour_line(row) for row in rows[rows["role"] == role].itertuples()]
+    return f"<br><br><b>{heading}</b><br>" + ("<br>".join(lines) if lines else "none")
+
+
+def _neighbour_line(row) -> str:
+    """One neighbour as a hover line, escaped: C3010 FS driving · TF 20.0 wd · its constraints."""
+    float_text = "–" if pd.isna(row.total_float_d) else f"{row.total_float_d:.1f} wd"
+    away = f" (level {row.level})" if row.level > 1 else ""  # a neighbour's neighbour and further
+    parts = [f"{row.task_code}{away} {link_text(row.link_type, row.driving_link)}".strip(), f"TF {float_text}"]
+    constraints = _constraints_text(row.primary, row.secondary)
+    if constraints:
+        parts.append(constraints)
+    return html.escape(" · ".join(parts))
+
+
+def link_text(link_type, driving) -> str:
+    """The link as one update holds it ("FS driving", "SS"); "" on the task's own row."""
+    if not isinstance(link_type, str):
+        return ""
+    return f"{link_type} driving" if driving is True else link_type
+
+
+def _constraints_text(primary, secondary) -> str:
+    """The constraints of one activity in one update, "" without one."""
+    return " / ".join(text for text in (primary, secondary) if isinstance(text, str))
 
 
 def build_finish_trend(summary: pd.DataFrame) -> go.Figure:

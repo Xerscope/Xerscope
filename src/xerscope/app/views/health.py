@@ -152,7 +152,7 @@ def prepare_sets(results, standard, snapshot, sources: list[str]) -> None:
     built when the button is pressed, anonymised or not as the sidebar switch says."""
     anonymous = anonymous_exports()
     # what the sets are built from, as metric_result's key: files, projects, baseline, standard, update
-    tag = (*data_identity(ev_basis=False), repr(standard), snapshot.source, str(snapshot.data_date), anonymous)
+    tag = (*data_identity(), repr(standard), snapshot.source, str(snapshot.data_date), anonymous)
     if st.button(
         "Prepare all sets",
         icon=":material/folder_zip:",
@@ -298,7 +298,7 @@ def show_trend(store, standard) -> None:
     session's cache when there, are not kept otherwise; the trend keeps only its numbers."""
     ui.section("Trend across updates", "The same check on every loaded update, against its target.")
     key = ("health_history", repr(standard))
-    history = memo(key, lambda: None, keep=False, ev_basis=False)  # None until computed for this key
+    history = memo(key, lambda: None, keep=False)  # None until computed for this key
     if history is None:
         if not st.button(
             f"Compute the trend on the {len(store)} updates",
@@ -310,7 +310,7 @@ def show_trend(store, standard) -> None:
         ):
             return
         result_of = partial(metric_result, store=store, keep=False)
-        history = memo(key, health_history, store, standard, None, result_of, ev_basis=False)
+        history = memo(key, health_history, store, standard, None, result_of)
     metric_ids = [metric.id for metric in standard.metrics]
     metric_id = st.selectbox(
         "Check",

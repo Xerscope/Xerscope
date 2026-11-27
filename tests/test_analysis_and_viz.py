@@ -14,6 +14,7 @@ from rulekit import STANDARDS, codes, run_on_store
 
 import xerscope
 from xerscope.analysis import Baseline, health_history
+from xerscope.analysis.activity_trail import logic_by_update
 from xerscope.analysis.wbs import rollup
 from xerscope.app import ui
 from xerscope.viz import categorise, gantt_assets, gantt_data, gantt_rows
@@ -26,7 +27,9 @@ from xerscope.viz.charts import (
     TEXT,
     build_activity_dates,
     build_activity_float,
+    build_activity_history,
 )
+from xerscope.viz.gantt import ACTIVITIES_COLUMNS
 
 
 def test_planted_lead_open_end_and_missing_resources(store):
@@ -84,6 +87,27 @@ def test_gantt_rows_on_the_demo_series(store):
     assert "Critical" in data["palette"] and data["links"]
 
 
+@pytest.mark.oracle("property")
+def test_gantt_task_rows_carry_p6_durations_and_the_grid_options(store):
+    """An activity row carries P6's original and remaining duration in working days (TASK
+    target_drtn_hr_cnt, remain_drtn_hr_cnt over the calendar's hours per day: xer.model), to one
+    decimal; a WBS row has none. The defaults draw the Gantt page's grid: % complete and float, the
+    timeline, no level bands."""
+    s = store.latest
+    tasks = s.activities.assign(category=categorise(s.activities))
+    rows = gantt_rows(tasks, rollup(s))
+    by_code = s.by_code
+    for row in (r for r in rows if r["kind"] == "task"):
+        assert row["original_d"] == round(float(by_code.loc[row["code"], "original_d"]), 1)
+        assert row["remaining_d"] == round(float(by_code.loc[row["code"], "remaining_d"]), 1)
+    assert all("original_d" not in r for r in rows if r["kind"] == "wbs")
+    data = gantt_data(rows)
+    assert [column["key"] for column in data["columns"]] == ["pct", "float_d"]
+    assert (data["timeline"], data["levelBands"]) == (True, False)
+    tasks_page = gantt_data(rows, columns=ACTIVITIES_COLUMNS, timeline=False, level_bands=True)
+    assert [column["label"] for column in tasks_page["columns"]][:2] == ["Original (wd)", "Remaining (wd)"]
+
+
 def test_gantt_compare_with_no_common_tasks(store):
     """Comparison sharing no task code (another project): no outline, no shift, rows still build."""
     s = store.latest
@@ -94,14 +118,46 @@ def test_gantt_compare_with_no_common_tasks(store):
 
 
 def test_activity_charts_follow_the_history(store):
-    code = store.latest.activities["task_code"].iloc[0]
+    """The float chart draws the task alone, one point per update holding it; each point's hover lists
+    that update's predecessors and successors. A neighbour picked is drawn too, named with its role."""
+    code = "C3020"  # demo: predecessors C3010, E1020; successors C3030, C3040
     history = store.history
     history = history[history["task_code"] == code].sort_values("data_date")
-    dates, float_chart = build_activity_dates(history), build_activity_float(history)
+    dates = build_activity_dates(history)
+    logic = logic_by_update(store, code)
+    float_chart = build_activity_float(logic)
     assert [trace.name for trace in dates.data] == ["Start", "Finish"]
-    assert [trace.name for trace in float_chart.data] == ["Total float"]
+    assert [trace.name for trace in float_chart.data] == ["C3020 · task"]
     assert len(float_chart.data[0].x) == len(history)
+    first_hover = float_chart.data[0].customdata[0][2]
+    predecessors, successors = first_hover.split("<b>Successors</b>")
+    assert "<b>Predecessors</b>" in predecessors and "E1020 FS driving · TF 20.0 wd" in predecessors
+    assert "C3040 SS driving · TF 85.0 wd" in successors
     assert float_chart.layout.yaxis.title.text == "Working days"
+    assert float_chart.layout.hovermode == "x unified"  # one box per status date for every line drawn
+    picked = build_activity_float(logic, shown=["C3030"])
+    assert [trace.name for trace in picked.data] == ["C3020 · task", "C3030 · succ"]
+
+
+@pytest.mark.oracle("property")
+def test_activity_history_stacks_dates_and_float_on_one_date_axis(store):
+    """The task panel's chart: Start and Finish above, the float lines below, every line on the same x
+    axis, so one hover box per status date covers both plots (hoversubplots "axis", unified hover). No
+    two lines share a colour: E1020, picked, is not drawn in Finish's colour."""
+    code = "C3020"
+    history = store.history[store.history["task_code"] == code].sort_values("data_date")
+    figure = build_activity_history(history, logic_by_update(store, code), shown=["E1020"])
+    assert [(trace.name, trace.yaxis) for trace in figure.data] == [
+        ("Start", "y"),
+        ("Finish", "y"),
+        ("C3020 · task", "y2"),
+        ("E1020 · pred", "y2"),
+    ]
+    assert {trace.xaxis or "x" for trace in figure.data} == {"x"}
+    assert figure.layout.hovermode == "x unified" and figure.layout.hoversubplots == "axis"
+    assert figure.layout.yaxis2.domain[1] < figure.layout.yaxis.domain[0]  # stacked, not overlaid
+    colours = [trace.line.color for trace in figure.data]
+    assert len(set(colours)) == len(colours)
 
 
 def test_fmt_date_shows_a_dash_for_missing_dates():

@@ -117,7 +117,7 @@ INPUTS = [
     "standard",
     "update",
 ]
-# not the EV basis: test_metric_result_is_not_run_again_for_another_ev_basis
+# and the EV basis: test_metric_result_is_run_again_for_another_ev_basis
 
 
 @pytest.mark.parametrize("change", INPUTS)
@@ -145,36 +145,47 @@ def test_metric_result_runs_again_for_another_fallback(store, runs):
     assert not at.exception and len(runs) == 2
 
 
-def test_metric_result_is_not_run_again_for_another_ev_basis(store, runs):
-    """No check reads what the EV basis sets (see the test below): the key leaves it out."""
+def test_metric_result_is_run_again_for_another_ev_basis(store, runs):
+    """The EV basis sets the dates of a separate baseline (see the test below): it is in the key."""
     at = _metric_app(store, Baseline.from_snapshot(store.first, "budgeted_planned"))
     at.run()
     at.session_state["ev_basis"] = "at_completion_current"
     at.session_state["baseline"] = Baseline.from_snapshot(store.first, "at_completion_current")
     at.run()
-    assert not at.exception and len(runs) == 1
+    assert not at.exception and len(runs) == 2
 
 
 BEI_FROM_BASELINE = dataclasses.replace(BEI, rule="bei", params={"due_from": "baseline"}, standard="CUSTOM")
 
 
-@pytest.mark.parametrize("planned", [False, True])
-def test_every_check_gives_the_same_result_whatever_the_ev_basis(store, planned):
-    """What lets metric_result's key leave the EV basis out: every metric of every built-in standard,
-    and the BEI counted in the baseline (its checked rows came from the baseline's frame), gives the
-    same result, rows included, on the three bases."""
+def _results_on(store, basis, planned):
+    """Every metric of every built-in standard, and the BEI counted in the baseline (its checked rows
+    come from the baseline's frame), on the latest update against a baseline built on ``basis``."""
     metrics = [m for standard in builtin_standards().values() for m in standard.metrics] + [BEI_FROM_BASELINE]
     snapshot = store.latest
+    baseline = Baseline.planned(snapshot, basis) if planned else Baseline.from_snapshot(store.first, basis)
+    return [run_metric(metric, AnalysisContext(snapshot, store, baseline)) for metric in metrics]
 
-    def results(basis):
-        baseline = Baseline.planned(snapshot, basis) if planned else Baseline.from_snapshot(store.first, basis)
-        return [run_metric(metric, AnalysisContext(snapshot, store, baseline)) for metric in metrics]
 
-    reference = results("budgeted_planned")
+def test_every_check_gives_the_same_result_on_the_planned_dates_whatever_the_ev_basis(store):
+    """An update that is its own baseline: its baseline dates are its planned dates on the three bases."""
+    reference = _results_on(store, "budgeted_planned", planned=True)
     assert any(r.metric is BEI_FROM_BASELINE and r.checked is not None and len(r.checked) for r in reference)
     for basis in ("budgeted_current", "at_completion_current"):
-        for got, expected in zip(results(basis), reference, strict=True):
+        for got, expected in zip(_results_on(store, basis, planned=True), reference, strict=True):
             same_result(got, expected)
+
+
+def test_a_check_against_a_separate_baseline_follows_the_dates_the_ev_basis_sets(store):
+    """A separate baseline: the two "current dates" bases give the same results, rows included (they set
+    the same baseline dates); the planned basis reads other dates, so at least one result differs. What
+    puts the EV basis in metric_result's key."""
+    current = _results_on(store, "budgeted_current", planned=False)
+    for got, expected in zip(_results_on(store, "at_completion_current", planned=False), current, strict=True):
+        same_result(got, expected)
+    planned_basis = _results_on(store, "budgeted_planned", planned=False)
+    assert any((got.numerator, got.denominator) != (expected.numerator, expected.denominator)
+               for got, expected in zip(planned_basis, current, strict=True))  # fmt: skip
 
 
 # --- the memo's bound ---------------------------------------------------------------------------
@@ -321,7 +332,7 @@ def test_health_trend_is_computed_on_request_once_and_keeps_numbers_only(app, st
 # --- what the EV basis and the baseline change on the pages ------------------------------------------
 
 
-def test_another_ev_basis_reruns_no_check_and_the_sets_stay_those_of_a_fresh_calculation(app, store, runs, downloads):
+def test_another_ev_basis_reruns_the_checks_and_the_sets_are_those_of_a_fresh_calculation(app, store, runs, downloads):
     from xerscope.analysis.audit import sets_long
     from xerscope.export import csv_bytes
 
@@ -332,8 +343,9 @@ def test_another_ev_basis_reruns_no_check_and_the_sets_stay_those_of_a_fresh_cal
     baseline_box(app, "ev_basis").set_value("at_completion_current")
     app.button(key="files_done").click().run()
     app.switch_page("views/health.py").run()
-    assert not app.exception and len(runs) == computed
-    # the sets built before the change are still offered: they are those of the new basis
+    assert not app.exception and len(runs) > computed  # the baseline dates follow the basis
+    if not _offered(app, "All sets (CSV)"):  # the sets built on the other basis were withdrawn
+        app.button(key="sets_build").click().run()
     p6 = builtin_standards()["P6"]
     baseline = Baseline.from_snapshot(store.first, "at_completion_current")
     fresh = [run_metric(metric, AnalysisContext(store.latest, store, baseline)) for metric in p6.metrics]
@@ -667,7 +679,7 @@ def _missed_tasks_script():
     from xerscope.app.cache import metric_result
 
     store = st.session_state["store"]
-    st.session_state["identity"] = data_identity(ev_basis=False)  # the score job's identity starts with it
+    st.session_state["identity"] = data_identity()  # the score job's identity starts with it
     st.session_state["denominator"] = metric_result(st.session_state["metric"], store.latest, store).denominator
 
 

@@ -563,6 +563,27 @@ READINGS: dict[str, Reading] = {
             "is named in the repository for the MTA."
         ),
     ),
+    "activity_history": Reading(
+        how=(
+            "two plots on one status date axis. Above: the task's forecast start and finish, one line each. "
+            'Below: its total float in working days, a red dotted line at 0 labelled "critical"; a neighbour '
+            "picked in Show on the chart is drawn there too, dotted (predecessor) or dashed (successor), in the "
+            "updates whose relationships link it, faded where its link does not drive, a diamond where it carries "
+            "a constraint. Hovering a status date on either plot opens one box with both plots' values at that "
+            "date, and that update's predecessors and successors: link type, driving (recalculated by the CPM: "
+            "the XER does not export P6's Driving flag), total float and constraints."
+        ),
+        meaning=(
+            "a finish rising from update to update is the task slipping; float is the delay the task can take "
+            "without moving the project finish (or its Must Finish By), negative float = already late against "
+            "it. A predecessor whose float falls with the task's is likely what pushes it."
+        ),
+        conclude=(
+            "a slip with float falling to 0 puts the task on the critical path; ≤ 0 d is critical (`config.py:12`; "
+            "P6 Define critical activities, read by `explain.critical_definition`)."
+        ),
+        source="xerscope (`store.history`, `activity_trail.logic_by_update`); P6 TASK and TASKPRED of each update.",
+    ),
     "activity_dates": Reading(
         how="x = status date, y = the task's forecast start and finish, one line each.",
         meaning=(
@@ -578,11 +599,16 @@ READINGS: dict[str, Reading] = {
     "activity_float": Reading(
         how=(
             "x = status date, y = total float in working days of the task's calendar; a red dotted line at 0 "
-            'labelled "critical".'
+            'labelled "critical". The hover of each point lists that update\'s predecessors and successors: link '
+            "type, driving (recalculated by the CPM: the XER does not export P6's Driving flag), total float and "
+            "constraints. A neighbour picked in Show on the chart is drawn too, dotted (predecessor) or dashed "
+            "(successor), in the updates whose relationships link it; a faded point: its link does not drive "
+            "there; a diamond: the activity carries a constraint."
         ),
         meaning=(
             "float is the delay the task can take without moving the project finish (or its Must Finish By); "
-            "negative float = the project is already late against that date."
+            "negative float = the project is already late against that date. A predecessor whose float falls "
+            "with the task's is likely what pushes it."
         ),
         conclude=(
             "≤ 0 d is critical (`config.py:12`; P6 Define critical activities, read by "
@@ -591,7 +617,7 @@ READINGS: dict[str, Reading] = {
         ),
         source=(
             "DCMA 14-Point Assessment, items 6 and 7; P6 Professional Check Schedule report (Large Float, Negative "
-            "Float)."
+            "Float); P6 TASKPRED of each update."
         ),
     ),
     "finish_trend": Reading(
@@ -901,6 +927,39 @@ READINGS: dict[str, Reading] = {
     ),
     "task_resources": TASK_TABLES_READING,
     "task_logic": TASK_TABLES_READING,
+    "tasks_table": Reading(
+        how=(
+            "P6's Activities view without its bars: the WBS tree, each node followed by its tasks, in P6's WBS "
+            "order; a WBS row folds open and closed (▸ / ▾, Collapse all, Expand all, Level), its band shaded by "
+            "its level, the top darkest. Columns: original and remaining duration in working days, % complete, "
+            "start, finish, total float in working days; a WBS row carries the roll-up of the tasks under it "
+            "(% complete weighted by hours, else duration; earliest start, latest finish, lowest total float) and "
+            "no duration. A click on a task shows its details below; Previous task and Next task step through the "
+            "tree's tasks."
+        ),
+        source="P6 TASK and PROJWBS of the update; roll-up: xerscope (`wbs.rollup`)",
+    ),
+    "task_trail": Reading(
+        how=(
+            "one row per task opened from this panel, in the order they were opened (the one shown last), then "
+            "one per predecessor and successor of the task shown, as far as Levels asks (1: its direct ones; 2: "
+            "theirs too; the Level column says how far, Driving links only keeps the chain that drives the task); "
+            "one column per update: the link (toward the task) as that update holds it (type, and driving when "
+            "it sets the successor's date: recalculated by the CPM, the XER does not export it), P6's total "
+            "float (TF) and free float (FF) in working days, then the primary / "
+            "secondary constraint with its date. A blank cell: not in that update, or not linked to the task "
+            "there. Select a row to open that task."
+        ),
+        source="P6 TASK (total_float_hr_cnt, free_float_hr_cnt, cstr_type, cstr_date, cstr_type2, cstr_date2) and "
+        "TASKPRED of each update; driving: xerscope CPM (`cpm.Schedule.links`)",
+    ),
+    "task_constraints": Reading(
+        how=(
+            "each constraint added, removed or changed on the task between two consecutive updates, dated by the "
+            "later update's status date: the Constraints rows of the changelog."
+        ),
+        source="xerscope changelog (`changelog.constraint_changes`)",
+    ),
     "task_history": TASK_TABLES_READING,
     "export_tables": EXPORT_TABLES_READING,
     "export_fact_activity": EXPORT_TABLES_READING,
