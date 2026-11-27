@@ -125,10 +125,22 @@ def test_same_name_types_get_distinct_labels():
     assert _label(s, GLOBAL_P2) == first
 
 
-@pytest.mark.parametrize("scopes", [("AS_EPS", "AS_Project"), ("AS_Global", "AS_EPS")])
+@pytest.mark.parametrize("scopes", [("AS_EPS", "AS_Project"), ("AS_Global", "AS_EPS"), ("AS_Project", "AS_Project")])
 def test_same_name_types_distinct_for_every_scope_pair(scopes):
     s = _code_snapshot(scopes)
     assert _label(s, GLOBAL_P1) != _label(s, PROJECT_P1)
+
+
+@pytest.mark.oracle("characterization")
+def test_same_name_same_scope_types_are_told_apart_by_their_id():
+    """Two types named "Phase" in the same scope get the id after the scope, "Phase (project, 701)"
+    (docstring of model._code_type_labels): their values and filters stay apart."""
+    s = _code_snapshot(("AS_Project", "AS_Project"))
+    assert _label(s, GLOBAL_P1) == "Phase (project, 701)"
+    assert _label(s, GLOBAL_P2) == "Phase (project, 701)"
+    assert _label(s, PROJECT_P1) == "Phase (project, 702)"
+    assert s.tasks_with_codes("Phase (project, 701)", {GLOBAL_P1}) == {"A"}
+    assert s.tasks_with_codes("Phase (project, 702)", {PROJECT_P1}) == {"B"}
 
 
 def test_task_codes_use_the_type_label_of_the_value():
@@ -145,6 +157,33 @@ def test_code_paths_lists_only_the_values_of_one_type():
     s = _code_snapshot()
     assert s.code_paths(_label(s, GLOBAL_P1)) == {GLOBAL_P1: "P1", GLOBAL_P2: "P2"}
     assert s.code_paths(_label(s, PROJECT_P1)) == {PROJECT_P1: "P1"}
+
+
+@pytest.mark.oracle("characterization")
+def test_code_paths_stops_at_a_parent_loop_of_a_broken_file():
+    """X names Y as its parent and Y names X; Z names itself. The walk up the hierarchy stops when
+    it meets a value it already holds (model._chain): X reads "Y / X", Y reads "X / Y", Z reads "Z"."""
+    types = [
+        {"actv_code_type_id": "701", "seq_num": "1", "actv_code_type": "Phase", "actv_code_type_scope": "AS_Global"}
+    ]
+    parents = {"8001": "8002", "8002": "8001", "8003": "8003"}
+    values = [
+        {
+            "actv_code_id": code_id,
+            "parent_actv_code_id": parent_id,
+            "actv_code_type_id": "701",
+            "actv_code_name": f"Value {short_name}",
+            "short_name": short_name,
+            "seq_num": str(number),
+        }
+        for number, ((code_id, parent_id), short_name) in enumerate(zip(parents.items(), "XYZ", strict=True), start=1)
+    ]
+    links = [{"task_id": "1", "actv_code_type_id": "701", "actv_code_id": "8003", "proj_id": "1"}]
+    tables = _table("ACTVTYPE", types) + _table("ACTVCODE", values) + _table("TASKACTV", links)
+    text = xer_text([todo("A")])
+    text = text[: -len("%E\n")] + "\n".join(tables) + "\n%E\n"
+    s = build_snapshot(parse_text(text, source="loop.xer"))
+    assert s.code_paths("Phase") == {"8001": "Y / X", "8002": "X / Y", "8003": "Z"}
 
 
 def test_gantt_filter_on_global_phase_p1_returns_a_only():

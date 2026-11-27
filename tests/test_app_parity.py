@@ -6,13 +6,14 @@ lost parameter (baseline, update, standard), no stale cache. The expected values
 from the same API the CLI uses, with the page's display format.
 """
 
+import ast
 from pathlib import Path
 
 import pandas as pd
 import pytest
 from conftest import baseline_box, read_folder
 from streamlit.testing.v1 import AppTest
-from xerkit import done, todo, xer_text
+from xerkit import done, hours, snap, todo, xer_text
 
 import xerscope
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_standard
@@ -230,6 +231,54 @@ def test_debug_page_shows_the_options_comparisons_and_targets_as_computed(app, s
         # x is read from p6.toml (limit_hours), not from a constant: 352 on P6-04/05/06, blank elsewhere
         expected_x = metric.params.get("limit_hours")
         assert (None if pd.isna(row["x_hours"]) else row["x_hours"]) == expected_x, metric.id
+
+
+@pytest.mark.oracle("property")
+def test_recalculation_table_lists_the_activity_whose_stored_date_differs():
+    """INT-01. A stored early finish 03-03 17:00 against the CPM's 03-02 17:00 (8 h from the data
+    date, Monday 03-02 08:00) differs; B stores the dates the CPM gives, so it is not listed."""
+    from xerscope.app.diagnostic import recalculation_table
+
+    snapshot = snap(
+        [
+            todo("A", early_start_date="2026-03-02 08:00", early_end_date="2026-03-03 17:00", **hours(8)),
+            todo("B", early_start_date="2026-03-02 08:00", early_end_date="2026-03-02 17:00", **hours(8)),
+        ]
+    )
+    table = recalculation_table(snapshot)
+    assert table["task_code"].tolist() == ["A"]
+    assert table["differs"].tolist() == ["early_end_date"]
+
+
+def _page_function(page: str, name: str):
+    """A function of a page script, compiled from the page's own source: importing a page runs it
+    (it needs the app's session), so the function alone is taken from its syntax tree."""
+    path = Path(xerscope.__file__).parent / "app" / "views" / page
+    definition = next(
+        node
+        for node in ast.parse(path.read_text(encoding="utf-8")).body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    )
+    namespace = {"pd": pd}
+    exec(compile(ast.Module([definition], []), str(path), "exec"), namespace)
+    return namespace[name]
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(
+    ("spi_cost", "bac_cost", "expected"),
+    [
+        (float("nan"), 0.0, "n/a — no cost in the baseline"),
+        (float("nan"), 1000.0, "n/a — no planned value cost yet"),
+        (0.876, 1000.0, "0.88"),
+    ],
+    ids=["no_cost_in_the_baseline", "no_planned_value_yet", "ratio_to_two_decimals"],
+)
+def test_cost_spi_text_says_why_there_is_no_cost_spi(spi_cost, bac_cost, expected):
+    """earned_value.cost_spi_text: no ratio and no baseline cost, no ratio but a baseline cost (its
+    planned value is still 0 at the data date), or the ratio at two decimals (0.876 -> 0.88)."""
+    cost_spi_text = _page_function("earned_value.py", "cost_spi_text")
+    assert cost_spi_text(pd.Series({"spi_cost": spi_cost, "bac_cost": bac_cost})) == expected
 
 
 def _open_audit(app, standard_id: str, metric_id: str):
