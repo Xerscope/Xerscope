@@ -8,7 +8,7 @@ from __future__ import annotations
 import pandas as pd
 
 from xerscope.app.ui import as_dates
-from xerscope.xer import Snapshot
+from xerscope.xer import RawXer, Snapshot
 
 # TASK columns holding a date, and the users who added and last changed the activity, with their labels in
 # the XER Import/Export Data Map Guide (Project) v26, G57491-01, October 2026, table TASK. The guide lists no
@@ -74,3 +74,26 @@ def task_date_columns_table(snapshot: Snapshot) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows, columns=["column", "label", "tasks", "earliest", "latest"])
+
+
+def file_fields_table(raw: RawXer) -> pd.DataFrame:
+    """Return every field of every table of a file as the parser read it, whatever xerscope makes of it.
+
+    One row per %F field: its table, its place in the %F line (from 1), the table's rows and the rows holding a
+    value in it. The model is not involved: a table or a field it ignores or refuses is listed all the same.
+    Field names only, no cell value.
+    """
+    rows = []
+    for table, frame in raw.tables.items():
+        for position, column in enumerate(frame.columns, start=1):
+            filled = (frame[column].astype("string").str.strip().fillna("") != "").sum()
+            rows.append(
+                {
+                    "table": table,
+                    "position": position,
+                    "column": column,
+                    "rows": len(frame),
+                    "rows_with_value": int(filled),
+                }
+            )
+    return pd.DataFrame(rows, columns=["table", "position", "column", "rows", "rows_with_value"])
