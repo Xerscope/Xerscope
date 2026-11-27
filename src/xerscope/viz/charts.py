@@ -230,8 +230,14 @@ def build_scurve(
         # drawn last, over the AC marker and the data-date line it shares x with
         _add_schedule_variance(figure, at_data_date, curve_scale, data_date, percent)
     _mark_data_date(figure, data_date)
-    figure.update_traces(hovertemplate="%{y:,.1f}", selector=lambda trace: trace.name != "EV (earned)")
+    # a hovertemplate would bring back the hover the SV mark turns off (Plotly gives it precedence)
+    figure.update_traces(hovertemplate="%{y:,.1f}", selector=_has_plain_hover)
     return _with_house_style(figure, "scurve", 500, unit, end_labels=True)
+
+
+def _has_plain_hover(trace) -> bool:
+    """A trace whose hover is its y value alone: not EV (which adds SV), not a mark with no hover."""
+    return trace.name != "EV (earned)" and trace.hoverinfo != "skip"
 
 
 def _series_trace(x, y, name: str, colour: str, mode: str = "lines", **properties) -> go.Scatter:
@@ -317,8 +323,8 @@ def build_mta(
 ) -> go.Figure:
     """Milestone trend analysis: forecast date (y) per reporting date (x), diagonal = today.
 
-    Both axes run over the same dates on a 1:1 scale, so the reporting line (forecast = data
-    date) is the 45° diagonal; below it is the past. The span is ``bounds`` (project start,
+    Both axes run over the same dates, so the reporting line (forecast = data date) is the
+    diagonal from corner to corner; below it is the past. The span is ``bounds`` (project start,
     project finish), widened to any update or forecast outside it so no point is cut; a
     missing bound comes from the points.
 
@@ -374,10 +380,11 @@ def build_mta(
     figure = _with_house_style(
         figure, "mta", 760, "Forecast date", x_title="Reporting date (status date)", end_labels=True
     )
-    # same range and scale on both axes: the diagonal is at 45°, the plot square
+    # same range on both axes: the reporting line joins the corners; no 1:1 scale, the plot
+    # takes the page's width instead of a square in a third of it
     axis_range = [first_date, last_date]
-    figure.update_xaxes(range=axis_range, constrain="domain")
-    figure.update_yaxes(range=axis_range, scaleanchor="x", scaleratio=1, constrain="domain", **DATE_AXIS)
+    figure.update_xaxes(range=axis_range)
+    figure.update_yaxes(range=axis_range, **DATE_AXIS)
     return figure
 
 

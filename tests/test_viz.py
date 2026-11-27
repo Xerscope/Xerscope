@@ -40,15 +40,17 @@ def test_mta_close_end_labels_are_pushed_apart():
     assert shift["M3"] == 0
 
 
-def test_mta_spans_the_project_on_both_axes_with_a_45_degree_reporting_line():
-    """x and y run from the project start to its finish on one scale: the reporting line
-    (forecast = data date) is the diagonal of a square plot."""
+@pytest.mark.oracle("property")
+def test_mta_spans_the_project_on_both_axes_and_fills_the_width():
+    """x and y run from the project start to its finish: the reporting line (forecast = data date)
+    joins the plot's corners. No 1:1 scale: a square plot sat in a third of a wide page and in
+    145 px of a phone's 760 px box."""
     trend = _mta_frame({"M1": ["2026-08-03"] * 3})  # updates 2026-03-02..16
     start, finish = pd.Timestamp("2026-01-05"), pd.Timestamp("2027-06-30")
     fig = build_mta(trend, {}, bounds=(start, finish))
     assert [pd.Timestamp(v) for v in fig.layout.xaxis.range] == [start, finish]
     assert [pd.Timestamp(v) for v in fig.layout.yaxis.range] == [start, finish]
-    assert fig.layout.yaxis.scaleanchor == "x" and fig.layout.yaxis.scaleratio == 1
+    assert fig.layout.yaxis.scaleanchor is None and fig.layout.xaxis.constrain is None
     line = next(t for t in fig.data if t.name and t.name.startswith("Reporting line"))
     assert [pd.Timestamp(v) for v in line.x] == [start, finish] == [pd.Timestamp(v) for v in line.y]
 
@@ -446,6 +448,18 @@ def test_scurve_marks_the_schedule_variance_at_the_data_date():
     mark = next(t for t in behind.data if t.name == "SV (EV − PV)")
     assert mark.line.color == STATUS["critical"] and list(mark.y) == [20.0, 15.0]  # % of BAC
     assert any(a.text == "SV -5.0 % of BAC" for a in behind.layout.annotations)
+
+
+@pytest.mark.oracle("property")
+def test_scurve_hover_never_shows_the_schedule_variance_mark():
+    """The SV mark spans PV to EV at one x: under the pointer it would read "SV (EV − PV): 231"
+    (its EV end), not SV = +31. SV is read in the EV point's hover instead; the mark has none."""
+    curve = pd.DataFrame({"date": pd.date_range("2026-03-01", periods=30), "pv_cum_hr": range(0, 300, 10)})
+    series = _ev_series(pv=200.0, ev=231.0)
+    for percent in (False, True):
+        fig = build_scurve(curve, series, None, series["data_date"].iloc[-1], percent=percent)
+        mark = next(t for t in fig.data if t.name == "SV (EV − PV)")
+        assert mark.hoverinfo == "skip" and mark.hovertemplate is None
 
 
 def test_finish_trend_of_one_update_keeps_a_span_of_days_on_both_axes():

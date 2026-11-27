@@ -545,7 +545,7 @@ READINGS: dict[str, Reading] = {
     "mta": Reading(
         how=(
             "x = reporting (status) date, y = forecast date of the milestone, both axes on the same scale so the "
-            "line forecast = status date is the 45° diagonal; below it is the past (shaded). One line per milestone "
+            "line forecast = status date is the diagonal; below it is the past (shaded). One line per milestone "
             "in its tag colour; a diamond where the update reports it complete, where the line meets the diagonal. "
             "The last point is bigger and red when the date moved later in the last update, green when earlier; the "
             "end label gives the code and the move in wd (`_mta_end_label`, `charts.py:377-387`)."
