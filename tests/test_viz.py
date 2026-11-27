@@ -762,9 +762,13 @@ def test_mta_grey_when_the_date_did_not_move_in_the_last_update_even_after_a_dri
         "MOVED": ["2026-07-01"] * 3,
         "FLAT": ["2026-08-01"] * 3,
         "GONE": ["2026-09-01"] * 3,
+        "PUSHED": ["2026-10-01"] * 3,
+        "UNREAD": ["2026-11-01"] * 3,
     }
-    total = {"STILL": -18.0, "MOVED": -18.0, "FLAT": 0.0, "GONE": -3.0}
-    last = {"STILL": 0.0, "MOVED": 7.0, "FLAT": 0.0, "GONE": float("nan")}
+    # PUSHED: later again in the last update (a "<= 0" test would grey it); UNREAD: no last move
+    # given at all (None), read like a deleted milestone, not like "did not move"
+    total = {"STILL": -18.0, "MOVED": -18.0, "FLAT": 0.0, "GONE": -3.0, "PUSHED": -18.0, "UNREAD": -4.0}
+    last = {"STILL": 0.0, "MOVED": 7.0, "FLAT": 0.0, "GONE": float("nan"), "PUSHED": -7.0}
     fig = build_mta(_mta_frame(lines), total, last)
     traces = {t.name.split()[0]: t for t in fig.data if t.name and t.name.split()[0] in lines}
     red, grey = STATUS["critical"], NEUTRAL
@@ -772,6 +776,8 @@ def test_mta_grey_when_the_date_did_not_move_in_the_last_update_even_after_a_dri
     assert list(traces["MOVED"].marker.color) == [SERIES[1]] * 2 + [red]
     assert list(traces["FLAT"].marker.color) == [SERIES[2]] * 3
     assert list(traces["GONE"].marker.color) == [SERIES[3]] * 2 + [red]
+    assert list(traces["PUSHED"].marker.color) == [SERIES[4]] * 2 + [red]
+    assert list(traces["UNREAD"].marker.color) == [SERIES[5]] * 2 + [red]
     assert list(traces["STILL"].marker.size) == [9, 9, 13]
     assert list(traces["FLAT"].marker.size) == [9, 9, 9]
     texts = {a.text for a in fig.layout.annotations}
