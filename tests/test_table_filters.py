@@ -58,6 +58,12 @@ def test_text_contains(text, expected):
         ("−12.5", ["A1210"]),  # typographic minus
         ("-12.5..-3", ["A1040", "A1210"]),  # inclusive, negative bounds
         ("-5..25", ["A1040", "M0100", "B2000"]),
+        # _number drops the thousands separator and the percent sign: ">1,000" is > 1000, "25%" is 25
+        (">1,000", []),  # 25 is the largest value; read as 1.0 it would match B2000
+        ("<1,000", ["A1040", "A1210", "M0100", "B2000"]),
+        ("25%", ["B2000"]),
+        (">=-3%", ["A1040", "M0100", "B2000"]),
+        ("-1,000..0", ["A1040", "A1210", "M0100"]),
     ],
 )
 def test_number_comparisons_and_ranges(text, expected):

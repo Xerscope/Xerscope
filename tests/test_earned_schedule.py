@@ -341,3 +341,20 @@ def test_no_pace_is_needed_once_the_planned_finish_is_passed_or_every_hour_earne
     assert done.tspi is None
     early = schedule_of([A, B], {"A": 100, "B": 100}, "2026-03-11 12:00")
     assert early.tspi is None
+
+
+@pytest.mark.oracle("standard")
+def test_a_baseline_task_whose_finish_is_before_its_start_still_opens_the_plan_on_its_earliest_date():
+    """A is baselined with its finish (Fri 03-06 17:00) before its start (Mon 03-02 08:00), B as above.
+    The plan runs from the earliest of the dates (evm.py, "a finish before its start: _Spread"), Monday
+    03-02 08:00, to Friday 03-13 17:00: PD = AT = 10 wd. A's 40 h are spread over week 1 as when its dates
+    are in order, so as in the first test EV = 40 + 20 = 60 h is reached Wednesday 03-11 12:00: ES = 7.5 wd.
+    Read from the finish as the plan start, the plan would start on 03-06 17:00 and ES would be 2.5 wd."""
+    inverted_a = planned("A", "2026-03-06 17:00", "2026-03-02 08:00")
+    baseline = Baseline.from_snapshot(snap([inverted_a, B], data_date="2026-03-02 08:00"))
+    update = snap([progressed(A, 100), progressed(B, 50)], data_date="2026-03-13 17:00")
+    schedule = earned_schedule(update, baseline)
+    assert schedule.plan_start == pd.Timestamp("2026-03-02 08:00")
+    assert schedule.plan_finish == pd.Timestamp("2026-03-13 17:00")
+    assert in_days(schedule.pd_min) == in_days(schedule.at_min) == 10.0
+    assert in_days(schedule.es_min) == 7.5

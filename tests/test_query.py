@@ -5,6 +5,7 @@ import pytest
 from asklex import LEXICON
 
 from xerscope.analysis import query, wbs
+from xerscope.analysis.ask import vocab as vocab_module
 from xerscope.analysis.query import Filter, Vocabulary
 from xerscope.viz.gantt import CATEGORY_ORDER
 from xerscope.xer.model import STATUS
@@ -660,3 +661,207 @@ def test_a_chosen_type_offers_its_values_then_the_value_filters():
     ]
     got = query.parse_keywords("Phase", vocab, {"Phase": GLOBAL_P1})
     assert got.code_type == "Phase (global)" and got.code_ids == frozenset({GLOBAL_P1}) and got.clarify == ()
+
+
+def _tasks_with(store, **columns) -> tuple:
+    """The demo snapshot with its first rows given the columns, one list value per row."""
+    snapshot, _, tasks, vocab = _demo(store)
+    rows = tasks.head(len(next(iter(columns.values())))).copy()
+    for name, values in columns.items():
+        rows[name] = values
+    return snapshot, rows, vocab
+
+
+@pytest.mark.oracle("standard")
+def test_hard_constraints_are_the_p6_set_of_not_yet_started_work(store):
+    """P6 Check Schedule (101248): the hard set is Mandatory Start, Start On, Mandatory Finish and
+    Finish On, primary or secondary; a start constraint is ignored once the activity has started."""
+    snapshot, rows, vocab = _tasks_with(
+        store,
+        task_code=["A", "B", "C", "D", "E", "F", "G"],
+        cstr_type=["CS_MANDSTART", "CS_MSO", "", "CS_MANDFIN", "CS_MANDSTART", "CS_MSOA", "CS_MEO"],
+        cstr_type2=["", "", "CS_MEO", "", "", "", ""],
+        is_started=[False, False, False, False, True, False, True],
+    )
+
+    def asked(text):
+        found = query.apply(query.parse_keywords(text, vocab), rows, snapshot).rows
+        return set(found["task_code"])
+
+    # A Mandatory Start, B Start On, C Finish On as secondary, D Mandatory Finish, G Finish On
+    # (a finish constraint holds after the start); E is a started Mandatory Start, F is soft
+    assert asked("hard constraints") == {"A", "B", "C", "D", "G"}
+    assert asked("soft constraints") == {"F"}
+
+
+@pytest.mark.oracle("standard")
+def test_a_number_of_days_is_that_many_hours_of_the_activitys_own_calendar(store):
+    """A day is the activity's own calendar day (hours_per_day), so 90 h of float is 9 days on a
+    10 h calendar and 11.25 days on an 8 h one; 180 h of duration is 18 and 22.5 days."""
+    snapshot, rows, vocab = _tasks_with(
+        store,
+        task_code=["TEN", "EIGHT"],
+        hours_per_day=[10.0, 8.0],
+        total_float_hr_cnt=[90.0, 90.0],
+        target_drtn_hr_cnt=[180.0, 180.0],
+        is_complete=[False, False],
+    )
+
+    def asked(text):
+        found = query.apply(query.parse_keywords(text, vocab), rows, snapshot).rows
+        return set(found["task_code"])
+
+    assert rows["hours_per_day"].nunique() == 2
+    assert asked("float < 10") == {"TEN"}  # 90 < 10 x 10 = 100, but 90 >= 10 x 8 = 80
+    assert asked("durée supérieure à 20 jours") == {"EIGHT"}  # 180 > 20 x 8 = 160, but 180 <= 20 x 10 = 200
+
+
+@pytest.mark.oracle("standard")
+@pytest.mark.parametrize(
+    ("data_date", "this_week_monday"),
+    [
+        ("2026-10-21 08:00", "2026-10-19"),  # a Wednesday
+        ("2026-10-25 17:00", "2026-10-19"),  # a Sunday: still the ISO week that began on the 19th
+    ],
+)
+def test_a_week_is_the_iso_week_holding_the_data_date(data_date, this_week_monday):
+    """clauses.py: "next week" is the 7 days after the Monday of the week holding the data date."""
+    vocab = Vocabulary(wbs={}, words=frozenset(), data_date=pd.Timestamp(data_date))
+    assert pd.Timestamp(this_week_monday).weekday() == 0
+    got = query.parse_keywords("starting next week", vocab)
+    assert got.matched == ("Start 26/10/2026–01/11/2026",)
+    next_week = query.Atom("date", ("start", pd.Timestamp("2026-10-26"), pd.Timestamp("2026-11-02")))
+    assert got.clauses == (("Start 26/10/2026–01/11/2026", next_week),)
+    this = query.parse_keywords("starting this week", vocab)
+    assert this.matched == ("Start 19/10/2026–25/10/2026",)
+
+
+@pytest.mark.oracle("standard")
+@pytest.mark.parametrize(
+    ("data_date", "text", "label", "start", "end"),
+    [
+        # clauses.py: "since" and "from" keep the named day itself, so the window opens on it
+        ("2026-10-19", "finishing since 15/10/2026", "Finish from 15/10/2026", "2026-10-15", None),
+        ("2026-10-19", "finishing from 15/10", "Finish from 15/10/2026", "2026-10-15", None),
+        # a year written with two digits is 20yy
+        ("2026-10-19", "finishing before 31/12/26", "Finish before 31/12/2026", None, "2026-12-31"),
+        # no year: the date nearest the data date, a year before included (10 Jan 2027: 15 Dec 2026
+        # is 26 days back, 15 Dec 2027 is 339 days ahead)
+        ("2027-01-10", "finishing since 15/12", "Finish from 15/12/2026", "2026-12-15", None),
+    ],
+)
+def test_a_date_with_since_a_short_year_or_no_year_is_read_as_the_calendar_says(data_date, text, label, start, end):
+    vocab = Vocabulary(wbs={}, words=frozenset(), data_date=pd.Timestamp(data_date))
+    low, high = (None if day is None else pd.Timestamp(day) for day in (start, end))
+    got = query.parse_keywords(text, vocab)
+    assert got.clauses == ((label, query.Atom("date", ("finish", low, high))),)
+
+
+def _nested_nodes() -> pd.DataFrame:
+    """P with two children B and C, and a separate node Q; ``ancestors`` lists the node, then up."""
+    return pd.DataFrame(
+        {
+            "wbs_id": ["P", "B", "C", "Q"],
+            "wbs_code": ["P", "P.B", "P.C", "Q"],
+            "wbs_name": ["Parent", "Beta", "Gamma", "Other"],
+            "ancestors": [["P"], ["B", "P"], ["C", "P"], ["Q"]],
+        }
+    )
+
+
+@pytest.mark.oracle("standard")
+def test_a_wbs_filter_keeps_the_whole_branch_below_the_node(store):
+    """Asking for a node returns its activities and those of every node below it, not the node alone."""
+    snapshot, rows, _ = _tasks_with(store, task_code=["t1", "t2", "t3"], wbs_id=["P", "B", "Q"])
+    funnel = query.apply(query.Filter(wbs_id="P"), rows, snapshot, _nested_nodes())
+    assert [step.label for step in funnel.steps] == ["WBS P · Parent"]
+    assert funnel.steps[0].left == 2  # t1 on P itself, t2 on its child B; t3 is on Q
+    assert set(funnel.rows["task_code"]) == {"t1", "t2"}
+
+
+@pytest.mark.oracle("standard")
+def test_a_word_held_under_several_nodes_names_the_deepest_node_alone(store):
+    """A word used by activities under B (and so under its parent A) names B, not A; a word used
+    under B and under C, its sibling, names neither."""
+    activities = pd.DataFrame(
+        {
+            "wbs_id": ["B", "C", "B", "C"],
+            "task_name": ["Foundations", "Piping", "Grouting", "Grouting"],
+        }
+    )
+    nodes = pd.DataFrame(
+        {"wbs_id": ["A", "B", "C"], "ancestors": [["A"], ["B", "A"], ["C", "A"]]},
+    )
+    wbs = {"A": "Alpha", "B": "Beta", "C": "Gamma"}
+    words = vocab_module.node_words(activities, wbs, nodes, {})
+    # "foundations" is held by B and A above it, so B is its deepest holder; "grouting" is held by
+    # B, C and A, and B and C are siblings: no single deepest node
+    assert words == {"B": frozenset({"foundations"}), "C": frozenset({"piping"})}
+
+
+@pytest.mark.oracle("standard")
+@pytest.mark.parametrize(
+    ("ask", "lang", "expected_head"),
+    [
+        # answer.py WORDS: the singular head, then what was asked, in the sentence's language
+        (Filter(milestones=True), "en", "1 milestone"),
+        (Filter(milestones=True), "fr", "1 jalon"),
+        (Filter(loe=True), "en", "1 activity level of effort"),
+        (Filter(loe=True), "fr", "1 activité niveau d'effort"),
+        # the resource is said by its short name when it has one, else by its name
+        (Filter(resources=frozenset({"r1"})), "en", "1 activity with CRANE"),
+        (Filter(resources=frozenset({"r2"})), "en", "1 activity with Tower crane 2"),
+        (Filter(resources=frozenset({"r1"})), "fr", "1 activité avec CRANE"),
+    ],
+)
+def test_the_answer_names_milestones_level_of_effort_and_resources_in_the_singular(store, ask, lang, expected_head):
+    snapshot, rows, _ = _tasks_with(store, task_code=["ONE"], total_float_d=[float("nan")])
+    vocab = Vocabulary(wbs={}, resources={"r1": ("CRANE", "Tower crane 1"), "r2": ("", "Tower crane 2")})
+    funnel = query.apply(Filter(), rows, snapshot)
+    said = query.answer(ask, funnel, vocab, lang)
+    assert said.split(";")[0] == expected_head
+
+
+@pytest.mark.oracle("standard")
+def test_a_chip_for_level_of_effort_is_taken_off_alone():
+    asked = query.parse_keywords("critical level of effort", VOCAB)
+    assert asked.loe is True and "Level of effort" in asked.matched
+    dropped = query.without(asked, "Level of effort", VOCAB)
+    assert dropped.loe is False
+    assert dropped.matched == ("Float: Critical",) and dropped.categories == asked.categories
+
+
+@pytest.mark.oracle("standard")
+def test_a_word_of_four_letters_is_no_typo_of_a_longer_word_of_the_file():
+    """text.py typo_word: a typo pass reads words of 5+ letters only. "valv" is one letter short of
+    "valve" (ratio 2 x 4 / (4 + 5) = 0.889, above the 0.85 cut), still left out as unread."""
+    vocab = Vocabulary(wbs={}, words=frozenset({"valve", "pumps"}), lexicon=LEXICON)
+    for text in ("valv", "pump"):
+        got = query.parse_keywords(text, vocab)
+        assert got.empty and got.ignored == (text,) and got.search == "", text
+    # 6 letters, one too many: 2 x 5 / (6 + 5) = 0.909, read as the word
+    assert query.parse_keywords("pumpps", vocab).search == "pumps"
+
+
+@pytest.mark.oracle("standard")
+def test_the_facts_of_an_answer_list_the_worst_floats_the_successors_and_the_steps():
+    """W has the lowest float (-80 h = -10 wd on the default 8 h calendar). Its successors are
+    S1 to S7 (not its predecessor P); only the first 5 in Activity ID order are kept."""
+    from xerkit import snap, todo
+
+    from xerscope.analysis.populations import Funnel
+
+    successors = [f"S{n}" for n in range(1, 8)]
+    s = snap(
+        [todo("P", total_float_hr_cnt="0"), todo("W", total_float_hr_cnt="-80")]
+        + [todo(code, total_float_hr_cnt="0") for code in successors],
+        preds=[("P", "W", "PR_FS", "0"), *[("W", code, "PR_FS", "0") for code in reversed(successors)]],
+    )
+    funnel = Funnel(s.activities).keep("not P", "ask", lambda rows: rows["task_code"] != "P")
+    found = query.facts(funnel, s)
+    assert found["count"] == 8
+    assert found["steps"] == [["not P", 8]]
+    assert found["rows"][0][:2] == ["W", -10.0]
+    assert found["successors_of_worst"] == ["S1", "S2", "S3", "S4", "S5"]
+    assert found["data_date"] == "2026-03-02"  # xerkit.DD
+    assert query.facts(Funnel(s.activities.iloc[0:0]), s)["successors_of_worst"] == []

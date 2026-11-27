@@ -1,6 +1,7 @@
 """Baselines read from a P6 XML export (xer/pmxml.py): the baseline chosen, the fields and calendars
 converted to the XER's, and the result identical to the same baseline read from XER."""
 
+import re
 from datetime import date
 
 import pandas as pd
@@ -95,6 +96,27 @@ def test_fields_are_converted_to_the_xer_codes():
     assert row["phys_complete_pct"] == "25"  # a fraction in XML, 0-100 in XER
     assert (row["cstr_type"], row["cstr_date"]) == ("CS_MSOA", "2026-03-02 08:00")
     assert (row["target_start_date"], row["act_start_date"]) == ("2026-03-02 08:00", "2026-03-02 08:00")
+
+
+@pytest.mark.oracle("characterization")
+def test_current_dates_take_the_remaining_early_dates_first_and_the_start_and_finish_dates_otherwise():
+    """pmxml.py: early_start_date / early_end_date are RemainingEarlyStartDate / RemainingEarlyFinishDate
+    when the XML has them (an activity in progress: StartDate is its actual start), else StartDate /
+    FinishDate (a completed activity); restart_date / reend_date only ever hold the remaining dates."""
+    in_progress = activity(
+        "B1", "2001", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40, Status="In Progress",
+        StartDate="2026-03-02T08:00:00", FinishDate="2026-03-06T17:00:00",
+        RemainingEarlyStartDate="2026-03-04T08:00:00", RemainingEarlyFinishDate="2026-03-05T17:00:00",
+    )  # fmt: skip
+    completed = activity(
+        "B2", "2002", "2026-03-02T08:00:00", "2026-03-06T17:00:00", 40, Status="Completed",
+        StartDate="2026-03-03T08:00:00", FinishDate="2026-03-04T17:00:00",
+    )  # fmt: skip
+    raw = read_pmxml_baseline(pmxml_bytes([baseline("370", "BL-1", [in_progress, completed])]), "export.xml")
+    rows = raw.table("TASK").set_index("task_code")
+    columns = ["early_start_date", "early_end_date", "restart_date", "reend_date"]
+    assert rows.loc["B1", columns].tolist() == ["2026-03-04 08:00", "2026-03-05 17:00"] * 2
+    assert rows.loc["B2", columns].tolist() == ["2026-03-03 08:00", "2026-03-04 17:00", "", ""]
 
 
 def dates(start: str, finish: str) -> dict:
@@ -234,6 +256,12 @@ def test_a_name_found_only_in_the_xml_baseline_never_reaches_an_anonymized_downl
     assert not any(b"Secret gone activity" in body or b"ZZGONE" in body for body in files.values())
     read_back = [build_snapshot(parse_bytes(body, source=name)) for name, body in files.items()]
     assert sorted(len(s.activities) for s in read_back)[-1] == len(kept) + 1  # the baseline, deleted activity kept
+    # anonymize.xer_name: "<code>_<status date>.xer"; the baseline's date is the data date written in the XML
+    assert all(re.fullmatch(r"XP[0-9A-F]{8}_\d{4}-\d{2}-\d{2}\.xer", name) for name in files), list(files)
+    baseline_names = [
+        name for name, snapshot in zip(files, read_back, strict=True) if len(snapshot.activities) == len(kept) + 1
+    ]
+    assert len(baseline_names) == 1 and baseline_names[0].endswith("_2026-08-31.xer")
     at.session_state["anon_exports"] = False
     plain = ev_csv(at.switch_page("views/earned_value.py").run())
     assert b"ZZGONE" in plain  # the test exercises the case: the plain download does list it

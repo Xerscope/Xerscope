@@ -571,3 +571,18 @@ def test_gantt_grid_fits_the_longest_wbs_label_within_bounds():
     assert 'row.kind !== "wbs"' in fit and "getBoundingClientRect" in fit and "probe.remove()" in fit
     assert "Math.max(320," in fit and '"min(" + gridPx + "px, 60vw)"' in fit
     assert "document.fonts.ready.then(fitGridWidth)" in script
+
+
+@pytest.mark.oracle("standard")
+def test_a_wbs_bar_starts_at_the_earliest_start_of_the_activities_below_it():
+    """A WBS node's start is the earliest start of the activities below it (the node's own
+    and its child nodes'), as the P6 Gantt draws a WBS summary bar. Hand calculation on the
+    fixture: W1 holds B (Mon 9 Mar 08:00) and, through its child W11, A (Mon 2 Mar 08:00), so
+    W1 starts on 2 Mar, not 9 Mar. The project root holds A, B, C and P, all of them
+    2 Mar except B."""
+    s = _wbs_snapshot()
+    starts = rollup(s).set_index("wbs_id")["start"]
+    assert starts["W1"] == pd.Timestamp("2026-03-02 08:00")
+    assert starts["__project__"] == pd.Timestamp("2026-03-02 08:00")
+    bar = next(r for r in _rows(s) if r["id"] == "w:W1")
+    assert bar["start"] == "2026-03-02T08:00"

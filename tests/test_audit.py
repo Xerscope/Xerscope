@@ -10,8 +10,10 @@ import pandas as pd
 import pytest
 from conftest import REFERENCE_HINT, missing
 from test_characterization import REFERENCE_DATA, reference_names
+from xerkit import done, hours, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_standard
+from xerscope.store import SnapshotStore
 from xerscope.xer import load_snapshot
 
 LINK_KEY = ["pred_code", "succ_code", "type"]
@@ -178,6 +180,43 @@ def test_bei_counts_completions_outside_the_due_set(store):
     bei = next(r for r in result if r.metric.id == "DCMA-14")
     sets = split(bei, snapshot)
     assert len(sets.counted) == bei.numerator
+
+
+@pytest.mark.oracle("standard")
+def test_bei_early_completion_is_counted_and_shown_outside_the_due_set():
+    """DCMA-14 on a hand-made pair. Baseline (first update): A and B due 03-06, E due 03-20.
+    Update, data date 03-09: A finished 03-05, E finished 03-06 (early), B not finished.
+    Due by the data date: A, B, so denominator 2. Completed: A and E, so numerator 2, of which E
+    is outside the due set: counted_outside 1, B is the only checked row not counted."""
+    from xerscope.analysis.audit import split
+
+    def plan(finish: str) -> dict:
+        return dict(early_start_date="2026-03-02 08:00", early_end_date=finish, target_end_date=finish, **hours(8))
+
+    first = snap(
+        [
+            todo("A", **plan("2026-03-06 17:00")),
+            todo("B", **plan("2026-03-06 17:00")),
+            todo("E", **plan("2026-03-20 17:00")),
+        ],
+        data_date="2026-03-02 08:00",
+    )
+    update = snap(
+        [
+            done("A", act_end_date="2026-03-05 17:00", **hours(8)),
+            todo("B", **plan("2026-03-10 17:00")),
+            done("E", act_end_date="2026-03-06 17:00", **hours(8)),
+        ],
+        data_date="2026-03-09 08:00",
+    )
+    store = SnapshotStore([first, update])
+    result = run_standard(builtin_standards()["DCMA"], AnalysisContext(update, store, Baseline.from_snapshot(first)))
+    bei = next(r for r in result if r.metric.id == "DCMA-14")
+    sets = split(bei, update)
+    assert (bei.numerator, bei.denominator) == (2, 2)
+    assert sets.counted_outside == 1
+    assert len(sets.counted) == 2
+    assert set(sets.not_counted["task_code"]) == {"B"}
 
 
 # --- sets_long: every check's sets in one table -------------------------------------------------

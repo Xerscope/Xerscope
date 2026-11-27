@@ -30,6 +30,17 @@ def test_blank_and_shared_guids_and_codes_still_present_are_left_out():
     assert renumbered(old, new).empty
 
 
+@pytest.mark.oracle("characterization")
+def test_a_new_code_already_used_in_the_old_file_is_not_a_renumbering():
+    # A's GUID now sits on B, an Activity ID the old file already held (B has left with its own GUID):
+    # "the new one not in old" (renumbered docstring), so this is a reuse of B, not A renumbered
+    old = snap([todo("A", guid="ga"), todo("B", guid="gb")])
+    new = snap([todo("B", guid="ga")])
+    assert renumbered(old, new).empty
+    # control: the same GUID under a code the old file never held is the renumbering A -> A2
+    assert _codes(renumbered(old, snap([todo("A2", guid="ga")]))) == [("A", "A2")]
+
+
 def test_a_file_without_guid_column_finds_nothing():
     assert renumbered(snap([todo("A")]), snap([todo("A2")])).empty
 

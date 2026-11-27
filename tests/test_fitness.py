@@ -115,3 +115,18 @@ def test_the_summary_gives_what_remains_whatever_the_baseline_allows():
     summary = markdown(measured)  # no regression, no improvement: the totals are still there
     assert "### What remains" in summary and "| mypy errors | 169 |" in summary
     assert summary.index("### What remains") < summary.index("### By module")
+
+
+def test_the_summary_lists_the_regressions_and_improvements_against_the_baseline():
+    """scripts/fitness.py markdown: the "Against the baseline" section, after the per-module table, holds one
+    "- worse: ..." line per regression and one "- better: ..." line per improvement; none when there is
+    neither."""
+    from fitness import markdown
+
+    measured = result({"a.py": module()})
+    summary = markdown(measured, worse=["a.py cc_over_15: 0 -> 2"], better=["b.py clones: 3 -> 1"])
+    assert "### Against the baseline" in summary
+    assert "- worse: a.py cc_over_15: 0 -> 2" in summary
+    assert "- better: b.py clones: 3 -> 1" in summary
+    assert summary.index("### By module") < summary.index("### Against the baseline")
+    assert "### Against the baseline" not in markdown(measured)

@@ -203,6 +203,47 @@ def test_late_commitments_left_out_with_the_option():
     assert row["ppc_week"] == pytest.approx(100.0)
 
 
+def boundary_pair():
+    """W-1 (DD 03-09 08:00): D started, finish 03-09 08:00 (= DD W-1); E not started, start
+    03-09 08:00 (= DD W-1), finish 03-20; T not started 03-10 -> 03-13.
+    W (DD 03-16 08:00): D complete 03-09 08:00; E started 03-09 08:00; T complete 03-10 / 03-13."""
+    prev = snap(
+        [
+            active("D", early_start_date="2026-03-02 08:00", early_end_date="2026-03-09 08:00"),
+            todo("E", early_start_date="2026-03-09 08:00", early_end_date="2026-03-20 17:00"),
+            todo("T", early_start_date="2026-03-10 08:00", early_end_date="2026-03-13 17:00"),
+        ],
+        data_date=DD_LATE_W1,
+    )
+    cur = snap(
+        [
+            done("D", act_start_date="2026-03-02 08:00", act_end_date="2026-03-09 08:00"),
+            active("E", act_start_date="2026-03-09 08:00", early_end_date="2026-03-20 17:00"),
+            done("T", act_start_date="2026-03-10 08:00", act_end_date="2026-03-13 17:00"),
+        ],
+        data_date=DD_LATE_W,
+    )
+    return prev, cur
+
+
+@pytest.mark.oracle("standard")
+def test_a_date_equal_to_the_previous_data_date_is_overdue_not_a_commitment_with_the_option():
+    """Without the option, a planned date equal to DD W-1 (03-09 08:00) is already due, not
+    new: D finish and E start (both 03-09 08:00) are out, only T (03-10, 03-13) commits.
+    Starts 1/1, finishes 1/1, PPC W/W-1 100 %."""
+    row = week(*boundary_pair(), include_overdue=False)
+    assert counts(row) == (1, 1, 1, 1)
+    assert row["ppc_week"] == pytest.approx(100.0)
+
+
+@pytest.mark.oracle("standard")
+def test_a_date_equal_to_the_previous_data_date_is_committed_by_default():
+    """Control of the case above: by default every date <= DD W (03-16) commits, so D finish and
+    E start join T's. Starts E, T = 2/2; finishes D, T = 2/2."""
+    row = week(*boundary_pair())
+    assert counts(row) == (2, 2, 2, 2)
+
+
 def test_actual_before_previous_data_date_is_kept():
     """Case 2. W-1 (DD 03-02): B not started, start 03-04 -> 03-20. Committed: B start.
     W (DD 03-09): B started, actual start 02-27, before DD W-1 although W-1 said not started.
@@ -358,6 +399,51 @@ def test_unplanned_work_listed():
     work; T, planned in W-1, is not."""
     frame = progress.unplanned_work(*unplanned_pair())
     assert set(frame["task_code"]) == {"N"}
+
+
+@pytest.mark.oracle("standard")
+def test_status_without_the_matching_actual_date_is_not_kept():
+    """Mirror of test_status_without_actual_date_is_missed: an actual date on or before DD W
+    does not keep a commitment while W's status says it is not done.
+    W-1: A not started 03-02 -> 03-06 (start and finish committed); B started, finish 03-05
+    (finish committed). W: A 'Not Started' yet carrying an actual start 03-03; B 'In Progress'
+    yet carrying an actual finish 03-05. Neither status says done, so no commitment is kept:
+    starts 0/1, finishes 0/2, PPC W/W-1 0/3 = 0 %."""
+    prev = snap(
+        [
+            todo("A", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00"),
+            active("B", early_start_date="2026-03-02 08:00", early_end_date="2026-03-05 17:00"),
+        ],
+        data_date=DD_W1,
+    )
+    cur = snap(
+        [
+            todo("A", act_start_date="2026-03-03 08:00", early_start_date="2026-03-09 08:00"),
+            active("B", act_end_date="2026-03-05 17:00"),
+        ],
+        data_date=DD_W,
+    )
+    row = week(prev, cur)
+    assert counts(row) == (1, 0, 2, 0)
+    assert row["ppc_week"] == pytest.approx(0.0)
+    assert not progress.committed(prev, cur)["kept"].any()
+
+
+@pytest.mark.oracle("standard")
+def test_unplanned_work_leaves_out_level_of_effort_and_milestones():
+    """Case 10. New in W, absent from W-1, started before DD W: L (level of effort, 03-03 ->
+    03-05) and M (start milestone at 03-03 08:00) are not work done; N (task) is."""
+    prev, _ = unplanned_pair()
+    cur = snap(
+        [
+            done("T", act_start_date="2026-03-02 08:00", act_end_date="2026-03-06 17:00"),
+            done("N", act_start_date="2026-03-03 08:00", act_end_date="2026-03-05 17:00"),
+            done("L", task_type="TT_LOE", act_start_date="2026-03-03 08:00", act_end_date="2026-03-05 17:00"),
+            done("M", act_start_date="2026-03-03 08:00", act_end_date="2026-03-03 08:00", **SM),
+        ],
+        data_date=DD_W,
+    )
+    assert set(progress.unplanned_work(prev, cur)["task_code"]) == {"N"}
 
 
 def test_activity_deleted_in_w_left_out():
