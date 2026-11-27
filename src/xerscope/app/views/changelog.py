@@ -131,22 +131,25 @@ if len(store) < 2:
 
 labels = store.labels
 old_column, new_column = st.columns(2)
+# From is always older than To: a log read backwards shows a slip as a gain and actuals as removed
 new_label = new_column.selectbox(
     "To (newer)",
-    labels,
-    index=len(labels) - 1,
+    labels[1:],
+    index=len(labels) - 2,
     key="cl_new",
     help="The later of the two updates compared; the changes are read as To minus From. "
     "Use it with From to compare any two weeks, not only consecutive ones.",
 )
 new_index = labels.index(new_label)
+older_labels = labels[:new_index]
+if st.session_state.get("cl_old") not in older_labels:
+    st.session_state["cl_old"] = older_labels[-1]  # To moved before From: From follows, one update back
 old_label = old_column.selectbox(
     "From (older)",
-    labels,
-    index=max(new_index - 1, 0),
+    older_labels,
     key="cl_old",
-    help="The earlier of the two updates compared. The buttons below set it one, four updates back or to the "
-    "first loaded.",
+    help="The earlier of the two updates compared: only the updates before To are listed. The buttons below "
+    "set it one, four updates back or to the first loaded.",
 )
 
 
@@ -176,10 +179,6 @@ with top:
         lead="Everything that changed between two XER files: tasks, durations, relationships, progress, "
         "dates, float, constraints, budgets and resource assignments. Tasks are matched by Task ID.",
     )
-if old is new:
-    ui.need("Pick two different files.")
-    st.stop()
-
 log = memo(("changelog", old_label, new_label), changelog, old, new, baseline=False)
 counts = summary(log)
 show_kpis(log, counts)

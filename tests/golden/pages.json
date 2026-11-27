@@ -660,7 +660,7 @@
   "multiselect: Milestones and key tasks (up to 6) = ['M9999', 'X4050', 'M3099']",
   "popover: How to read",
   "plotly_chart: scatter, scatter, scatter, scatter, scatter",
-  "caption: One colour per milestone, as on its tag above. Last point and label = move in the last update: red later, green earlier.",
+  "caption: One colour per milestone, as on its tag above. Last point and arrow = drift since the first update: red later, green earlier, in wd on the label, then the move in the last update (last).",
   "subheader: Slippage",
   "caption: Working days on each milestone's own calendar.",
   "popover: How to read",
