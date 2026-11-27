@@ -441,7 +441,7 @@ or from the `verify/` modules themselves (`shapes`, `p6_corpus`, `mpxj_reader`).
 - **`diagnostic.py`:** the tables of the Debug page (below), built from the existing results; with
   **`expected_finish_forms.py`** and **`recalculation_departures.py`** (the expected finishes by form,
   and where the recalculation first departs from the dates P6 stored, [formulas.md](formulas.md) 5.3),
-  split out to keep it readable.
+  split out to keep it readable; **`xer_columns.py`** lists the columns the file carries (block 9).
 - **Import edges** (`APP_EDGES` in `tests/test_architecture.py`: one entry per module of `app/`, its edges
   compared exactly, every import form read): `ui` is the shared look any module may read, and reads only
   `glossary`, `table_filters` and `theme`. `code_picker`, `expected_finish_forms`, `glossary`, `reading`,
@@ -500,7 +500,10 @@ or from the `verify/` modules themselves (`shapes`, `p6_corpus`, `mpxj_reader`).
   behind the load warnings (leveled activities, `scd_end_date` against the activities that
   end last), and the costs the file carries (TASKRSRC and PROJCOST `target_cost`,
   `cost_per_qty`; the cost SPI of the Earned value page is computed from them, beside the labour units SPI),
-  the Earned Value settings of the WBS (block 8), the XER tables and the planned value labour units (block 9),
+  the Earned Value settings of the WBS (block 8), the XER tables and the planned value labour units (block 9;
+  with every column of every table and the rows holding a value in it, `Snapshot.xer_columns`, and the TASK
+  date columns and those named `base_*` / `bl_*` with their XER data map v26 label and date range,
+  `app/xer_columns.py`),
   the planned value against a P6 Activities export (block 10, as `xerscope pv-compare`),
   and block 11, the project settings of every project of the file (`PROJECT_SETTING_COLUMNS`, carried by
   the same `Snapshot.file_projects` rows, `absent` for a column the file lacks; of

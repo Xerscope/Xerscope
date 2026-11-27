@@ -2657,7 +2657,7 @@ def test_every_table_of_the_debug_page_has_a_key_of_its_own():
 
     tables = [call for call in calls if isinstance(call.func, ast.Name) and call.func.id == "table"]
     table_keys = keys_of(tables)
-    assert len(tables) == 47 and len(table_keys) == 47 and len(set(table_keys)) == 47
+    assert len(tables) == 49 and len(table_keys) == 49 and len(set(table_keys)) == 49
     assert all(key.startswith("debug_") for key in table_keys)
     other_keys = keys_of(call for call in calls if call not in tables)
     assert not set(table_keys) & set(other_keys)

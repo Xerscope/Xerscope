@@ -36,6 +36,12 @@ from xerscope.analysis.standards import Standard, builtin_standards
 from xerscope.app.expected_finish_forms import expected_finish_forms
 from xerscope.app.recalculation_departures import departure_forms, departure_funnel, departures
 from xerscope.app.ui import as_dates
+from xerscope.app.xer_columns import (
+    NOT_IN_DATA_MAP,
+    TASK_DATE_LABELS,
+    task_date_columns_table,
+    xer_columns_table,
+)
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.xer.calendar import Intervals
 from xerscope.xer.model import (
@@ -356,7 +362,8 @@ def own_text() -> dict[str, frozenset[str]]:
     a cell a custom standard or a changed target writes differently is checked like any other."""
     packaged = check_parameters(builtin_standards()["P6"])
     cells = (str(value) for value in packaged.astype(str).to_numpy().ravel())
-    return {"04_check_parameters": frozenset([*map(str, packaged.columns), *cells])}
+    labels = [*TASK_DATE_LABELS, *TASK_DATE_LABELS.values(), NOT_IN_DATA_MAP]
+    return {"04_check_parameters": frozenset([*map(str, packaged.columns), *cells]), "09_task_dates": frozenset(labels)}
 
 
 def check_parameters(standard: Standard) -> pd.DataFrame:
@@ -830,6 +837,8 @@ def diagnostic_frames(
         "08_ev_settings": ev_settings,
         "08_etc_techniques": etc_technique_counts(ev_settings),
         "09_xer_tables": xer_tables_table(snapshot),
+        "09_xer_columns": xer_columns_table(snapshot),
+        "09_task_dates": task_date_columns_table(snapshot),
         "09_udf_fields": udf_fields_table(snapshot, anonymous),
         "09_pv_labor_check": pv_totals,
         "09_pv_labor_by_status": pv_by_status,

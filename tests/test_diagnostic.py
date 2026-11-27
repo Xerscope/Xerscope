@@ -321,6 +321,54 @@ def test_assignment_dates_counts_lags_own_dates_and_calendars():
     }
 
 
+# --- Debug block 09: date and baseline columns of TASK -----------------------------------------
+
+
+@pytest.mark.oracle("standard")
+def test_task_date_columns_lists_a_baseline_column_the_data_map_does_not_have():
+    """Source: XER Import/Export Data Map Guide (Project) v26, G57491-01, table TASK: target_end_date is
+    "Planned Finish", update_user "Last Modified By"; no column base_start_date / base_end_date.
+    A holds both base_* dates, B only base_end_date, C none; A and B carry a Last Modified By, B's a name
+    that reads like a date, which must not come out as one.
+    By hand: base_end_date 2 activities, earliest 2026-01-09 17:00, latest 2026-02-20 17:00;
+    base_start_date 1 activity, 2026-01-05 08:00; update_user 2 activities, no date."""
+    from xerscope.app.xer_columns import NOT_IN_DATA_MAP, task_date_columns_table
+
+    tasks = [
+        todo("A", base_start_date="2026-01-05 08:00", base_end_date="2026-01-09 17:00", update_user="U1"),
+        todo("B", base_end_date="2026-02-20 17:00", update_user="2026-03-01 08:00"),
+        todo("C"),
+    ]
+    rows = task_date_columns_table(snap(tasks)).set_index("column")
+    assert rows.loc["base_end_date"].to_dict() == {
+        "label": NOT_IN_DATA_MAP,
+        "tasks": 2,
+        "earliest": pd.Timestamp("2026-01-09 17:00"),
+        "latest": pd.Timestamp("2026-02-20 17:00"),
+    }
+    assert rows.loc["base_start_date", "tasks"] == 1
+    assert rows.loc["base_start_date", "earliest"] == pd.Timestamp("2026-01-05 08:00")
+    assert rows.loc["target_end_date", "label"] == "Planned Finish"
+    assert rows.loc["update_user", "label"] == "Last Modified By"
+    assert rows.loc["update_user", "tasks"] == 2
+    assert pd.isna(rows.loc["update_user", "earliest"])  # a user name, never shown nor read as a date
+
+
+@pytest.mark.oracle("characterization")
+def test_xer_columns_lists_every_column_of_the_file_with_the_rows_holding_a_value():
+    """By hand: TASK has 3 rows; base_end_date is written on A only, blank on B and C, so 1 row holds a
+    value; task_code is on all 3. PROJECT has 1 row with last_recalc_date. A column of the file that
+    xerscope never reads is listed all the same."""
+    from xerscope.app.xer_columns import xer_columns_table
+
+    tasks = [todo("A", base_end_date="2026-01-09 17:00", zz_unread="x"), todo("B"), todo("C")]
+    rows = xer_columns_table(snap(tasks)).set_index(["table", "column"])["rows_with_value"]
+    assert rows[("TASK", "base_end_date")] == 1
+    assert rows[("TASK", "zz_unread")] == 1
+    assert rows[("TASK", "task_code")] == 3
+    assert rows[("PROJECT", "last_recalc_date")] == 1
+
+
 # --- Debug block 11: project settings ----------------------------------------------------------
 
 COUNTS = ["tasks_CP_Phys", "tasks_CP_Drtn", "tasks_CP_Units", "tasks_pct_blank", "tasks_pct_other"]
