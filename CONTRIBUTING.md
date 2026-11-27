@@ -136,6 +136,7 @@ uv run pytest -rs                                # the whole suite; MPXJ tests s
 uvx ruff@0.17.4 check src tests scripts          # no new finding
 uvx ruff@0.17.4 format --check src tests scripts
 uvx bandit@1.9.4 -r src -ll                      # medium and high severity only
+uvx vulture@2.14.0 src tests/vulture_whitelist.py  # no dead code: prints nothing
 ```
 
 The versions are the ones `.github/workflows/tests.yml` pins (jobs `lint` and `audit`); CI
@@ -150,6 +151,11 @@ writes `scripts/oracle_report.py` to the job summary and gates nothing. Besides 
 pull request runs `codeql.yml` (CodeQL analysis of the sources), and `scanner.yml` when it
 touches `.github/trivy/` (the Trivy pin scanned with itself; also daily, with the published
 images); `scorecard.yml` (OpenSSF Scorecard) runs on `main` and weekly.
+
+vulture reports every name of `src/` nothing reads. Remove the dead name; a name used in a way
+vulture cannot see (called by name through `getattr`, set for a library, read by the tests on
+purpose) goes in `tests/vulture_whitelist.py` with its reason, and a check registered by `@rule`
+is left out by `[tool.vulture]` in `pyproject.toml`.
 
 Then, depending on what changed:
 

@@ -197,6 +197,11 @@ convention = "pep257"
 [tool.ruff.format]
 quote-style = "double"
 
+[tool.vulture]
+# Dead code in src/ (CI job lint: uvx vulture@2.14.0 src tests/vulture_whitelist.py). Every report
+# counts, whatever its confidence; the other names it cannot see used are in the whitelist file.
+ignore_decorators = ["@rule"]  # a check registered by @rule is called through RULES, never by name
+
 [tool.mypy]
 python_version = "3.11"  # the oldest supported: the same count whichever Python runs it
 # untyped third-party packages (pandas, plotly, streamlit) read as Any: the count is about our code
