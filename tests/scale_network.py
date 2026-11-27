@@ -11,16 +11,16 @@ Two kinds of value are written to the file:
 
 - what a scheduler reads (durations, logic, calendars, constraints, actual dates, remaining
   durations): xerscope's CPM and MPXJ's scheduler both recalculate from these
-  (tests/test_scale_random_network.py compares them, on ``Network.for_mpxj``);
+  (tests/test_scale_random_network.py compares them);
 - what the checks read as stored (forecast dates, total float, planned dates): planted by the
   generator, activity by activity, so the activities each check must find follow from the
   generator's records (tests/test_scale_random_network.py, one function per check). They are not
   a recalculation: INT-01 would flag them, and P6 replaces them at the first F9.
 
-The network avoids every shape where xerscope and MPXJ are known to differ without a P6
-reading to settle it (``crosscheck.UNRESOLVED``, ``crosscheck.P6_SETTLED``; ``supported_link``),
-and the shapes this network showed them to differ on, reported for a P6 reading
-(``calendar_rank``, ``Network.for_mpxj``).
+The network avoids the shapes of ``crosscheck.UNRESOLVED`` and the P6_SETTLED link shapes
+(``supported_link``), but carries those P6 settled against MPXJ for constraints and period edges
+(``crosscheck.settled_activities``, ``edges_written_apart``) and calendars linked both ways, so the
+open question ``edge_on_another_calendar`` occurs and its activities are listed for a P6 reading.
 
     PYTHONPATH=src:tests python tests/scale_network.py OUT.xer [SEED]
 """
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import random
 import sys
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
@@ -53,11 +53,8 @@ def _serial(day: pd.Timestamp) -> int:
     return (day - pd.Timestamp("1899-12-30")).days
 
 
-# The calendars, from least to most working time: each one works whenever the one before it does,
-# and its holidays are among the previous one's. A link never runs from a calendar to one before it
-# (``calendar_rank``): when a predecessor works at times its successor does not (a 10 h day into an
-# 8 h day, 7 days into 5, a holiday of the successor only), xerscope and MPXJ wrote its late finish at
-# different instants on this network (1 h, a weekend), reported on 2026-11-27 for a P6 reading.
+# Three calendars that do not work at the same times: the 10 h days run past the 8 h day's 17:00, the
+# 7-day one over the weekend, the 10 h Mon-Fri one keeps half the 8 h one's holidays.
 CALENDARS = {
     "12": (8, clndr_data(range(2, 7), [("08:00", "12:00"), ("13:00", "17:00")], tuple(map(_serial, HOLIDAYS)))),
     "11": (10, clndr_data(range(2, 7), [("07:00", "12:00"), ("13:00", "18:00")], tuple(map(_serial, HOLIDAYS[::2])))),
@@ -71,10 +68,6 @@ RESOURCES = [
     {"rsrc_id": "R2", "rsrc_short_name": "CRANE", "rsrc_type": "RT_Equip", "clndr_id": "13"},
     {"rsrc_id": "R3", "rsrc_short_name": "CREW", "rsrc_type": "RT_Labor", "clndr_id": "11"},
 ]
-
-
-def calendar_rank(clndr_id: str) -> int:
-    return list(CALENDARS).index(clndr_id)
 
 
 def calendar_rows() -> list[dict]:
@@ -195,19 +188,6 @@ class Network:
             ],
         )
         return text if shuffle_seed is None else shuffled_rows(text, ("TASK", "TASKPRED"), shuffle_seed)
-
-    def for_mpxj(self) -> Network:
-        """The same network without the constraints on which xerscope and MPXJ differed here,
-        reported on 2026-11-27 for a P6 reading (not in ``crosscheck.UNRESOLVED``): any constraint
-        on work already started, and a secondary constraint other than Finish On or Before after
-        Start On or After. The checks read the whole network; the dates are compared on this one."""
-        activities = {code: replace(activity) for code, activity in self.activities.items()}
-        for activity in activities.values():
-            is_compared = (activity.cstr_type, activity.cstr_type2) == ("CS_MSOA", "CS_MEOB") or not activity.cstr_type2
-            if activity.is_started or not is_compared:
-                activity.cstr_type = activity.cstr_type2 = ""
-                activity.cstr_date = activity.cstr_date2 = None
-        return Network(activities, self.links, self.data_date)
 
     def write(self, path: str | Path, shuffle_seed: int | None = None) -> Path:
         path = Path(path)
@@ -332,12 +312,7 @@ def _branch(rnd, branch, activities, links, no_successor) -> list[str]:
     for number in range(1, ACTIVITIES_PER_BRANCH + 1):
         code = f"{letter}{number:04d}"
         activities[code] = _new_activity(rnd, code, branch, number)
-        rank = calendar_rank(activities[code].clndr_id)
-        candidates = [
-            candidate
-            for candidate in codes[-60:]
-            if candidate not in no_successor and calendar_rank(activities[candidate].clndr_id) <= rank
-        ]
+        candidates = [candidate for candidate in codes[-60:] if candidate not in no_successor]
         is_without_predecessor = number > 1 and rnd.random() < 0.006
         if is_without_predecessor:
             activities[code].planted.add("no predecessor")
@@ -347,7 +322,7 @@ def _branch(rnd, branch, activities, links, no_successor) -> list[str]:
         if branch > 0 and number > 60 and not is_without_predecessor and rnd.random() < 0.08:
             others = [f"{'ABCDEFGH'[other]}{number - shift:04d}" for other in range(branch) for shift in range(20, 60)]
             other = rnd.choice(others)
-            if other not in no_successor and calendar_rank(activities[other].clndr_id) <= rank:
+            if other not in no_successor:
                 links.append(_random_link(rnd, other, code))
         if rnd.random() < 0.006:
             no_successor.add(code)
@@ -531,7 +506,8 @@ def supported_link(link: Link, activities: dict[str, Activity]) -> Link:
     - an SF link only between two activities not started (``sf_progressed``, ``sf_from_started``);
     - no FF, SS or SF link from a completed activity into a started one (``finished_into_started``);
     - no FF / SF lag from a completed activity (``ff_sf_lag_from_finished``);
-    - a lead only from work not started, or on an SS link from started work (``lead_from_progressed``).
+    - a lead only from work not started (``lead_from_progressed``; an SS lead from started work held
+      past the data date also differs, C0459 of this network before the rule, reported 2026-11-27).
     """
     pred, succ = activities[link.pred], activities[link.succ]
     link_type, lag_hr = link.type, link.lag_hr
@@ -541,7 +517,7 @@ def supported_link(link: Link, activities: dict[str, Activity]) -> Link:
         link_type = "FS"
     if link_type in ("FF", "SF") and pred.is_complete:
         lag_hr = 0.0
-    if lag_hr < 0 and (pred.is_complete or (pred.is_started and link_type != "SS")):
+    if lag_hr < 0 and pred.is_started:
         lag_hr = 0.0
     return Link(link.pred, link.succ, link_type, lag_hr)
 
@@ -684,8 +660,6 @@ def _plant_constraints(rnd, activities, data_date) -> None:
             continue
         roll = rnd.random()
         anchor = activity.target_start if activity.target_start is not None else data_date
-        if not activity.is_started:  # an open activity's constraint is never in the past
-            anchor = max(anchor, data_date + pd.Timedelta(days=1))
         if roll < 1 / 15:
             activity.cstr_type = rnd.choice(_constraints_of(activity))
         elif roll < 1 / 15 + 1 / 50 and not activity.is_milestone:

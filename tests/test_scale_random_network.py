@@ -15,21 +15,24 @@ to INT-08 compare with the CPM). DCMA-14 and P6-13 are asserted on value and den
 generator plants no completed activity that was not due, so the numerator is unambiguous.
 
 **CPM.** xerscope's dates and floats against MPXJ's PrimaveraScheduler, activity by activity, on
-``Network.for_mpxj`` (the constraints on which the two were seen to differ removed, see there). A
-difference is accepted only where MPXJ's own dates contradict its logic (``mpxj_inconsistent``) or
-follow from such a date through the links (successors for early dates, predecessors for late
-dates), or where ``excused_row`` names it. The network holds no shape of ``crosscheck.UNRESOLVED``
-or ``P6_SETTLED``. Needs Java and the built scheduler, skipped otherwise as tests/test_crosscheck_mpxj.py.
+the same file. A difference is accepted only where ``excused_row`` names it, or where it follows
+through the links (successors for early dates, predecessors for late dates) from an activity that
+carries a named shape: MPXJ's dates contradicting its logic (``mpxj_inconsistent``), a constraint
+rule P6 settled against MPXJ (``settled_activities``: second_constraint, constraint_under_way,
+mandatory_before_data_date), or the open question ``edge_on_another_calendar`` (UNRESOLVED), whose
+activities are pinned in EDGE_ON_ANOTHER_CALENDAR for a P6 reading. No other UNRESOLVED shape is in
+the network. Needs Java and the built scheduler, skipped otherwise as tests/test_crosscheck_mpxj.py.
 
 **Into P6.** P6's own recalculation is the best oracle for the dates. Write the file with
-``PYTHONPATH=src:tests python tests/scale_network.py scale.xer`` (or ``Network.for_mpxj().write``
-for the file the CPM is compared on), import it in P6 Professional (File > Import > XER, new
-project), schedule (F9) with the file's options, export it again and compare with
-``xerscope crosscheck --cpm scale.xer``: the stored dates are then P6's (column ``xs_p6``).
+``PYTHONPATH=src:tests python tests/scale_network.py scale.xer``, import it in P6 Professional
+(File > Import > XER, new project), schedule (F9) with the file's options, export it again and
+compare with ``xerscope crosscheck --cpm scale.xer``: the stored dates are then P6's (column ``xs_p6``).
 
 Measured 2026-11-27 on a 4-CPU container: generation 0.4 s, reading 0.5 s, the five standards
-0.3 to 1.0 s each, the CPM 0.6 s, the MPXJ comparison 5 s (11,987 values; 349 differ, all after
-one of 23 activities whose MPXJ dates contradict their logic: 97.1 % identical).
+0.3 to 1.0 s each, the CPM 0.6 s, the MPXJ comparison 5 s: 11,020 values, 97.8 % identical, 239
+differ, each following from 21 MPXJ inconsistencies (77 values), 16 second constraints (153), one
+constraint under way (17), two mandatory dates before the data date (97) and the three activities
+of edge_on_another_calendar (62); a value can follow from several.
 """
 
 from __future__ import annotations
@@ -629,11 +632,11 @@ def reached(network: Network, codes: set[str], step) -> set[str]:
     return seen
 
 
-def after_mpxj_inconsistency(network: Network, differences: pd.DataFrame, inconsistent: set[str]) -> pd.Series:
-    """Differences that follow from an MPXJ date contradicting its own logic: an early date downstream
-    of one, a late date upstream, a float on either side, a free float before an early date moved."""
-    downstream = reached(network, inconsistent, lambda code: [link.succ for link in network.successors(code)])
-    upstream = reached(network, inconsistent, lambda code: [link.pred for link in network.predecessors(code)])
+def follows_from(network: Network, differences: pd.DataFrame, origins: set[str]) -> pd.Series:
+    """Differences that follow from ``origins`` through the links: an early date downstream of one, a
+    late date upstream, a float on either side, a free float before an early date moved."""
+    downstream = reached(network, origins, lambda code: [link.succ for link in network.successors(code)])
+    upstream = reached(network, origins, lambda code: [link.pred for link in network.predecessors(code)])
     before_downstream = {
         code for code in network.activities if any(link.succ in downstream for link in network.successors(code))
     }
@@ -646,27 +649,53 @@ def after_mpxj_inconsistency(network: Network, differences: pd.DataFrame, incons
     )
 
 
-@pytest.mark.oracle("mpxj")
-def test_cpm_agrees_with_mpxj_activity_by_activity(xc, network, tmp_path):
-    """Every date and float of every open activity equal to MPXJ's, to the working minute, but those
-    an MPXJ self-contradiction accounts for. Measured: 11,987 values, 349 differ, every one after one
-    of 23 MPXJ inconsistencies; the share identical (97.1 %) guards against a new bug hiding there."""
-    path = network.for_mpxj().write(tmp_path / "scale-mpxj.xer")
+@pytest.fixture(scope="module")
+def mpxj_comparison(xc, network, tmp_path_factory):
+    path = network.write(tmp_path_factory.mktemp("mpxj") / "scale.xer")
     snapshot = load_snapshot(path)
-    assert xc.mpxj_unsupported(snapshot) == []
-    assert xc.unresolved_patterns(snapshot) == set()
-    assert xc.settled_patterns(snapshot) == set()
     comparison = xc.cpm_crosscheck(path)
     compared = comparison[comparison["comparable"]]
-    assert len(compared) > 11_000
     differences = compared[~compared["xs_mpxj_work"]]
     named = [
         xc.excused_row(snapshot, code, field) is not None
         for code, field in zip(differences["task_code"], differences["field"], strict=True)
     ]
     differences = differences[~pd.Series(named, index=differences.index, dtype=bool)]
-    inconsistent = xc.mpxj_inconsistent(snapshot, comparison)
-    unexplained = differences[~after_mpxj_inconsistency(network, differences, inconsistent)]
+    origins = {
+        "mpxj_inconsistent": xc.mpxj_inconsistent(snapshot, comparison),
+        **xc.settled_activities(snapshot),
+        "edge_on_another_calendar": xc.edge_on_another_calendar(snapshot, comparison),
+    }
+    return snapshot, compared, differences, origins
+
+
+# The activities of UNRESOLVED edge_on_another_calendar on this network, for a P6 reading: import the
+# file (tests/scale_network.py), schedule, and read their late dates (or early, for a successor).
+EDGE_ON_ANOTHER_CALENDAR = {"B0363", "C0482", "H0417"}
+
+
+@pytest.mark.oracle("mpxj")
+def test_cpm_agrees_with_mpxj_activity_by_activity(xc, network, mpxj_comparison):
+    """Every date and float of every open activity equal to MPXJ's, to the working minute, except the
+    differences that follow (through the links) from an activity carrying a named shape: an MPXJ
+    self-contradiction, a P6_SETTLED constraint rule, or the open question edge_on_another_calendar.
+    No UNRESOLVED shape otherwise, no option MPXJ does not model."""
+    snapshot, compared, differences, origins = mpxj_comparison
+    assert xc.mpxj_unsupported(snapshot) == []
+    assert xc.unresolved_patterns(snapshot) == set()
+    assert xc.settled_patterns(snapshot) == set()
+    assert len(compared) > 11_000
+    explained = follows_from(network, differences, set().union(*origins.values()))
+    unexplained = differences[~explained]
     assert unexplained.empty, unexplained[["task_code", "field", "xerscope", "mpxj"]].head(20).to_string()
-    assert len(inconsistent) <= 30
+
+
+@pytest.mark.oracle("mpxj")
+def test_the_network_carries_each_settled_shape_and_the_open_question(mpxj_comparison):
+    """The network meets every shape the comparison may excuse, so each one is exercised; the open
+    question names exactly the activities listed for the P6 reading."""
+    _, compared, _, origins = mpxj_comparison
+    assert all(origins[key] for key in ("second_constraint", "constraint_under_way", "mandatory_before_data_date"))
+    assert origins["edge_on_another_calendar"] == EDGE_ON_ANOTHER_CALENDAR
+    assert len(origins["mpxj_inconsistent"]) <= 30
     assert compared["xs_mpxj_work"].mean() >= 0.97
