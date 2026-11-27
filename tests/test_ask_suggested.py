@@ -126,6 +126,17 @@ def test_purge_drops_what_curated_did_not_take_after_the_retention(tmp_path):
     assert suggested.purge(tmp_path / "missing", curated, NOW) == (0, 0)
 
 
+@pytest.mark.oracle("characterization")
+def test_purge_drops_a_suggestion_exactly_retention_old_and_keeps_one_a_second_younger(tmp_path):
+    """suggested._expired: "Older than RETENTION", written ``now - at >= RETENTION``. An entry exactly RETENTION
+    old is purged (by hand: age == RETENTION, so >= is true); one a second younger is kept."""
+    suggested.record(tmp_path, "pile", "COM · Commissioning", "wbs", NOW - suggested.RETENTION)
+    suggested.record(tmp_path, "juste", "COM · Commissioning", "wbs", NOW - suggested.RETENTION + timedelta(seconds=1))
+    assert [e["word"] for e in _entries(tmp_path)] == ["pile", "juste"]
+    assert suggested.purge(tmp_path, {}, NOW) == (1, 1)
+    assert [e["word"] for e in _entries(tmp_path)] == ["juste"]
+
+
 def test_a_write_after_a_purge_lands_in_the_new_file(tmp_path):
     assert suggested.record(tmp_path, "ancien", "COM · Commissioning", "wbs", NOW - timedelta(days=200))
     suggested.purge(tmp_path, {}, NOW)
