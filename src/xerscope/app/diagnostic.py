@@ -36,6 +36,12 @@ from xerscope.analysis.standards import Standard, builtin_standards
 from xerscope.app.expected_finish_forms import expected_finish_forms
 from xerscope.app.recalculation_departures import departure_forms, departure_funnel, departures
 from xerscope.app.ui import as_dates
+from xerscope.app.xer_columns import (
+    NOT_IN_DATA_MAP,
+    TASK_DATE_LABELS,
+    task_date_columns_table,
+    xer_columns_table,
+)
 from xerscope.config import DEFAULT_SETTINGS
 from xerscope.xer.calendar import Intervals
 from xerscope.xer.model import (
@@ -668,67 +674,6 @@ def xer_tables_table(snapshot: Snapshot) -> pd.DataFrame:
         [{"table": name, "rows": rows, "columns": cols} for name, (rows, cols) in snapshot.xer_tables.items()],
         columns=["table", "rows", "columns"],
     )
-
-
-# TASK columns holding a date, and the users who added and last changed the activity, with their labels in
-# the XER Import/Export Data Map Guide (Project) v26, G57491-01, October 2026, table TASK. The guide lists no
-# baseline date in TASK: a column named after a baseline (base_*, bl_*) is shown with NOT_IN_DATA_MAP.
-TASK_DATE_LABELS = {
-    "act_start_date": "Actual Start", "act_end_date": "Actual Finish",
-    "early_start_date": "Early Start", "early_end_date": "Early Finish",
-    "late_start_date": "Late Start", "late_end_date": "Late Finish",
-    "target_start_date": "Planned Start", "target_end_date": "Planned Finish",
-    "restart_date": "Remaining Early Start", "reend_date": "Remaining Early Finish",
-    "rem_late_start_date": "Remaining Late Start", "rem_late_end_date": "Remaining Late Finish",
-    "expect_end_date": "Expected Finish",
-    "cstr_date": "Primary Constraint Date", "cstr_date2": "Secondary Constraint Date",
-    "external_early_start_date": "External Early Start", "external_late_end_date": "External Late Finish",
-    "suspend_date": "Suspend Date", "resume_date": "Resume Date",
-    "review_end_date": "Review Finish (P6 Professional only)",
-    "create_date": "Added Date", "create_user": "Added By",
-    "update_date": "Last Modified Date", "update_user": "Last Modified By",
-}  # fmt: skip
-TASK_USER_COLUMNS = ("create_user", "update_user")  # names of people: counted, never shown
-NOT_IN_DATA_MAP = "not in data map v26"
-
-
-def xer_columns_table(snapshot: Snapshot) -> pd.DataFrame:
-    """Block 09: every column of every %T table of the file, in the file's order, with the rows holding a
-    value in it (all projects of the file). Column names only, no cell value."""
-    rows = [
-        {"table": table, "column": column, "rows_with_value": filled}
-        for table, columns in snapshot.xer_columns.items()
-        for column, filled in columns.items()
-    ]
-    return pd.DataFrame(rows, columns=["table", "column", "rows_with_value"])
-
-
-def _is_date_or_baseline_column(name: str) -> bool:
-    return name in TASK_DATE_LABELS or name.endswith("_date") or name.startswith(("base_", "bl_"))
-
-
-def task_date_columns_table(snapshot: Snapshot) -> pd.DataFrame:
-    """Block 09: one row per TASK column of the update that holds a date or is named after a baseline, with
-    its data map v26 label, the tasks holding a value and the earliest and latest date stored.
-
-    A column the data map does not list (base_start_date, base_end_date) is read as stored, whatever it
-    holds in P6. The user columns are counted only: their values are names."""
-    tasks = snapshot.tasks
-    rows = []
-    for column in [name for name in tasks.columns if _is_date_or_baseline_column(name)]:
-        values = tasks[column]
-        filled = values.notna() & (values.astype("string").str.strip() != "")
-        dates = pd.Series(pd.NaT, index=values.index) if column in TASK_USER_COLUMNS else as_dates(values)
-        rows.append(
-            {
-                "column": column,
-                "label": TASK_DATE_LABELS.get(column, NOT_IN_DATA_MAP),
-                "tasks": int(filled.sum()),
-                "earliest": dates.min(),
-                "latest": dates.max(),
-            }
-        )
-    return pd.DataFrame(rows, columns=["column", "label", "tasks", "earliest", "latest"])
 
 
 def udf_fields_table(snapshot: Snapshot, anonymous: bool = False) -> pd.DataFrame:

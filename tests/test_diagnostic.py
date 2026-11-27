@@ -332,7 +332,7 @@ def test_task_date_columns_lists_a_baseline_column_the_data_map_does_not_have():
     that reads like a date, which must not come out as one.
     By hand: base_end_date 2 activities, earliest 2026-01-09 17:00, latest 2026-02-20 17:00;
     base_start_date 1 activity, 2026-01-05 08:00; update_user 2 activities, no date."""
-    from xerscope.app.diagnostic import NOT_IN_DATA_MAP, task_date_columns_table
+    from xerscope.app.xer_columns import NOT_IN_DATA_MAP, task_date_columns_table
 
     tasks = [
         todo("A", base_start_date="2026-01-05 08:00", base_end_date="2026-01-09 17:00", update_user="U1"),
@@ -359,7 +359,7 @@ def test_xer_columns_lists_every_column_of_the_file_with_the_rows_holding_a_valu
     """By hand: TASK has 3 rows; base_end_date is written on A only, blank on B and C, so 1 row holds a
     value; task_code is on all 3. PROJECT has 1 row with last_recalc_date. A column of the file that
     xerscope never reads is listed all the same."""
-    from xerscope.app.diagnostic import xer_columns_table
+    from xerscope.app.xer_columns import xer_columns_table
 
     tasks = [todo("A", base_end_date="2026-01-09 17:00", zz_unread="x"), todo("B"), todo("C")]
     rows = xer_columns_table(snap(tasks)).set_index(["table", "column"])["rows_with_value"]
