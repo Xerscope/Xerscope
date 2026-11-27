@@ -46,6 +46,10 @@ from xerscope.app.state import (
 # Streamlit drops a widget's value once its page is left: the audit settings are kept here,
 # in the session only, so they survive a visit to another page until Reset.
 SAVED = "audit_settings"
+# Resets of each check: part of its widgets' keys. A widget whose key outlives a reset keeps, in the
+# browser, the value typed before it and sends it back at the next rerun (Streamlit drops only the
+# server's copy), so a reset gives the widgets new keys.
+RESETS = "audit_resets"
 PARAMETERS_BLOCK, TARGET_BLOCK = "Rule parameters", "Target"
 
 
@@ -88,6 +92,12 @@ def parameter_widget(rule_name: str, name: str, current, key: str):
     )
 
 
+def widget_key(prefix: str, name: str) -> str:
+    """Key of a widget of this check: ``prefix:name``, then ``prefix:name@n`` after the n-th reset."""
+    resets = st.session_state.get(RESETS, {}).get(prefix, 0)
+    return f"{prefix}:{name}" if resets == 0 else f"{prefix}:{name}@{resets}"
+
+
 def draw_row(metric, prefix: str, row: tuple[str, ...], values: dict, saved: dict) -> None:
     """Draw the parameters of one row that the rule reads with the ``values`` picked so far, and add theirs.
 
@@ -98,7 +108,7 @@ def draw_row(metric, prefix: str, row: tuple[str, ...], values: dict, saved: dic
         key = f"{prefix}:{name}"
         current = saved.get(key, metric.params.get(name, RULES[metric.rule].params[name]))
         with next(columns):
-            values[name] = saved[key] = parameter_widget(metric.rule, name, current, key)
+            values[name] = saved[key] = parameter_widget(metric.rule, name, current, widget_key(prefix, name))
 
 
 def parameters_form(metric, prefix: str, saved: dict) -> dict:
@@ -126,7 +136,7 @@ def settings_form(metric, prefix: str) -> tuple[str, dict]:
     target = st.text_input(
         TARGET_BLOCK,  # named by the block's title: the label is not drawn twice
         saved.get(f"{prefix}:target", metric.threshold_label),
-        key=f"{prefix}:target",
+        key=widget_key(prefix, "target"),
         label_visibility="collapsed",
         help=f"The result that passes, written as: {TARGET_FORMS}. Change it to see the status the check would "
         "have; the standard itself is not changed.",
@@ -146,6 +156,8 @@ def reset_button(prefix: str) -> None:
     """Put every setting of this check back to the standard's."""
     if st.button("Reset", icon=":material/restart_alt:", key=f"{prefix}:reset", help="Back to the standard's values"):
         forget_settings(prefix)
+        resets = st.session_state.setdefault(RESETS, {})
+        resets[prefix] = resets.get(prefix, 0) + 1
         st.rerun()
 
 
