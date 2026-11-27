@@ -419,6 +419,36 @@ def test_the_window_table_names_what_each_update_is_measured_against(tmp_path):
     assert readable["found_by"].tolist()[0] == SAME_GENERATION
 
 
+@pytest.mark.oracle("property")
+def test_the_window_table_words_a_baseline_held_by_its_file_and_one_found_in_a_loaded_update(tmp_path):
+    """Wording of xml_baselines._measured_against: an update whose file holds its baseline is "<code>, in
+    its file", whatever the resolution, the fallback or the window's choice say; a baseline found in a
+    loaded update is "probable: baseline <id> of a loaded update" (not "of the export")."""
+    from xerscope.analysis.baseline_resolution import IN_EXPORT, IN_FILE, LOADED_UPDATE, Resolution
+    from xerscope.app.xml_baselines import baseline_per_file
+
+    (tmp_path / "own.xer").write_text(two_projects(data_date="2026-03-02 08:00"))  # names BL, which it holds
+    (tmp_path / "other.xer").write_text(two_projects(pointer="370", with_baseline=False, data_date="2026-03-09 08:00"))
+    store = _series_store(tmp_path)
+    found = {
+        "own.xer": Resolution(IN_EXPORT, "999"),  # ignored: the file holds its own baseline
+        "other.xer": Resolution(LOADED_UPDATE, "150"),
+    }
+    table = baseline_per_file(store, found, "planned dates", frozenset(), {"own.xer": "fallback"})
+    assert table["file"].tolist() == ["own.xer", "other.xer"]
+    assert table["measured_against"].tolist() == ["BL, in its file", "probable: baseline 150 of a loaded update"]
+    assert table["found_by"].tolist() == [IN_FILE, LOADED_UPDATE]
+
+
+@pytest.mark.oracle("property")
+def test_a_pointer_to_the_analysed_project_itself_gives_no_baseline():
+    """A project cannot be its own baseline: project 1 names project 1, which owns activities."""
+    pointer = _snapshot(pointer="1").file_baseline
+    assert not pointer.usable
+    assert pointer.note == "the pointer names the analysed project itself"
+    assert pointer.text == "Baseline: none in file (the pointer names the analysed project itself)"
+
+
 def test_the_window_table_says_that_without_an_export_no_update_has_a_baseline(tmp_path):
     """No export: each update names a baseline its file does not hold; none, with the pointer's note."""
     from xerscope.app.xml_baselines import baseline_per_file
@@ -428,6 +458,27 @@ def test_the_window_table_says_that_without_an_export_no_update_has_a_baseline(t
     table = baseline_per_file(store, dict.fromkeys([u.source for u in store]))
     assert table["found_by"].tolist() == ["not found"] * 4
     assert table["measured_against"].tolist() == ["none (the project it names is not in the file)"] * 4
+
+
+@pytest.mark.oracle("property")
+def test_the_window_caption_tells_only_without_an_export_that_p6_writes_no_baseline_in_an_xer(monkeypatch):
+    """Hand-written from baseline_window._per_file_caption: 4 updates of 4 without a baseline give
+    "4 of 4 have none ..." when no P6 XML export is in use, and nothing more when one is."""
+    from xerscope.app import baseline_window
+    from xerscope.app.session import BL_EACH
+
+    table = pd.DataFrame({"found_by": ["not found"] * 4})
+    in_force = f"In force: no baseline. Below, the baseline each file names and what '{BL_EACH}' would give it."
+    monkeypatch.setattr(baseline_window, "baseline_export", lambda: None)
+    assert baseline_window._per_file_caption(table) == (
+        in_force + " 4 of 4 have none: P6 writes no baseline in an XER. Put the P6 XML export of the baselines "
+        "(Export > Primavera P6 XML, Baselines to Export) next to the files."
+    )
+    monkeypatch.setattr(baseline_window, "baseline_export", lambda: ("export.xml", b""))
+    assert baseline_window._per_file_caption(table) == in_force
+    monkeypatch.setattr(baseline_window, "baseline_export", lambda: None)
+    resolved = pd.DataFrame({"found_by": ["in its file"] * 4})
+    assert baseline_window._per_file_caption(resolved) == in_force
 
 
 def test_the_baseline_found_for_each_update_is_applied_and_a_probable_one_is_announced(tmp_path, monkeypatch):
@@ -964,6 +1015,35 @@ def test_an_absent_baseline_is_asked_for_as_a_p6_xml_export(tmp_path, monkeypatc
     # file names which (the window, not the Debug page)
     assert ".xer" not in boxes[0].replace("XER", "")
     assert "Primavera P6 XML, Baselines to Export" in boxes[0] and "Files and baseline window" in boxes[0]
+
+
+def _absent_pointers(pointers: list[str]) -> dict[str, dict]:
+    """a.xer (usable) and one update per pointer, each to a project no file holds, a week apart."""
+    days = ["2026-03-09", "2026-03-16", "2026-03-23", "2026-03-30", "2026-04-06", "2026-04-13"]
+    files = {"a.xer": A}
+    for i, pointer in enumerate(pointers):
+        files[f"u{i}.xer"] = {"pointer": pointer, "data_date": f"{days[i]} 08:00", "with_baseline": False}
+    return files
+
+
+@pytest.mark.oracle("property")
+def test_the_absent_baselines_are_cut_at_three_and_the_rest_counted(tmp_path, monkeypatch):
+    """Five absent projects (370 named by two updates, 371 to 374 by one): the line names the three most
+    named, 370 first, and adds "; 2 more" (5 - ABSENT_BASELINES_SHOWN 3), per _absent_baseline_help."""
+    files = _absent_pointers(["370", "370", "371", "372", "373", "374"])
+    (box,) = _absent_baseline_boxes(_series(tmp_path, monkeypatch, files))
+    assert "No baseline in 6 updates of 7" in box  # 2 + 1 + 1 + 1 + 1
+    assert box.count("named by ") == 3
+    assert "named by 2 updates (09 Mar 2026 → 16 Mar 2026" in box.split("; ")[0]
+    assert "; 2 more" in box
+
+
+@pytest.mark.oracle("property")
+def test_exactly_three_absent_baselines_are_all_named_with_no_count_of_more(tmp_path, monkeypatch):
+    files = _absent_pointers(["370", "371", "372"])
+    (box,) = _absent_baseline_boxes(_series(tmp_path, monkeypatch, files))
+    assert box.count("named by ") == 3
+    assert "more" not in box
 
 
 def test_an_absent_baseline_is_named_by_its_code_when_another_loaded_file_holds_it(tmp_path, monkeypatch):

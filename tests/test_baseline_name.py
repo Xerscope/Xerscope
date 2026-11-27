@@ -8,7 +8,7 @@ the baseline project's own, PROJWBS.wbs_name of its project node ("Project Node"
 import pytest
 from file_projects import two_projects
 
-from xerscope.analysis.baseline import baseline_in_file
+from xerscope.analysis.baseline import baseline_in_file, other_project_baselines, project_codes
 from xerscope.xer import load_snapshot
 
 pytestmark = pytest.mark.oracle("standard")
@@ -111,3 +111,26 @@ def test_a_check_that_reads_a_baseline_names_it_in_the_results_table():
     assert against["P6-01"] == ""
     planned = summary_frame(run_standard(p6, AnalysisContext(update, None, Baseline.planned(update))))
     assert planned.set_index("id").loc["P6-13", "baseline"] == "planned dates"
+
+
+def _update(flag: str):
+    """An update (project 1, Project ID "1") whose Project Baseline pointer names project 9, held by no file here."""
+    return load_snapshot(two_projects(pointer="9", flag=flag).encode(), name=f"update-{flag or 'blank'}.xer")
+
+
+def test_other_project_baselines_leave_out_the_updates_that_do_not_use_the_project_baseline():
+    """other_project_baselines docstring: the updates naming a project other than the baseline's are listed
+    under that Project ID, "updates whose earned value does not use the project baseline (flag N), or that
+    name none, are left out". Y and blank stay; N goes (uses_project_baseline is False for N only)."""
+    separate = load_snapshot(two_projects().encode(), name="separate.xer")  # project 1: the pointer 9 is another
+    uses, blank, primary = _update("Y"), _update(""), _update("N")
+    assert other_project_baselines(separate, [uses, blank, primary]) == {"9": [uses, blank]}
+    assert other_project_baselines(separate, [primary]) == {}
+
+
+def test_a_project_code_is_the_first_one_a_file_of_the_series_gives():
+    """project_codes: proj_id -> code over every file; the same proj_id coded two ways keeps the first
+    file's code (setdefault), here project 2 is FIRST in the earlier file, SECOND in the later."""
+    earlier = load_snapshot(two_projects(baseline_code="FIRST").encode(), name="earlier.xer")
+    later = load_snapshot(two_projects(baseline_code="SECOND").encode(), name="later.xer")
+    assert project_codes([earlier, later]) == {"1": "UPD", "2": "FIRST"}

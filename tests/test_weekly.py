@@ -83,6 +83,12 @@ def test_changelog_finds_each_kind_of_change():
     retro = by(log, "actual start changed (retroactive)").iloc[0]
     assert (retro["task_code"], retro["before"], retro["after"]) == ("C", "2026-02-23 08:00", "2026-02-24 08:00")
     assert by(log, "primary constraint added").iloc[0]["after"] == "CS_MSOA 2026-03-02 08:00"
+    # B goes from 0 % in OLD to 33.33 % in NEW (hand-checked on the fixtures): gain = 33.33 - 0 = +33.33 points
+    pct = by(log, "% complete").iloc[0]
+    assert (pct["task_code"], pct["unit"]) == ("B", "pts")
+    assert float(pct["before"]) == pytest.approx(0)
+    assert float(pct["after"]) == pytest.approx(33.33)
+    assert pct["delta"] == pytest.approx(33.33)
 
 
 def test_changelog_relationships():
@@ -98,6 +104,38 @@ def test_changelog_project_rows_and_summary():
     s = summary(log)
     assert "Project" not in set(s["category"])
     assert s["count"].sum() == len(log) - 4
+    assert proj.loc["forecast finish", "delta"] == -1  # Fri 13 -> Mon 16 March: one working day lost
+    # OLD and NEW both hold 5 activities and 4 links: before, after and a zero delta
+    assert proj.loc["activities", ["before", "after", "delta"]].tolist() == ["5", "5", 0]
+    assert proj.loc["relationships", ["before", "after", "delta"]].tolist() == ["4", "4", 0]
+
+
+@pytest.mark.oracle("characterization")
+def test_changelog_project_counts_read_new_minus_old_when_they_differ():
+    # Hand calculation: OLD has 5 activities and 4 links; GROWN adds one activity and one link, so 6 and 5.
+    # delta = after - before: 6 - 5 = +1 activities, 5 - 4 = +1 relationships (a sign error would read -1).
+    grown = snap(
+        [
+            todo("A", early_end_date="2026-03-16 17:00", task_name="A renamed"),
+            todo("B", target_drtn_hr_cnt="120"),
+            active("C"),
+            todo("D"),
+            todo("GONE"),
+            todo("EXTRA"),
+        ],
+        [
+            ("A", "B", "FS", 0),
+            ("B", "D", "FS", 0),
+            ("C", "D", "SS", 8),
+            ("GONE", "D", "FS", 0),
+            ("EXTRA", "D", "FS", 0),
+        ],
+        data_date="2026-03-09 08:00",
+    )
+    log = changelog(OLD, grown)
+    proj = log[log["category"] == "Project"].set_index("change")
+    assert proj.loc["activities", ["before", "after", "delta"]].tolist() == ["5", "6", 1]
+    assert proj.loc["relationships", ["before", "after", "delta"]].tolist() == ["4", "5", 1]
 
 
 def test_identical_files_have_no_changes():
@@ -910,6 +948,53 @@ def test_wbs_rollup_hours_weighting_and_tree():
     assert r.loc["W2", "pct_complete"] == pytest.approx(37.5)
     assert r.loc[ROOT, "activities"] == 4
     assert subtree_ids(rollup(s), "W1") == {"W1", "W11"}
+    # label: the node's name at the top, else the last segment of its WBS code, a dot, then its name
+    assert r.loc[ROOT, "label"] == "Project"
+    assert r.loc["W1", "label"] == "E · Eng"
+    assert r.loc["W2", "label"] == "C · Civil"
+    assert r.loc["W11", "label"] == "D · Design"  # "E.D" shows as "D", not the whole code
+
+
+@pytest.mark.oracle("characterization")
+def test_wbs_rollup_counts_open_critical_activities_and_takes_the_lowest_float():
+    """critical = open activities whose total float is within the critical threshold (0 days by default);
+    min_float_d = lowest total float of the node, in working days. By hand, 8 h days:
+    W1: X 0 h float (0 d, critical), Y 16 h (2 d); W2: Z 40 h (5 d), K complete (no float, never critical).
+    W1 -> critical 1, min float 0; W2 -> critical 0, min float 5; project -> critical 1, min float 0."""
+    s = snap(
+        [
+            todo("X", wbs_id="W1", total_float_hr_cnt="0"),
+            todo("Y", wbs_id="W1", total_float_hr_cnt="16"),
+            todo("Z", wbs_id="W2", total_float_hr_cnt="40"),
+            done("K", wbs_id="W2"),
+        ],
+        wbs=WBS,
+    )
+    r = rollup(s).set_index("wbs_id")
+    assert r.loc["W1", ["critical", "min_float_d"]].tolist() == [1, 0]
+    assert r.loc["W2", ["critical", "min_float_d"]].tolist() == [0, 5]
+    assert r.loc[ROOT, ["critical", "min_float_d"]].tolist() == [1, 0]
+
+
+@pytest.mark.oracle("characterization")
+def test_rollup_delta_counts_only_activities_whose_percent_went_up():
+    """activities_progressed counts a positive % delta only. A goes 0 -> 100 % (progressed), B goes from
+    50 % physical to 30 % (-20 points, not progress). By hand: 1 progressed, not 2."""
+    w1 = snap(
+        [
+            todo("A", target_work_qty="100"),
+            active("B", target_work_qty="100", phys_complete_pct="50", complete_pct_type="CP_Phys"),
+        ]
+    )
+    w2 = snap(
+        [
+            done("A", target_work_qty="100", phys_complete_pct="100", complete_pct_type="CP_Phys"),
+            active("B", target_work_qty="100", phys_complete_pct="30", complete_pct_type="CP_Phys"),
+        ],
+        data_date="2026-03-09 08:00",
+    )
+    total = rollup_delta(progress_delta(w1, w2)).set_index("wbs_l1").loc["Project"]
+    assert total["activities_progressed"] == 1
 
 
 CIVIL = [
@@ -994,6 +1079,26 @@ def test_mta_drops_a_milestone_complete_before_the_data_date(tmp_path):
     assert s.loc["M1", "updates"] == 3  # the table keeps every update
 
 
+@pytest.mark.oracle("characterization")
+def test_plotted_trend_hides_a_completion_strictly_before_the_data_date_and_keeps_one_on_it():
+    """Boundary of "complete before its data date" (plotted_trend docstring): data date 2026-03-16 08:00.
+    A milestone completed at 07:59 is hidden, one completed at 08:00 is kept (08:00 is not before 08:00),
+    one still open is kept."""
+    data_date = pd.Timestamp("2026-03-16 08:00")
+    trend = pd.DataFrame(
+        {
+            "task_code": ["BEFORE", "ON", "OPEN"],
+            "is_complete": [True, True, False],
+            "forecast": pd.to_datetime(["2026-03-16 07:59", "2026-03-16 08:00", "2026-03-10 08:00"]),
+            "data_date": [data_date] * 3,
+        }
+    )
+    plotted = plotted_trend(trend).set_index("task_code")["forecast"]
+    assert plotted["BEFORE"] is pd.NaT
+    assert plotted["ON"] == pd.Timestamp("2026-03-16 08:00")
+    assert plotted["OPEN"] == pd.Timestamp("2026-03-10 08:00")
+
+
 def test_mta_marks_a_deleted_milestone_and_leaves_it_out_of_the_open_ones():
     """M1 moves Fri 10 -> Fri 17 April in the second update and is deleted in the third. It
     is not open: it is deleted, as the changelog says. Its last move (-5 wd) dates from two
@@ -1042,6 +1147,17 @@ def test_changelog_lists_assignment_changes():
     assert r.loc[("A", "budgeted units changed"), "delta"] == 20
     assert r.loc[("A", "resource assigned"), "field"] == "assignment FITTER"
     assert r.loc[("B", "resource removed"), "field"] == "assignment FITTER"
+
+
+@pytest.mark.oracle("characterization")
+def test_changelog_labels_a_role_assignment_with_the_word_role():
+    # A role assigned without a resource (rsrc_id empty, role_id set) is named after its role id here, and the
+    # label carries the "role " prefix so a role and a resource of the same name stay apart (changelog.py, units()).
+    w1 = snap([todo("A")], assign=[{"task_code": "A", "rsrc_id": "", "role_id": "RL1", "target_qty": "8"}])
+    w2 = snap([todo("A")], assign=[])
+    log = changelog(w1, w2)
+    r = log[log["category"] == "Resources"].set_index(["task_code", "change"])
+    assert r.loc[("A", "resource removed"), "field"] == "assignment role RL1"
 
 
 def test_progress_delta_with_a_baseline_adds_up_to_ev():
@@ -1199,6 +1315,49 @@ def test_planned_dates_baseline_spreads_on_the_current_dates_with_a_current_date
         pd.Timestamp("2026-03-09 08:00"),
         pd.Timestamp("2026-03-20 17:00"),
     )
+
+
+@pytest.mark.oracle("characterization")
+def test_current_dates_basis_takes_actual_start_before_remaining_start_and_remaining_finish_without_actual():
+    """The assignment dates on a current-dates basis are "actual, then remaining, then target" (baseline.py
+    docstring of _with_costs). A started assignment: actual start 02-02, remaining start 02-09, no actual
+    finish, remaining finish 02-20, target 03-09 -> 03-20. By hand: start 02-02 (not 02-09), finish 02-20."""
+    s = snap(
+        [active("A", target_work_qty="80")],
+        assign=[
+            {
+                "task_code": "A",
+                "rsrc_id": "R1",
+                "target_qty": "80",
+                "act_start_date": "2026-02-02 08:00",
+                "restart_date": "2026-02-09 08:00",
+                "reend_date": "2026-02-20 17:00",
+                "target_start_date": "2026-03-09 08:00",
+                "target_end_date": "2026-03-20 17:00",
+            }
+        ],
+        data_date="2026-03-02 08:00",
+    )
+    costs = Baseline.planned(s, ev_basis="budgeted_current").assignment_costs
+    assert (costs.loc[0, "start"], costs.loc[0, "finish"]) == (
+        pd.Timestamp("2026-02-02 08:00"),
+        pd.Timestamp("2026-02-20 17:00"),
+    )
+
+
+@pytest.mark.oracle("characterization")
+def test_a_blank_resource_type_counts_as_labour_and_a_material_does_not():
+    """baseline.py _with_costs: "labour resource or role, as xer.model._labor_hours"; a blank rsrc_type is a
+    role assignment (xer.model RSRC_TYPE: "role" and "" are "Role"). By hand: blank -> labour, RT_Mat -> not."""
+    s = snap(
+        [todo("A", target_work_qty="80")],
+        assign=[
+            {"task_code": "A", "rsrc_id": "R8", "rsrc_type": "", "target_qty": "40"},
+            {"task_code": "A", "rsrc_id": "R9", "rsrc_type": "RT_Mat", "target_qty": "10"},
+        ],
+    )
+    costs = Baseline.planned(s).assignment_costs
+    assert dict(zip(costs["labor_hr"].tolist(), costs["labor"].tolist(), strict=True)) == {40.0: True, 10.0: False}
 
 
 def test_current_dates_on_a_planned_dates_baseline_move_pv_only():
