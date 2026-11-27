@@ -147,6 +147,23 @@ def test_assignment_planned_value_follows_the_resource_calendar():
     assert ev_point(_update(todo("A", **dates), data_date="2026-03-07 08:00"), baseline).pv_cost == pytest.approx(100)
 
 
+@pytest.mark.oracle("property")
+def test_assignment_planned_value_of_a_resource_without_calendar_follows_the_activity_calendar():
+    """The assignment calendar is the resource's, else the activity's (baseline._with_costs). The resource
+    has none; the activity is on the 7-day calendar C7D, not the project's Monday-Friday one. 400 over
+    Fri 03-06 08:00 to Mon 03-09 17:00 at Sat 03-07 08:00: 8 of 32 working hours (4 days x 8 h) = 0.25 -> 100.
+    The project's Monday-Friday calendar would give 8 of 16 h = 0.5 -> 200."""
+    dates = dict(early_start_date="2026-03-06 08:00", early_end_date="2026-03-09 17:00", clndr_id="C7D")
+    baseline = Baseline.from_snapshot(
+        snap(
+            [todo("A", **dates)],
+            assign=[_assignment("A", 400)],
+            resources=[dict(rsrc_id="R1", rsrc_type="RT_Labor", clndr_id="")],
+        )
+    )
+    assert ev_point(_update(todo("A", **dates), data_date="2026-03-07 08:00"), baseline).pv_cost == pytest.approx(100)
+
+
 def test_calendar_time_switch(monkeypatch):
     """700 over Mon 03-02 08:00 to Mon 03-09 08:00 at Wednesday 08:00: working time 2 of 5 days -> 280;
     calendar time 2 of 7 days -> 200."""

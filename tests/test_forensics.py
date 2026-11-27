@@ -7,6 +7,7 @@ Every schedule is on the C8 calendar (Mon-Fri, 08:00-12:00 and 13:00-17:00), dat
 Monday 2 March 2026 08:00 unless stated: a 40 h activity runs Monday to Friday 17:00.
 """
 
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
@@ -14,6 +15,7 @@ import pytest
 from conftest import P6_CORPUS_HINT, missing
 from xerkit import FM, MON_FRI_8H, active, clndr_data, done, snap, todo
 
+from xerscope.analysis import forensics
 from xerscope.analysis.changelog import changelog
 from xerscope.analysis.cpm import CycleError, schedule
 from xerscope.analysis.forensics import (
@@ -23,6 +25,7 @@ from xerscope.analysis.forensics import (
     MANDATORY_FINISH,
     MUST_FINISH_BY,
     STEP_NAMES,
+    STEPS,
     WITHIN_LOOKAHEAD,
     engine_gap_wd,
     finish_case,
@@ -181,6 +184,51 @@ def test_a_slip_beyond_the_period_is_flagged():
     assert read.is_slip_beyond_period is False
 
 
+@pytest.mark.oracle("standard")
+def test_a_progress_slip_larger_than_the_period_is_flagged():
+    """3.4.K.4.g, flagged case. A, 40 h on the 7-day 8 h calendar (C7D, 08:00-16:00 every day), not started.
+
+    Hand calculation. Earlier, data date Fri 6 08:00: A runs Fri 6, Sat 7, Sun 8, Mon 9, Tue 10 16:00.
+    Later, data date Mon 9 08:00, still not started: Mon 9 to Fri 13 16:00. The finish loses Tue 10 16:00
+    to Fri 13 16:00 = 3 wd on the project calendar (C8), while the period Fri 6 to Mon 9 holds 1 wd:
+    3 > 1 + 0.005, flagged.
+    """
+    earlier = snap([todo("A", clndr_id="C7D", **week())], data_date="2026-03-06 08:00")
+    later = snap([todo("A", clndr_id="C7D", **week())], data_date=WEEK_LATER)
+    read = half_step(earlier, later)
+    assert read.old_finish == pd.Timestamp("2026-03-10 16:00")
+    assert read.period_wd == 1.0
+    assert shifts(read)["progress"] == -3.0
+    assert read.is_slip_beyond_period is True
+
+
+@pytest.mark.oracle("standard")
+def test_a_slip_equal_to_the_period_is_not_flagged_at_the_boundary():
+    """3.4.K.4.g boundary: a slip of exactly the period (5 wd lost in 5 wd) is not beyond it."""
+    earlier = snap([todo("A", **week())])
+    later = snap([todo("A", **week())], data_date=WEEK_LATER)
+    read = half_step(earlier, later)
+    assert shifts(read)["progress"] == -read.period_wd == -5.0
+    assert read.is_slip_beyond_period is False
+
+
+@pytest.mark.oracle("property")
+def test_a_change_no_step_carries_is_left_as_the_residual(monkeypatch):
+    """Conservation (3.4.K.4.f): shifts + residual = the whole recalculated move of the finish.
+
+    A, 40 h, not started, a week later: Mon 2 - Fri 6 becomes Mon 9 - Fri 13 17:00, 5 wd lost, all at the
+    progress step. With every step made blind (it carries nothing), no step moves the finish, so the
+    whole -5.0 wd is left over as the residual and the steps sum to 0.0.
+    """
+    monkeypatch.setattr(forensics, "STEPS", [replace(step, apply=lambda derivation, before: before) for step in STEPS])
+    earlier = snap([todo("A", **week())])
+    later = snap([todo("A", **week())], data_date=WEEK_LATER)
+    read = half_step(earlier, later)
+    assert read.steps["shift_wd"].iloc[1:].sum() == 0.0
+    assert read.residual_wd == -5.0
+    assert read.steps["shift_wd"].iloc[1:].sum() + read.residual_wd == -5.0
+
+
 @pytest.mark.oracle("property")
 def test_the_steps_add_up_to_the_recalculated_move_of_the_finish():
     """Metamorphic (3.4.K.4.f, 3.4.E.13): every kind of change at once, the shifts sum to the move between
@@ -233,6 +281,18 @@ def test_a_reading_is_flagged_when_either_update_is_not_reproduced():
 def test_the_demo_series_is_reproduced_every_week(store):
     """The demo files store the dates the engine gives: no week of the series is flagged."""
     assert half_step_series(store)["engine_gap_wd"].abs().max() == 0.0
+
+
+@pytest.mark.oracle("standard")
+def test_a_lagged_link_of_the_demo_places_its_successor_at_the_lag_in_the_stored_dates(store):
+    """Independent of the engine: the demo files carry dates the engine wrote, so the zero engine gap above
+    cannot catch a lag the engine drops. The demo link E1010 -> E1040 is Start to Start with a 5 day lag
+    (sample.LINKS) on the 7-day 08:00-16:00 calendar. E1010 is not started in the first update and starts
+    on its status date, Mon 31 Aug 2026 08:00: the SS + 5 days puts E1040's start 5 working days later,
+    Sat 5 Sep 2026 08:00 (without the lag it would start with E1010)."""
+    first = store[0].tasks.set_index("task_code")
+    assert first.loc["E1010", "early_start_date"] == pd.Timestamp("2026-08-31 08:00")
+    assert first.loc["E1040", "early_start_date"] == pd.Timestamp("2026-09-05 08:00")
 
 
 # --- how the finish is held -----------------------------------------------------------------------
@@ -345,6 +405,29 @@ def test_half_step_series_reads_each_update_against_the_one_before():
     assert series["finish_case"].tolist() == [LAST_ACTIVITY, LAST_ACTIVITY]
     assert series["finish"].tolist() == [pd.Timestamp("2026-03-20 17:00")] * 2
     assert series["note"].tolist() == ["", ""]
+    # All three updates hold A, B and C: every week matches 3 and adds or deletes none.
+    assert series["tasks_matched"].tolist() == [3, 3]
+    assert series["tasks_added"].tolist() == [0, 0] and series["tasks_deleted"].tolist() == [0, 0]
+    # The finish is held by C's early finish, Fri 20 17:00 (finish_case LAST_ACTIVITY).
+    assert series["held_by"].tolist() == [pd.Timestamp("2026-03-20 17:00")] * 2
+    # Week 2: progress alone ends Tue 24 (the 2 wd slip, hand calculation of the test above); week 3 slips 0.
+    assert series["finish_before_replanning"].tolist() == [
+        pd.Timestamp("2026-03-24 17:00"),
+        pd.Timestamp("2026-03-20 17:00"),
+    ]
+    # Status dates Mon 2 -> Mon 9 = 5 wd, Mon 9 -> Fri 13 = 4 wd on the Mon-Fri calendar.
+    assert series["period_wd"].tolist() == [5.0, 4.0]
+
+
+@pytest.mark.oracle("p6")
+def test_half_step_series_reads_the_longest_path_float_of_the_later_update():
+    """The series' longest path float is the later update's, not the earlier one's: the earlier file has no
+    Must Finish By (float 0.0), the later one Thu 5 17:00 against a finish of Fri 6 17:00 (-1.0 d, as in
+    test_longest_path_float_is_negative_past_a_must_finish_by)."""
+    earlier = snap([todo("A", **week())], data_date="2026-02-23 08:00")
+    later = snap([todo("A", **week())], project={"plan_end_date": "2026-03-05 17:00"})
+    series = half_step_series(SnapshotStore([earlier, later]))
+    assert series["longest_path_float_d"].tolist() == [-1.0]
 
 
 @pytest.mark.oracle("characterization")
@@ -460,6 +543,48 @@ def test_revisions_are_split_by_where_the_revised_activity_starts():
     assert rows["scope"][:2] == (0, 0) and pd.isna(rows["scope"][2])  # nothing revised: no share
     with_a_longer_lookahead = revisions_by_horizon(earlier, later, lookahead_weeks=13).set_index("step")
     assert with_a_longer_lookahead.loc["all", BEYOND_LOOKAHEAD] == 0  # FAR starts within 13 weeks
+
+
+@pytest.mark.oracle("standard")
+def test_remaining_hours_left_on_a_completed_activity_are_not_a_replan():
+    """3.4.K.4 (b.iv): an increase of the remaining duration is a revision of work still to do. A completed
+    activity has nothing left to do, so the hours a file keeps on it are not one.
+
+    A1000 completes while its stored remaining hours go from 8 to 16: no "remaining duration increased" row,
+    its status row stays. Control A1010, still under way, goes from 8 h to 16 h on 8 h days: one row, 1 d
+    before, 2 d after, delta 2 - 8/8 = +1 wd.
+    """
+    earlier = snap(
+        [
+            active("A1000", remain_drtn_hr_cnt="8", target_drtn_hr_cnt="40"),
+            active("A1010", remain_drtn_hr_cnt="8", target_drtn_hr_cnt="40"),
+        ]
+    )
+    later = snap(
+        [
+            done("A1000", remain_drtn_hr_cnt="16", target_drtn_hr_cnt="40"),
+            active("A1010", remain_drtn_hr_cnt="16", target_drtn_hr_cnt="40"),
+        ],
+        data_date=WEEK_LATER,
+    )
+    log = changelog(earlier, later)
+    grew = log[log["change"] == "remaining duration increased"]
+    assert grew["task_code"].tolist() == ["A1010"]
+    assert (grew["before"].iloc[0], grew["after"].iloc[0], grew["delta"].iloc[0]) == ("1", "2", 1.0)
+    assert "A1000" in log.loc[log["category"] == "Progress", "task_code"].tolist()
+
+
+@pytest.mark.oracle("standard")
+def test_a_blank_scheduling_option_and_an_absent_one_read_equal():
+    """changelog._option_value: "None when absent or blank, so a blank and an absent option read equal".
+    A file holding the option empty against one without it is no change, in either direction; a blank
+    against a real code is one."""
+    blank = snap([todo("A", **week())], sched={"sched_retained_logic": "Y", "sched_outer_depend_type": ""})
+    absent = snap([todo("A", **week())], sched={"sched_retained_logic": "Y"})
+    coded = snap([todo("A", **week())], sched={"sched_retained_logic": "Y", "sched_outer_depend_type": "Y"})
+    assert changelog(blank, absent).query("category == 'Options'").empty
+    assert changelog(absent, blank).query("category == 'Options'").empty
+    assert len(changelog(blank, coded).query("category == 'Options'")) == 1
 
 
 @pytest.mark.oracle("standard")
