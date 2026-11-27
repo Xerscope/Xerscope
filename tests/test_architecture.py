@@ -6,6 +6,9 @@ from pathlib import Path
 SRC = Path(__file__).parents[1] / "src" / "xerscope"
 
 LAYERS = {  # layer -> exactly what it imports from the other layers
+    "__init__": set(),
+    "config": set(),  # tunable defaults: imports nothing of xerscope
+    "csv_safe": set(),  # docs/architecture.md: "csv_safe.py imports nothing of xerscope"
     "xer": {"config"},
     "store": {"xer", "config"},
     "export": {"store", "config", "csv_safe"},
@@ -59,6 +62,7 @@ def test_layer_imports_match_the_architecture_doc():
                 target = name.removeprefix("xerscope.")
                 if target.split(".")[0] != source:
                     cross.add((source, target))
+    assert set(layer.values()) <= set(LAYERS)  # a layer missing from LAYERS would escape the comparison below
     for source, allowed in LAYERS.items():
         used = {rule_for(target, allowed) for s, target in cross if s == source}
         assert used == allowed, source
