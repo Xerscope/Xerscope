@@ -16,6 +16,9 @@ from xerscope.app.session import (
     BASELINE_ALONE,
     BASELINE_ASKED,
     BASELINE_SET,
+    FILES_SCOPE,
+    FILES_UPLOAD_SCOPE,
+    KEPT_UPLOADS_SCOPE,
     NBSP,
     UPLOAD_TYPES,
     _apply_drafts,
@@ -120,10 +123,11 @@ def _doubles_by_date(headers: dict[str, FileHeader | str]) -> dict[str, str]:
     return doubles
 
 
-def _select_all_line(keys: dict[str, str], readable: list[str], folder_id: str) -> None:
+def _select_all_line(keys: dict[str, str], readable: list[str], folder_id: str, chosen: tuple[str, ...]) -> None:
     """Show the count of ticked files with the Select all and Clear buttons.
 
-    ``keys``: the widget key of each file's box, by file name; ``readable``: the names Select all ticks.
+    ``keys``: the widget key of each file's box, by file name; ``readable``: the names Select all ticks;
+    ``chosen``: the names ticked before a box is drawn (its widget holds the value once drawn).
     """
 
     def tick_all(value: bool) -> None:
@@ -131,7 +135,7 @@ def _select_all_line(keys: dict[str, str], readable: list[str], folder_id: str) 
         names = readable if value else list(keys)
         st.session_state.update({keys[name]: value for name in names})
 
-    ticked = sum(bool(st.session_state[key]) for key in keys.values())
+    ticked = sum(bool(st.session_state.get(key, name in chosen)) for name, key in keys.items())
     count, select, clear = st.columns([2, 1, 1], vertical_alignment="center")
     count.caption(f"{ticked} of {len(keys)} ticked")
     select.button(
@@ -156,8 +160,8 @@ def _select_all_line(keys: dict[str, str], readable: list[str], folder_id: str) 
 def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
     """Show one tick box per XER file of ``folder`` and return the names ticked.
 
-    ``chosen``: the names of the last validated choice, ticked again when the window reopens (its boxes
-    are gone once closed).
+    ``chosen``: the names of the last validated choice, ticked when the window opens: the boxes start
+    from it under keys new to this opening, so what the browser shows is what the server counts.
     """
     root = folder_under_root(folder)
     if root is None:
@@ -171,19 +175,17 @@ def _folder_boxes(folder: str, chosen: tuple[str, ...]) -> tuple[str, ...]:
     # folder path is the server's.
     folder_id = hashlib.sha256(str(root).encode()).hexdigest()[:12]
     # nothing ticked by default: a file is read (up to ~1 GB for a 40 MB export) only once asked for
-    keys = {path.name: f"read:{folder_id}:{path.name}" for path in files}
-    for name, key in keys.items():
-        st.session_state.setdefault(key, name in chosen)
+    keys = {path.name: ui.fresh_key(FILES_SCOPE, f"{folder_id}:{path.name}") for path in files}
 
     headers = {path.name: _header(path) for path in files}
     same_date_as = _doubles_by_date(headers)
     readable = [name for name, header in headers.items() if not isinstance(header, str) and name not in same_date_as]
-    _select_all_line(keys, readable, folder_id)
+    _select_all_line(keys, readable, folder_id, chosen)
     picked = []
     with st.container(key="files_list_folder"):
         for path in files:
             label, details = _describe_file(path, same_date_as.get(path.name))
-            if st.checkbox(label, key=keys[path.name], help=details):
+            if st.checkbox(label, value=path.name in chosen, key=keys[path.name], help=details):
                 picked.append(path.name)
     if not picked:
         st.info("Tick at least one file to read")
@@ -203,7 +205,10 @@ def _upload_boxes(uploads, kept: tuple[tuple[str, bytes], ...]) -> tuple[tuple[s
     with st.container(key="files_list_upload"):
         for (name, digest), data in files.items():
             if st.checkbox(
-                ui.md_text(name), value=True, key=f"keep:{digest[:12]}:{name}", help=f"{len(data) / 1e6:.1f} MB"
+                ui.md_text(name),
+                value=True,
+                key=ui.fresh_key(KEPT_UPLOADS_SCOPE, f"{digest[:12]}:{name}"),
+                help=f"{len(data) / 1e6:.1f} MB",
             ):
                 picked.append((name, data))
     for name, count in _same_names(picked).items():
@@ -234,7 +239,7 @@ def _files_section(source: tuple, store: SnapshotStore | None) -> tuple | None:
             "Upload .xer files",
             type=UPLOAD_TYPES,
             accept_multiple_files=True,
-            key="files_upload",
+            key=ui.fresh_key(FILES_UPLOAD_SCOPE, "files"),
             help="Reads P6 exports (.xer) kept in this session's memory only; nothing is written to disk. "
             "Use it for files on this computer; a folder path below reads from the server instead.",
         )
@@ -369,17 +374,20 @@ def _window(store: SnapshotStore | None) -> None:
     with st.container(key="files_sheet"):
         choice = _draw_sections(_window_sections(has_series=store is not None), source, store)
         with st.container(key="xd_foot", horizontal=True, vertical_alignment="center"):
-            st.caption("Done applies · Esc cancels")
             clash = choice is not None and choice[0] == "upload" and bool(_same_names(choice[1]))
+            unloads = choice is None and store is not None  # Done would unload the series
+            st.caption(
+                "Tick a file: Done with none would unload the series" if unloads else "Done applies · Esc cancels"
+            )
             is_done = st.button(
                 "Done",
                 type="primary",
                 key="files_done",
                 shortcut="Ctrl+Enter",
-                disabled=clash,
+                disabled=clash or unloads,
                 help="Reads the ticked files, then the pages draw once the whole series is loaded; another choice "
                 "of files asks for its baseline once. Use Ctrl+Enter; Esc cancels. Disabled while two uploads "
-                "share a name.",
+                "share a name, or while no file is ticked and a series is loaded.",
             )
         if is_done:
             _on_done(choice, store)

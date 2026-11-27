@@ -4,7 +4,7 @@ and what it shows stays true to the files read."""
 from pathlib import Path
 
 import pytest
-from conftest import baseline_box, files_done, open_files, read_folder
+from conftest import baseline_box, baseline_upload, files_done, files_upload, open_files, read_folder
 from streamlit.testing.v1 import AppTest
 
 import xerscope
@@ -35,7 +35,7 @@ def test_export_offers_a_new_extract_once_a_baseline_file_is_chosen(app, sample_
 
     baseline_box(app).select("Separate baseline file")
     data = sorted(sample_dir.glob("*.xer"))[0].read_bytes()
-    app.file_uploader(key="bl_upload").set_value([("bl.xer", data, "text/plain")]).run()
+    baseline_upload(app).set_value([("bl.xer", data, "text/plain")]).run()
     files_done(app)
     app.switch_page("views/export.py").run()
     _ok(app)
@@ -147,7 +147,7 @@ def test_two_uploads_of_the_same_name_are_refused_until_one_is_unticked(sample_d
     first, second = sorted(sample_dir.glob("*.xer"))[:2]
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     uploads = [("a.xer", first.read_bytes(), "text/plain"), ("a.xer", second.read_bytes(), "text/plain")]
-    at.file_uploader(key="files_upload").set_value(uploads).run()
+    files_upload(at).set_value(uploads).run()
     _ok(at)
     assert at.button(key="files_done").disabled
     assert [e.value.replace("\\", "") for e in at.error] == ["2 files named a.xer: untick all but one"]

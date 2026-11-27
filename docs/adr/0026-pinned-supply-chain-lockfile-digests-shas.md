@@ -41,7 +41,7 @@ be the build that was tested (ADR-0027), and a rollback must name the previous b
 of every dependency, extras and dependency groups included. Every install in CI and in the image
 uses it: `uv sync --locked` in each job of `tests.yml` that installs the project (`--extra
 crosscheck` in `crosscheck`; the `audit` job exports the same lock with `uv export --locked`),
-`--group accessibility` in `accessibility.yml`, plain in `mutation.yml`, and twice `uv sync --locked --no-dev` in the
+`--group accessibility` in `accessibility.yml` and `windows.yml`, plain in `mutation.yml`, and twice `uv sync --locked --no-dev` in the
 `Dockerfile`'s build stage. `--locked` fails when `uv.lock` does not match `pyproject.toml`
 instead of re-resolving. `pyproject.toml`'s floors are the latest releases at the last audit
 (its comment: "Floors = latest releases at the last audit (2026-10-28), so even an install that

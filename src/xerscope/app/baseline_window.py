@@ -32,6 +32,7 @@ from xerscope.app.session import (
     DRAFTS,
     EV_BASIS_LABEL,
     UPLOAD_TYPES,
+    _baseline_upload_key,
     _data_locked,
     _parse,
     _section_title,
@@ -146,7 +147,7 @@ def _baseline_file_fields(choice: str, folder_files: list[str]) -> None:
         st.file_uploader(
             "Baseline .xer, or a P6 XML export with its baselines",
             type=[*UPLOAD_TYPES, "xml"],
-            key="bl_upload",
+            key=_baseline_upload_key(),
             help="P6 Professional exports a project's baselines in XML only (Export > Primavera P6 XML, "
             "Baselines to Export). Each update is then measured against the baseline its file names.",
         )

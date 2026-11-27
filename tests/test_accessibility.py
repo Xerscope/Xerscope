@@ -109,3 +109,18 @@ def test_the_accessibility_job_runs_weekly_or_by_hand_with_its_own_dependencies(
     assert [name.split("==")[0] for name in groups["accessibility"]] == ["playwright"]
     assert "==" in groups["accessibility"][0]  # the Chromium build installed comes with the version
     assert not any("playwright" in name for name in groups["dev"])
+
+
+def test_the_windows_job_runs_on_pull_requests_that_touch_the_app_and_gates_nothing():
+    """windows.yml replays the Files window in a browser (scripts/windows_check.py): on a pull request that
+    touches the app or the script, never as a job of tests.yml (every job there gates the publish)."""
+    workflow = (ROOT / ".github" / "workflows" / "windows.yml").read_text(encoding="utf-8")
+    on = workflow[workflow.index("\non:") : workflow.index("\nconcurrency:")]
+    assert re.findall(r"^  (\w+):", on, re.M) == ["pull_request", "workflow_dispatch"]
+    assert "src/xerscope/app/**" in on and "scripts/windows_check.py" in on
+    steps = workflow[workflow.index("\njobs:") :]
+    assert re.search(r"^    timeout-minutes: \d+", steps, re.M)
+    order = ["uv sync --locked --group accessibility", "playwright install --with-deps chromium",
+             "scripts/windows_check.py"]  # fmt: skip
+    assert [steps.index(step) for step in order] == sorted(steps.index(step) for step in order)
+    assert "windows.yml" not in (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")

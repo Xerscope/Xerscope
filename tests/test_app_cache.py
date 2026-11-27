@@ -791,10 +791,10 @@ def _upload_script():
 
     import streamlit as st
 
-    from xerscope.app.session import _apply_drafts, _digest
+    from xerscope.app.session import _apply_drafts, _baseline_upload_key, _digest
 
     data = st.session_state["contents"]
-    st.session_state["bl_upload"] = types.SimpleNamespace(name="bl.xer", getvalue=lambda: data)
+    st.session_state[_baseline_upload_key()] = types.SimpleNamespace(name="bl.xer", getvalue=lambda: data)
     _apply_drafts()
     st.session_state["held"] = _digest(st.session_state["bl_file"][1])
     st.session_state["held_again"] = _digest(st.session_state["bl_file"][1])

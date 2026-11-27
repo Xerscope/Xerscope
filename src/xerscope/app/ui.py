@@ -584,6 +584,28 @@ NO_LINK = "\u2060"
 _LINKED_BY_ITSELF = re.compile(r"https?(?=://)|www(?=\.)|(?<=[\w.+-])@(?=[\w-])", re.IGNORECASE)
 
 
+GENERATIONS = "widget_generations"  # scope -> how many times its widgets started afresh
+
+
+def fresh_key(scope: str, name: str) -> str:
+    """Key of a widget of ``scope``: ``scope:name``, then ``scope:name@n`` after the n-th ``start_afresh``.
+
+    A widget whose key outlives a reset, or a window that closed, keeps its value in the browser or
+    in the server (Streamlit drops stale widgets only after a run that was not stopped by st.stop()),
+    and sends it back at the next rerun. A widget under a new key starts from its own default.
+    """
+    generation = st.session_state.get(GENERATIONS, {}).get(scope, 0)
+    return f"{scope}:{name}" if generation == 0 else f"{scope}:{name}@{generation}"
+
+
+def start_afresh(scope: str) -> None:
+    """Give the widgets of ``scope`` new keys (``fresh_key``) and drop what the old ones hold."""
+    generations = st.session_state.setdefault(GENERATIONS, {})
+    generations[scope] = generations.get(scope, 0) + 1
+    for key in [key for key in st.session_state if str(key).startswith(f"{scope}:")]:
+        del st.session_state[key]
+
+
 def md_text(value: object) -> str:
     """Text from a schedule file, shown literally inside Markdown: no link, image, emphasis
     or LaTeX ($...$) can come from an activity name or code, an address in it included."""

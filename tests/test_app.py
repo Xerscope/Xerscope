@@ -19,8 +19,10 @@ from conftest import (
     baseline_box,
     close_window,
     file_boxes,
+    file_name,
     files_done,
     files_line,
+    files_upload,
     missing,
     open_files,
     pick_project,
@@ -1033,16 +1035,16 @@ def test_a_file_the_model_cannot_type_is_named_and_the_others_load(sample_dir, t
     assert files_line(at).startswith("Files · 2 files")
 
 
-def test_folder_not_found_clears_the_data(sample_dir, monkeypatch):
+def test_folder_not_found_keeps_the_series_and_blocks_done(sample_dir, monkeypatch):
     at = _run(sample_dir, monkeypatch)
+    loaded = at.session_state["store"]
     open_files(at)
     at.text_input(key="files_folder").input(str(sample_dir / "missing")).run()
     _ok(at)
     assert any("Folder not found" in e.value for e in at.error) and not file_boxes(at)
-    files_done(at)
-    _ok(at)
-    assert at.session_state["store"] is None
-    assert any("xerscope sample" in i.value for i in at.info)
+    assert at.button(key="files_done").disabled  # Done would unload the series (EDGE-01; it used to)
+    close_window(at)
+    assert at.session_state["store"] is loaded
 
 
 def _with_baseline_file_choice(at):
@@ -1618,7 +1620,7 @@ def test_uploaded_files_are_read_on_done_and_an_unticked_one_leaves_the_series(s
         monkeypatch.delenv(name, raising=False)
     files = sorted(sample_dir.glob("*.xer"))[:3]
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
-    at.file_uploader(key="files_upload").set_value([(f.name, f.read_bytes(), "text/plain") for f in files]).run()
+    files_upload(at).set_value([(f.name, f.read_bytes(), "text/plain") for f in files]).run()
     _ok(at)
     keep = [box for box in at.checkbox if box.key.startswith("keep:")]
     assert [_shown(box.label) for box in keep] == [f.name for f in files] and all(box.value for box in keep)
@@ -1662,9 +1664,9 @@ def test_select_all_and_clear_buttons_are_explicit_clicks(sample_dir, monkeypatc
     at.run()
     _ok(at)
     assert not any(box.value for box in file_boxes(at))
-    files_done(at)
-    assert at.session_state["store"] is None
-    assert files_line(at) == "Files · none read"
+    assert at.button(key="files_done").disabled  # Done with nothing ticked would unload the series (EDGE-01)
+    close_window(at)
+    assert files_line(at) == f"Files · {count} files · 1 project"
 
 
 def test_select_all_ticks_one_file_per_data_date_and_the_list_names_the_double(sample_dir, tmp_path, monkeypatch):
@@ -1678,12 +1680,12 @@ def test_select_all_ticks_one_file_per_data_date_and_the_list_names_the_double(s
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     _ok(at)
-    labels = {box.key.rsplit(":", 1)[-1]: box.label.replace("\u00a0", "") for box in file_boxes(at)}
+    labels = {file_name(box): box.label.replace("\u00a0", "") for box in file_boxes(at)}
     assert f"— same date as {files[0].name}" in labels["zz-copy.xer"]
     assert not any("same date as" in labels[f.name] for f in files[:2])
     _button(at, "Select all").click()
     at.run()
-    assert {box.key.rsplit(":", 1)[-1]: box.value for box in file_boxes(at)} == {
+    assert {file_name(box): box.value for box in file_boxes(at)} == {
         files[0].name: True,
         files[1].name: True,
         "zz-copy.xer": False,
@@ -1705,9 +1707,9 @@ def test_select_all_skips_unreadable_files_and_the_error_names_the_file_once(sam
     _ok(at)
     _button(at, "Select all").click()
     at.run()
-    ticked = {box.key.rsplit(":", 1)[-1]: box.value for box in file_boxes(at)}
+    ticked = {file_name(box): box.value for box in file_boxes(at)}
     assert ticked == {files[0].name: True, "garbage.xer": False}
-    next(box for box in file_boxes(at) if box.key.endswith("garbage.xer")).check()
+    next(box for box in file_boxes(at) if file_name(box) == "garbage.xer").check()
     files_done(at)
     _ok(at)
     (error,) = [_shown(e.value) for e in at.sidebar.error]  # escaped for Markdown (#156)
@@ -1819,7 +1821,7 @@ def test_file_boxes_describe_each_file_before_it_is_read(renamed_project, monkey
     monkeypatch.delenv("XERSCOPE_BASELINE", raising=False)
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
     _ok(at)
-    boxes = {box.key.rsplit(":", 1)[1]: box for box in file_boxes(at)}
+    boxes = {file_name(box): box for box in file_boxes(at)}
     # the project's number of tasks on the label: the project info reads without opening the help
     assert _shown(boxes["w1.xer"].label) == "w1.xer — NEW · 02 Mar 2026 · 3 tasks · 2 projects"
     assert _shown(boxes["w2.xer"].label).startswith("w2.xer — NEW · 09 Mar 2026 · ") and boxes["w2.xer"].label.endswith(

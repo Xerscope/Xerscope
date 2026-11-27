@@ -13,7 +13,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from xerscope.app.session import BL_EACH, BL_FILE, _data_locked, _digest
+from xerscope.app.session import BL_EACH, BL_FILE, _baseline_upload_key, _data_locked, _digest
 from xerscope.xer import is_pmxml, pmxml_files, xer_files
 from xerscope.xer.pmxml import DiskFile
 
@@ -141,7 +141,7 @@ def drafted_baseline_file(exports: list[str]) -> tuple[str, bytes | DiskFile] | 
     name = session.get("draft_bl_folder_file") or ""
     if name and name in exports:  # "" is the window's "(none)"
         return _picked_folder_file({"files_source": session.get("files_source"), "bl_folder_file": name}, exports)
-    upload = None if _data_locked() else session.get("bl_upload")
+    upload = None if _data_locked() else session.get(_baseline_upload_key())
     if upload is not None:
         return upload.name, upload.getvalue()
     return _baseline_file_source(None, [])

@@ -115,7 +115,7 @@ def demo_app():
             app.wait(timeout=20)
 
 
-def _settle(page) -> None:
+def settle(page) -> None:
     """Wait for the script run a click started to end, and for its fades (style.css) to finish."""
     page.wait_for_timeout(800)
     state = "document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'"
@@ -154,29 +154,29 @@ def measure(address: str, axe: str) -> tuple[int, list[dict], bool]:
             page = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme=theme).new_page()
             page.goto(address)
             page.wait_for_selector("[data-testid=stSidebar]", timeout=60_000)
-            _settle(page)
+            settle(page)
             if theme == THEMES[0]:
                 page.evaluate("document.body.insertAdjacentHTML('beforeend', '<button id=planted></button>')")
                 planted = any(f["rule"] == "button-name" and "planted" in f["html"] for f in _findings(axe, page, ""))
                 page.evaluate("document.getElementById('planted').remove()")
             files_line = page.locator("[data-testid=stSidebar] [data-testid=stBaseButton-tertiary]").first
             files_line.click()
-            _settle(page)
+            settle(page)
             findings += _findings(axe, page, f"files window, {theme}")
             boxes = page.locator("[role=dialog] [data-testid=stCheckbox]")
             for index in range(boxes.count()):
                 if ".xer" in boxes.nth(index).inner_text():
                     boxes.nth(index).locator("label").click()
-                    _settle(page)
+                    settle(page)
             page.get_by_role("button", name="Done").click()
-            _settle(page)
+            settle(page)
             files_line.hover()
             page.wait_for_timeout(600)
             findings += _findings(axe, page, f"Files line under the pointer, {theme}")
             states += 2
             for name in PAGES:
                 page.locator(f"[data-testid=stSidebarNav] a[href$='/{name}']").first.click()
-                _settle(page)
+                settle(page)
                 for width, (pixels, height) in WIDTHS.items():
                     page.set_viewport_size({"width": pixels, "height": height})
                     page.wait_for_timeout(700)
