@@ -229,7 +229,8 @@ down. `accessibility`: `uv run python scripts/accessibility.py --axe <axe.min.js
 axe-core 4.14.0 on every page against WCAG 2.2 A and AA, and fails on a finding outside the
 script's `KNOWN` list (Streamlit's own markup). `scripts/windows_check.py` (same
 group, no argument) replays the Files window scenarios in Chromium: the counter and the
-boxes ticked in the page must agree.
+boxes ticked in the page must agree. The `windows` workflow runs it on each pull request
+that touches `src/xerscope/app/`, and gates nothing.
 
 **Against P6 on your own file** (locally, never committed):
 `uv run xerscope check FILE.xer --standard P6 --expect p6-summary.csv` and

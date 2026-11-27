@@ -87,7 +87,8 @@ Nothing but a tag on `main` publishes a version; publishing again is re-running 
 that commit.
 
 **What does not gate.** `mutation.yml` (about an hour and a half) and `accessibility.yml`
-(a browser) are separate workflows, weekly and by hand: every job of `tests.yml` gates the
+(a browser) are separate workflows, weekly and by hand, and `windows.yml` (a browser, on a pull request
+that touches the app): every job of `tests.yml` gates the
 publish, and those must not.
 
 ## Consequences
