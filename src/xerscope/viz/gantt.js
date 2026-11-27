@@ -66,28 +66,43 @@ export default function (component) {
   // The grid fits its longest WBS label (indent, toggle, code and name, in bold) and its
   // columns, so a WBS name is read whole; at least 320 px, at most 60 % of the page so the
   // timeline keeps its share. An activity's name is still cut, its full text in its tooltip.
-  // Measured on a hidden WBS row with the page's own styles, again once the fonts are loaded.
-  const fitGridWidth = () => {
-    const probe = element("div", "row wbs");
+  // Measured on a hidden row with the page's own styles, again once the fonts are loaded.
+  // The viewer can drag the separator between the grid and the timeline, or fit the grid to every
+  // name ("Fit names"); that width stays across reruns, kept on the host as the open branches.
+  const MIN_GRID_PX = 240;
+  const MIN_TIMELINE_PX = 160;
+  const labelsWidthPx = (kinds) => {
+    const probe = element("div", "row");
     probe.style.cssText = "position: absolute; visibility: hidden; display: block; width: max-content;";
     const name = element("div", "name");
     probe.append(name);
     root.append(probe);
     let widest = 0;
     for (const row of rows) {
-      if (row.kind !== "wbs") continue;
+      if (!kinds.includes(row.kind)) continue;
+      probe.className = "row " + row.kind; // a WBS label is bold
       name.style.paddingLeft = 8 + row.depth * 16 + "px";
       name.replaceChildren(element("span", "toggle", "▸"), element("span", "code", row.code), element("span", "text", row.name));
       widest = Math.max(widest, probe.getBoundingClientRect().width);
     }
     probe.remove();
     // + 4 px: widths are fractional, and a label 1 px short of its width is cut with an ellipsis
-    const gridPx = Math.max(320, Math.ceil(widest) + 4 + columnsPx);
+    return Math.ceil(widest) + 4 + columnsPx;
+  };
+  const fitGridWidth = () => {
+    if (host.xsGridPx) return; // the viewer's width wins
+    const gridPx = Math.max(320, labelsWidthPx(["wbs"]));
     root.style.setProperty("--grid-w", "min(" + gridPx + "px, 60vw)");
   };
+  const maxGridPx = () => Math.max(MIN_GRID_PX, root.clientWidth - MIN_TIMELINE_PX);
+  const setGridPx = (px) => {
+    host.xsGridPx = Math.round(Math.min(maxGridPx(), Math.max(MIN_GRID_PX, px)));
+    render();
+  };
+  const fitNames = () => setGridPx(labelsWidthPx(["wbs", "task"]));
   if (payload.timeline) {
     fitGridWidth();
-    if (document.fonts) document.fonts.ready.then(fitGridWidth);
+    if (document.fonts) document.fonts.ready.then(() => { fitGridWidth(); render(); });
   }
 
   const visibleRows = () => {
@@ -113,6 +128,9 @@ export default function (component) {
   };
   button("Collapse all", () => { open.clear(); render(); });
   button("Expand all", () => { for (const id of children.keys()) open.add(id); render(); });
+  if (payload.timeline) {
+    button("Fit names", fitNames).title = "Widen the activity columns to the longest name. Drag the separator to set any width.";
+  }
   toolbar.append(element("span", "sep"), element("span", "label", "Level"));
   for (let level = 1; level <= Math.min(maxDepth + 1, 6); level++) {
     button(String(level), () => {
@@ -151,6 +169,55 @@ export default function (component) {
   scroll.append(header, body);
   const tip = element("div", "tip");
   root.append(toolbar, scroll, tip);
+
+  // --- separator between the grid and the timeline ---------------------------------------
+  // dragged with a mouse, a pen or a finger; from the keyboard: arrows move it, Home narrows the
+  // grid to its least, End fits the names; a double click fits the names
+  const KEY_STEP_PX = 24;
+  const splitter = element("div", "splitter");
+  splitter.tabIndex = 0;
+  splitter.setAttribute("role", "separator");
+  splitter.setAttribute("aria-orientation", "vertical");
+  splitter.setAttribute("aria-label", "Width of the activity columns");
+  splitter.title = "Drag to resize, double-click to fit the names";
+  if (payload.timeline) root.append(splitter);
+  const placeSplitter = () => {
+    const gridPx = gridColumn.offsetWidth;
+    splitter.style.left = scroll.offsetLeft + gridPx + "px";
+    splitter.style.top = scroll.offsetTop + "px";
+    splitter.style.height = scroll.offsetHeight + "px";
+    splitter.setAttribute("aria-valuemin", String(MIN_GRID_PX));
+    splitter.setAttribute("aria-valuemax", String(maxGridPx()));
+    splitter.setAttribute("aria-valuenow", String(gridPx));
+  };
+  splitter.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    splitter.setPointerCapture(event.pointerId);
+    splitter.classList.add("drag");
+    const startX = event.clientX;
+    const startPx = gridColumn.offsetWidth;
+    let frame = 0;
+    const onMove = (moveEvent) => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setGridPx(startPx + moveEvent.clientX - startX));
+    };
+    const onUp = () => {
+      splitter.classList.remove("drag");
+      splitter.removeEventListener("pointermove", onMove);
+    };
+    splitter.addEventListener("pointermove", onMove);
+    splitter.addEventListener("pointerup", onUp, { once: true });
+    splitter.addEventListener("pointercancel", onUp, { once: true });
+  });
+  splitter.addEventListener("dblclick", fitNames);
+  splitter.addEventListener("keydown", (event) => {
+    const steps = { ArrowLeft: -KEY_STEP_PX, ArrowRight: KEY_STEP_PX };
+    if (event.key in steps) setGridPx(gridColumn.offsetWidth + steps[event.key]);
+    else if (event.key === "Home") setGridPx(MIN_GRID_PX);
+    else if (event.key === "End") fitNames();
+    else return;
+    event.preventDefault();
+  });
 
   // --- time axis -----------------------------------------------------------------------
   const windowStartMs = timestampMs(payload.window[0]);
@@ -390,6 +457,8 @@ export default function (component) {
   };
 
   function render() {
+    // the viewer's width, narrowed when the page is: the timeline keeps MIN_TIMELINE_PX
+    if (host.xsGridPx) root.style.setProperty("--grid-w", Math.min(host.xsGridPx, maxGridPx()) + "px");
     width = Math.max(1, timelineColumn.clientWidth);
     shown = visibleRows();
     indexById = new Map(shown.map((row, index) => [row.id, index]));
@@ -416,6 +485,7 @@ export default function (component) {
     gridLines.replaceChildren(...lines);
     empty.style.display = shown.length ? "none" : "block";
     drawWindow(true);
+    if (payload.timeline) placeSplitter();
   }
 
   const empty = element("div", "empty", "No activity matches the filters.");

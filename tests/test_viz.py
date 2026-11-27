@@ -564,10 +564,33 @@ def test_scurve_percent_of_bac_is_each_update_s_own_as_in_the_kpis():
 def test_gantt_grid_fits_the_longest_wbs_label_within_bounds():
     """The tree grid's width (--grid-w) is set from the WBS rows' labels, measured on a hidden row
     drawn with the page's own styles and again once the fonts are loaded, with at least 320 px and at
-    most 60 % of the page. A static check of the script: the browser rendering was checked by hand
-    (a 64-character WBS name read whole at 1400 px)."""
+    most 60 % of the page; a width the viewer chose wins. A static check of the script: the browser
+    rendering was checked by hand (a 64-character WBS name read whole at 1400 px)."""
     script = (Path(gantt_module.__file__).parent / "gantt.js").read_text(encoding="utf-8")
-    fit = script[script.index("const fitGridWidth") : script.index("fitGridWidth();")]
-    assert 'row.kind !== "wbs"' in fit and "getBoundingClientRect" in fit and "probe.remove()" in fit
+    measure = script[script.index("const labelsWidthPx") : script.index("const fitGridWidth")]
+    assert "!kinds.includes(row.kind)" in measure and "getBoundingClientRect" in measure
+    assert "probe.remove()" in measure
+    fit = script[script.index("const fitGridWidth") : script.index("const maxGridPx")]
+    assert 'labelsWidthPx(["wbs"])' in fit and "if (host.xsGridPx) return;" in fit
     assert "Math.max(320," in fit and '"min(" + gridPx + "px, 60vw)"' in fit
-    assert "document.fonts.ready.then(fitGridWidth)" in script
+    assert "document.fonts.ready.then(() => { fitGridWidth(); render(); })" in script
+
+
+@pytest.mark.oracle("property")
+def test_gantt_separator_resizes_the_grid_by_pointer_and_keyboard_and_keeps_the_width():
+    """The grid had a fixed width: on a narrow page the timeline kept 90 px. A separator between the
+    grid and the timeline is dragged (pointer: mouse, pen, touch), moved from the keyboard (arrows,
+    Home, End) and named for assistive technology (role separator, aria-value*); "Fit names" and a
+    double click widen the grid to the longest activity or WBS name. The width is clamped so the
+    timeline keeps MIN_TIMELINE_PX, and kept on the host element across reruns. A static check of
+    the script: the browser behaviour was checked with Playwright (drag, Fit names, keys, rerun)."""
+    script = (Path(gantt_module.__file__).parent / "gantt.js").read_text(encoding="utf-8")
+    assert 'setAttribute("role", "separator")' in script and 'setAttribute("aria-valuenow"' in script
+    assert "splitter.tabIndex = 0" in script and "setPointerCapture" in script
+    for key in ("ArrowLeft", "ArrowRight", '"Home"', '"End"'):
+        assert key in script
+    assert 'labelsWidthPx(["wbs", "task"])' in script and 'addEventListener("dblclick", fitNames)' in script
+    assert "root.clientWidth - MIN_TIMELINE_PX" in script and "host.xsGridPx = Math.round(" in script
+    assert "if (payload.timeline) root.append(splitter)" in script  # no separator on the grid alone (Tasks)
+    style = (Path(gantt_module.__file__).parent / "gantt.css").read_text(encoding="utf-8")
+    assert "cursor: col-resize" in style and "touch-action: none" in style
