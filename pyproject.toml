@@ -59,6 +59,7 @@ testpaths = ["tests"]
 addopts = "-q"
 markers = [
     "oracle(kind): where the expected values come from: p6, mpxj, standard, property or characterization (tests/conftest.py)",
+    "slow: runs a schedule of thousands of activities (tests/test_scale_*.py); selected by default, -m 'not slow' leaves them out",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:streamlit.*",
