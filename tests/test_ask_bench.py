@@ -40,6 +40,7 @@ def test_share_of_sentences_right_never_drops(lexicon, name):
     assert share >= FLOORS[name], f"{name}: {share:.0%} < {FLOORS[name]:.0%}; missed {missed}"
 
 
+@pytest.mark.oracle("property")
 def test_share_of_the_grammar_cases_understood_never_drops(store):
     """tests/ask/cases.toml: FR and EN sentences (the audit's battery, negations, OR, IDs,
     comparisons, dates, constraints, logic, unknown words), each with its filter written by hand."""
@@ -55,9 +56,28 @@ def test_share_of_the_grammar_cases_understood_never_drops(store):
     assert share >= UNDERSTOOD, f"{share:.0%} < {UNDERSTOOD:.0%}; missed {missed}"
 
 
+@pytest.mark.oracle("property")
+def test_the_words_a_case_names_as_ignored_are_compared_with_the_words_the_parser_drops(lexicon):
+    """An operator with nothing to apply to is dropped and reported ("or", "not"): a case that
+    names it is understood, a case that names another word or none is not."""
+    named = query.understood([{"text": "critical or", "expect": "float:Critical", "ignored": ["or"]}], lexicon)
+    assert named["exact"].tolist() == [True]
+    assert [list(words) for words in named["ignored"]] == [["or"]]
+    wrong = query.understood([{"text": "not", "expect": "", "ignored": []}], lexicon)
+    assert wrong["exact"].tolist() == [False]
+    assert [list(words) for words in wrong["ignored"]] == [["not"]]
+
+
+@pytest.mark.oracle("property")
 def test_every_field_is_scored_and_a_wrong_expectation_is_an_error(lexicon):
     scored = query.score([{"text": "critical", "float": ["Critical"]}, {"text": "critical", "wbs": "CIV"}], lexicon)
-    assert scored["exact"].tolist() == [True, False] and scored.loc[1, "wbs_id"] is not True
+    assert scored["exact"].tolist() == [True, False]
+    # Row 1 expects WBS CIV but "critical" names no WBS: only the wbs_id field is wrong (hand reading).
+    assert scored["wbs_id"].tolist() == [True, False]
+    assert scored["categories"].tolist() == [True, False]  # row 1 sets no float filter, "critical" reads as Critical
+    assert query.ratios(scored)["wbs_id"] == 0.5
+    assert query.ratios(scored)["exact"] == 0.5
+    assert (scored["exact"] == scored[list(query.FIELDS)].all(axis=1)).all()
     assert set(query.ratios(scored)) == {"exact", *query.FIELDS}
     with pytest.raises(KeyError):
         query.expected_filter({"text": "x", "wbs": "NOPE"}, lexicon)
@@ -74,6 +94,7 @@ def test_confidence_buckets():
     assert buckets.loc["sure", "exact"] == 1.0 and buckets.loc["unsure", "exact"] == 0.5
 
 
+@pytest.mark.oracle("property")
 def test_the_grammar_covers_the_whole_lexicon_of_the_demo(lexicon):
     """Every label of the loaded file, said by code, name, synonym, in both languages: 100 %. A
     file whose labels the grammar cannot name lists them, for a company's lexicon file."""
@@ -82,12 +103,25 @@ def test_the_grammar_covers_the_whole_lexicon_of_the_demo(lexicon):
     labels = set(scored["label"])
     assert {"WBS CIV · Civil works", "resource CREW", "status Not started", "float Critical", "milestones"} <= labels
     assert len(scored) >= 40 and scored["exact"].all()
+    # Phrases written from tests/asklex.py (synonym groups, accents folded), not from bench.self_cases:
+    # a WBS is said by its code, its name and each long synonym of the words of its name.
+    texts = scored.groupby("label")["text"].apply(set)
+    assert {"CIV", "Civil works", "genie civil", "civils"} <= texts["WBS CIV · Civil works"]
+    assert {"COM", "Commissioning", "mise en service", "essais"} <= texts["WBS COM · Commissioning"]
+    assert {"PRC", "Procurement", "achats", "approvisionnement", "purchasing"} <= texts["WBS PRC · Procurement"]
 
 
+@pytest.mark.oracle("property")
 def test_coverage_names_what_a_file_needs_in_its_lexicon():
     vocab = Vocabulary(wbs={"h": "HVAC · HVAC works", "c": "CIV · Civil works"}, words=frozenset())
     scored, missed = query.coverage(vocab)
-    assert missed == [] or missed == ["WBS HVAC · HVAC works"]  # "hvac" alone is a word the grammar reads as is
+    assert missed == []
+    # "Complete" is the status Complete for the grammar, so a WBS titled "Complete" cannot be named: it is missed.
+    done = Vocabulary(wbs={"a": "DONE · Complete"}, words=frozenset())
+    done_scored, done_missed = query.coverage(done)
+    assert done_missed == ["WBS DONE · Complete"]
+    assert not done_scored.loc[done_scored["label"] == "WBS DONE · Complete", "exact"].any()
+    assert done_scored.loc[done_scored["label"] != "WBS DONE · Complete", "exact"].all()
     with_company_word = Vocabulary(
         wbs=vocab.wbs, words=frozenset(), lexicon={**vocab.lexicon, "hvac": ("cvc",), "cvc": ("hvac",)}
     )
