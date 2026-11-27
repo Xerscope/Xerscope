@@ -7,15 +7,19 @@ independently of how the rules are written.
 import re
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 from rulekit import STANDARDS, codes, run_on_store
 
 import xerscope
 from xerscope.analysis import Baseline, health_history
 from xerscope.analysis.activity_trail import logic_by_update
+from xerscope.analysis.explain import READINGS
 from xerscope.analysis.wbs import rollup
+from xerscope.app import theme as app_theme
 from xerscope.app import ui
 from xerscope.viz import categorise, gantt_assets, gantt_data, gantt_rows
 from xerscope.viz.charts import (
@@ -222,6 +226,23 @@ def test_accent_is_the_link_colour_of_each_theme_and_primary_carries_white_text(
         assert _contrast("#ffffff", theme["primaryColor"]) >= 4.5, mode
 
 
+@pytest.mark.oracle("standard")
+def test_apply_style_writes_the_light_accent_first_and_the_dark_one_second(monkeypatch):
+    """CSS light-dark(a, b) is a under a light color-scheme and b under a dark one (CSS Color 5), so the
+    --accent variable must hold the light theme's linkColor first and the dark theme's second; each read
+    as text on its own theme's backgrounds it passes 4.5:1 (WCAG 2.2 1.4.3)."""
+    written = []
+    monkeypatch.setattr(app_theme.st, "html", written.append)
+    app_theme.apply_style()
+    pair = re.search(r"--accent: ?light-dark\((#[0-9a-fA-F]{6}), ?(#[0-9a-fA-F]{6})\)", written[0])
+    assert pair, written[0][:200]
+    themes = _themes()
+    for mode, colour in zip(("light", "dark"), pair.groups(), strict=True):
+        assert colour.lower() == themes[mode]["linkColor"].lower(), mode
+        for background in (themes[mode]["backgroundColor"], themes[mode]["secondaryBackgroundColor"]):
+            assert _contrast(colour, background) >= 4.5, (mode, background)
+
+
 def _backgrounds(theme: dict) -> list[str]:
     """Every surface text sits on: the page and its panels, the sidebar and its panels."""
     return [theme["backgroundColor"], theme["secondaryBackgroundColor"], *theme["sidebar"].values()]
@@ -348,6 +369,23 @@ def test_hover_text_is_the_text_colour_of_each_theme():
     # ui.chart sets the Plotly hover text to TEXT[theme] (Streamlit's own fades it to 3.5:1)
     for mode, theme in _themes().items():
         assert TEXT[mode].lower() == theme["textColor"].lower(), mode
+
+
+@pytest.mark.oracle("characterization")
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_chart_writes_the_hover_text_colour_of_the_running_theme(monkeypatch, mode):
+    """ui.chart puts the active theme's textColor (app/.streamlit/config.toml) on the hover label; with no
+    theme type known it falls back to the light theme's."""
+    plotted = []
+    monkeypatch.setattr(ui, "reading_popover", lambda key: None)
+    monkeypatch.setattr(ui.st, "plotly_chart", lambda figure, **kwargs: plotted.append(figure))
+    themes = _themes()
+    for theme_type, expected in ((mode, themes[mode]["textColor"]), (None, themes["light"]["textColor"])):
+        monkeypatch.setattr(ui.st, "context", SimpleNamespace(theme=SimpleNamespace(type=theme_type)))
+        figure = go.Figure()
+        ui.chart(figure, reading=next(iter(READINGS)))
+        assert plotted[-1] is figure
+        assert figure.layout.hoverlabel.font.color.lower() == expected.lower(), theme_type
 
 
 def test_the_spi_over_four_weeks_is_titled_and_written_as_the_other_indices_in_a_table():

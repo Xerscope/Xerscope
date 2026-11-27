@@ -7,7 +7,6 @@ correct. Every schedule is built with xerkit."""
 from __future__ import annotations
 
 import io
-import os
 import subprocess
 import time
 import types
@@ -476,10 +475,16 @@ def test_app_command_runs_streamlit_without_a_shell_and_keeps_odd_paths_one_argu
     monkeypatch.setenv("TS_AUTHKEY", "tskey-test")
     weird = tmp_path / "my data; rm -rf x"
     weird.mkdir()
-    assert cli.main(["app", "--data", str(weird), "--port", "8599"]) == 0
+    baseline, standards = tmp_path / "base.xer", tmp_path / "std.toml"
+    args = ["app", "--data", str(weird), "--baseline", str(baseline), "--standards", str(standards)]
+    assert cli.main([*args, "--port", "8599"]) == 0
     ((cmd, kw),) = calls
     assert isinstance(cmd, list) and "shell" not in kw and "--server.address" in cmd and "localhost" in cmd
     assert kw["env"]["XERSCOPE_DATA"] == str(weird.resolve())
+    # each flag reaches the app under the variable the app reads (docker-compose sets XERSCOPE_STANDARDS too)
+    assert kw["env"]["XERSCOPE_BASELINE"] == str(baseline.resolve())
+    assert kw["env"]["XERSCOPE_STANDARDS"] == str(standards.resolve())
+    assert cmd[cmd.index("--server.port") + 1] == "8599"
     assert kw["env"].get("TS_AUTHKEY") == "tskey-test"  # the child inherits the environment (Info, not logged)
 
 
@@ -587,9 +592,12 @@ def test_expand_scans_ten_thousand_files_quickly(tmp_path):
     assert time.perf_counter() - start < 5
 
 
-def test_check_exit_codes(tmp_path, capsys):
+def test_check_exit_codes(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("TS_AUTHKEY", "tskey-auth-SENTINEL123")  # the check must never print the key
     (tmp_path / "a.xer").write_text(xer_text([todo("A1")]))  # open ends: P6-01 fails
     assert cli.main(["check", str(tmp_path / "a.xer")]) == 0
     assert cli.main(["check", str(tmp_path / "a.xer"), "--fail-on", "fail"]) == 1
     assert cli.main(["check", str(tmp_path / "a.xer"), "--fail-on", "error"]) == 0
-    assert os.environ.get("TS_AUTHKEY", "") not in capsys.readouterr().out or not os.environ.get("TS_AUTHKEY")
+    captured = capsys.readouterr()
+    assert "tskey-auth-SENTINEL123" not in captured.out
+    assert "tskey-auth-SENTINEL123" not in captured.err

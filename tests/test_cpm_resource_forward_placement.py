@@ -109,3 +109,20 @@ def test_the_dates_shown_are_the_second_placement_and_the_successors_follow_the_
         pd.Timestamp("2026-03-04 08:00"),
         pd.Timestamp("2026-03-04 09:00"),
     )
+
+
+@pytest.mark.oracle("characterization")
+def test_an_expected_finish_applies_only_strictly_after_the_assignment_start():
+    """resource_placement.is_expected_finish_applied: "when there is one, after the assignment's start and
+    not before the finish bound". An expected finish equal to the start is not after it, so it does not size
+    the work; one hour later does; one before does not; none does not; below the bound does not, on it does."""
+    from xerscope.analysis.resource_placement import is_expected_finish_applied
+
+    start = pd.Timestamp("2026-03-02 08:00")
+    assert not is_expected_finish_applied(pd.Timestamp("2026-03-02 08:00"), start, None)
+    assert is_expected_finish_applied(pd.Timestamp("2026-03-02 09:00"), start, None)
+    assert not is_expected_finish_applied(pd.Timestamp("2026-03-02 07:00"), start, None)
+    assert not is_expected_finish_applied(None, start, None)
+    bound = pd.Timestamp("2026-03-02 12:00")
+    assert not is_expected_finish_applied(pd.Timestamp("2026-03-02 11:00"), start, bound)
+    assert is_expected_finish_applied(pd.Timestamp("2026-03-02 12:00"), start, bound)

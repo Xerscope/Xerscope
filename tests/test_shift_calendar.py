@@ -9,7 +9,7 @@ shows in the number. The interval Mon 2026-03-02 08:00 -> Tue 2026-03-03 12:00 i
 import pandas as pd
 import pytest
 from rulekit import STANDARDS, codes, run
-from xerkit import FM, MON_FRI_10H, active, clndr_data, hours, snap, todo
+from xerkit import FM, MON_FRI_8H, MON_FRI_10H, active, clndr_data, hours, snap, todo
 
 from xerscope.analysis import AnalysisContext, Baseline, run_metric
 from xerscope.analysis.changelog import changelog
@@ -264,6 +264,33 @@ def test_changelog_ignores_a_calendar_change_at_constant_hours(before, after):
 
     log = changelog(update(before, FIRST), update(after, LAST)).query("category != 'Project'")
     assert list(log["change"]) == ["calendar changed"]
+    names = {"C8": "Mon-Fri 8h", "C10": "Mon-Fri 10h"}  # the CALENDAR names written by xerkit
+    assert log[["before", "after"]].values.tolist() == [[names[before], names[after]]]
+
+
+@pytest.mark.oracle("property")
+def test_changelog_names_a_calendar_as_the_old_update_does_and_falls_back_to_the_new_one():
+    """The change shows calendar names, not ids; when both updates define an id the old update's
+    name wins (changelog.py). A moves from Z (named 'Old Z' in W-1, 'New Z' in W) to Y, an id only W
+    defines ('Only new'): before 'Old Z', after 'Only new'."""
+
+    def calendar(calendar_id: str, name: str) -> dict:
+        return {
+            "clndr_id": calendar_id,
+            "clndr_name": name,
+            "day_hr_cnt": "8",
+            "week_hr_cnt": "40",
+            "clndr_data": MON_FRI_8H,
+        }
+
+    old = snap([todo("A", clndr_id="Z", **hours(80))], data_date=FIRST, calendars=[calendar("Z", "Old Z")])
+    new = snap(
+        [todo("A", clndr_id="Y", **hours(80))],
+        data_date=LAST,
+        calendars=[calendar("Z", "New Z"), calendar("Y", "Only new")],
+    )
+    log = changelog(old, new).query("change == 'calendar changed'")
+    assert log[["before", "after"]].values.tolist() == [["Old Z", "Only new"]]
 
 
 def test_changelog_lists_an_hours_change_hidden_by_a_calendar_change():
@@ -272,6 +299,8 @@ def test_changelog_lists_an_hours_change_hidden_by_a_calendar_change():
     new = snap([todo("A", clndr_id="C10", **hours(100))], data_date=LAST)
     log = changelog(old, new).query("category == 'Durations'")
     assert sorted(log["change"]) == ["original duration changed", "remaining duration increased"]
+    # the old 80 h is 8 d of C10 (10 h a day), the new 100 h is 10 d: both durations grew by 2 wd
+    assert log["delta"].tolist() == pytest.approx([2.0, 2.0])
 
 
 def test_weekly_finish_shifts_add_up_to_the_total_shift():

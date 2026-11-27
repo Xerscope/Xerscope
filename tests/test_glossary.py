@@ -28,6 +28,16 @@ def test_spelled_out_names_each_acronym_once():
     assert spelled_out("Status") == ""
 
 
+@pytest.mark.oracle("property")
+def test_unknown_acronyms_lists_the_upper_case_tokens_the_glossary_lacks():
+    """Tokens are two or more capitals, or "wd"; each unknown one once, in order of appearance. SPI, EV
+    and wd are glossary entries (see GLOSSARY); FOO and BAR are not."""
+    assert unknown_acronyms("FOO SPI (labor units) FOO, wd, BAR") == ["FOO", "BAR"]
+    assert unknown_acronyms("ZZQ") == ["ZZQ"]
+    assert unknown_acronyms("SPI EV wd") == []
+    assert unknown_acronyms("Status") == []
+
+
 def test_every_column_label_is_in_the_glossary():
     unknown: dict[str, list[str]] = {
         label: unknown_acronyms(label) for label, _kind, _help in COLUMNS.values() if unknown_acronyms(label)

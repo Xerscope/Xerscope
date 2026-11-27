@@ -14,6 +14,8 @@ week 3, C week 4, D week 5 (03-23 to 03-27). Updates on Fridays at 17:00: U0 02-
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pandas as pd
 import pytest
 from test_earned_schedule import DAY_MIN, planned, progressed
@@ -214,6 +216,42 @@ def test_a_baseline_copied_from_a_project_under_way_keeps_the_lag_of_its_started
     assert gains["es_gain_min"].tolist() == [10 * DAY_MIN] and gains["at_gain_min"].tolist() == [5 * DAY_MIN]
     assert copied_lag(week_after, copy) == (0, 0.0)
     assert copied_lag(at_copy, plan(PLAN_1)) == (0, 0.0)
+
+
+def test_a_change_of_baseline_counts_the_tasks_it_adds_and_the_tasks_it_drops():
+    """The update holds A to E, 40 h each. The old plan holds A, B, C, D (BAC 160 h) and not E. The new plan
+    holds A, B, E (BAC 120 h): it drops C and D (removed 2) and takes in E, which the old plan did not
+    hold (added 1). Per baseline_changes: added = tasks of the update the old plan did not hold and the
+    new one does; removed = tasks of the old plan the new one drops."""
+    on_plan = {"A": WEEKS[0], "B": WEEKS[1], "C": WEEKS[2], "D": WEEKS[3], "E": WEEKS[4]}
+    old_plan = Baseline.from_snapshot(snap([planned(code, *on_plan[code]) for code in "ABCD"], data_date=WEEKS[0][0]))
+    new_plan = Baseline.from_snapshot(snap([planned(code, *on_plan[code]) for code in "ABE"], data_date=WEEKS[0][0]))
+    first = snap([planned(code, *on_plan[code]) for code in "ABCDE"], data_date=FRIDAYS[0])
+    second = snap([planned(code, *on_plan[code]) for code in "ABCDE"], data_date=FRIDAYS[1])
+    plan_of = {id(first): old_plan, id(second): new_plan}
+    changes = baseline_changes(SnapshotStore([first, second]), lambda update: plan_of[id(update)])
+    row = changes.iloc[0]
+    assert changes["data_date"].tolist() == [pd.Timestamp(FRIDAYS[1])]
+    assert (row["bac_old_hr"], row["bac_new_hr"]) == (160.0, 120.0)
+    assert (row["added"], row["removed"]) == (1, 2)
+
+
+def test_the_weeks_and_the_change_of_baseline_name_the_source_of_a_baseline_when_it_has_one():
+    """A baseline the app chose carries its ``source`` ("probable ...", a fallback), shown instead of its
+    label (weekly_gains, baseline_changes). Plan 1 is given the source "S1", plan 2 "S2"; U0 to U2 name
+    plan 1 and U3 to U5 plan 2, so the weeks opened by U0 to U4 read S1, S1, S1, S2, S2. A baseline
+    without a source is named by its label."""
+    store, baseline_for = two_plans()
+
+    def with_source(update):
+        source = "S1" if update.data_date <= pd.Timestamp(FRIDAYS[2]) else "S2"
+        return replace(baseline_for(update), source=source)
+
+    assert weekly_gains(store, with_source)["baseline"].tolist() == ["S1", "S1", "S1", "S2", "S2"]
+    row = baseline_changes(store, with_source).iloc[0]
+    assert (row["baseline_old"], row["baseline_new"]) == ("S1", "S2")
+    no_source = weekly_gains(store, baseline_for)["baseline"].tolist()
+    assert no_source == [plan(PLAN_1).label] * 3 + [plan(PLAN_2).label] * 2
 
 
 def test_what_a_change_of_baseline_absorbs_is_read_at_the_update_that_changes_it():

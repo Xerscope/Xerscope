@@ -1,5 +1,7 @@
 """The calculation shown next to each check must restate the result, never contradict it."""
 
+from dataclasses import replace
+
 import pytest
 
 from xerscope.analysis import AnalysisContext, Baseline, builtin_standards, run_metric, run_standard
@@ -30,7 +32,9 @@ def test_formula_restates_the_numbers(results):
 def test_verdict_follows_status(results):
     for r in results:
         v = explain(r).verdict
-        if r.metric.unit == "pass/fail":
+        if r.metric.unit == "pass/fail" and r.status in ("pass", "fail"):
+            # explain.py _verdict: a pass/fail metric reads exactly "Passed." or "Failed."
+            assert v == {"pass": "Passed.", "fail": "Failed."}[r.status], (r.metric.id, r.status, v)
             continue
         expected = {
             "pass": "meets the target",
@@ -40,6 +44,15 @@ def test_verdict_follows_status(results):
             "error": "error",
         }[r.status]
         assert expected in v, (r.metric.id, r.status, v)
+
+
+@pytest.mark.oracle("characterization")
+def test_a_failing_pass_fail_metric_reads_failed(results):
+    """The demo series passes every pass/fail check it runs, so the failing side is built from one: the
+    same result with status "fail" must read "Failed.", and with status "pass" "Passed."."""
+    passing = next(r for r in results if r.metric.unit == "pass/fail" and r.status == "pass")
+    assert explain(replace(passing, status="fail")).verdict == "Failed."
+    assert explain(replace(passing, status="pass")).verdict == "Passed."
 
 
 def test_parameters_show_standard_and_defaults(results, store):

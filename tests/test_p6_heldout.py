@@ -82,6 +82,48 @@ def test_share_of_values_identical_to_p6_never_drops(name):
     assert rate >= FLOORS[name] - 1e-9, f"{name}: {rate:.4f} < floor {FLOORS[name]}"
 
 
+@pytest.mark.parametrize(
+    "value, other, expected",
+    [
+        (-33.5, -31.5, False),  # P6 and xerscope two hours apart (H10-07)
+        (8.0, 16.0, False),
+        (1.0, 1.02, False),
+        (1.0, 1.005, True),  # within the two decimals float hours are kept to
+        (5.0, 5.0, True),
+        (None, 1.0, False),
+        (1.0, None, False),
+        (float("nan"), float("nan"), False),
+        (pd.Timestamp("2026-09-09 13:30"), pd.Timestamp("2026-09-09 15:30"), False),
+        (pd.Timestamp("2026-09-09 13:30"), pd.Timestamp("2026-09-09 13:31"), False),
+        (pd.Timestamp("2026-09-09 13:30"), pd.Timestamp("2026-09-09 13:30"), True),
+    ],
+)
+def test_a_value_is_the_same_only_to_the_instant_or_within_a_hundredth(value, other, expected):
+    """verify.mpxj_cpm.same_value, from its docstring: both present, timestamps to the instant, numbers
+    within 0.01. Every share of identical values above is built on it: a comparison that said yes to
+    values hours apart would let any floor pass."""
+    from xerscope.verify.mpxj_cpm import same_value
+
+    assert same_value(value, other) is expected
+
+
+@pytest.mark.usefixtures("corpus")
+@pytest.mark.parametrize("name", ["H10", "H16", "H24"])
+def test_the_agreement_with_p6_is_false_wherever_the_values_are_apart(name):
+    """In the score of a held-out set, a total float row agrees exactly when P6's and xerscope's hours are
+    within 0.01 of each other, and a date row when the instants are equal (written here, not read from the
+    comparison). Each of these sets holds rows that differ, so the check is not vacuous."""
+    d = _score(name)
+    floats = d[d["field"] == "total_float_hr"].dropna(subset=["p6", "xerscope"])
+    apart = (floats["p6"].astype(float) - floats["xerscope"].astype(float)).abs() >= 0.01
+    assert apart.any()
+    assert (floats["agree"] == ~apart).all(), floats[floats["agree"] == apart][["case", "p6", "xerscope"]]
+    dates = d[d["field"].isin(["late_start", "late_finish"])].dropna(subset=["p6", "xerscope"])
+    differ = pd.to_datetime(dates["p6"]) != pd.to_datetime(dates["xerscope"])
+    assert differ.any()
+    assert (dates["agree"] == ~differ).all(), dates[dates["agree"] == differ][["case", "p6", "xerscope"]]
+
+
 def _p6_results(set_dir: Path) -> pd.DataFrame:
     res = pd.read_csv(set_dir / "p6-results.csv")
     for c in DATES:

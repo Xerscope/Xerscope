@@ -305,14 +305,17 @@ expect = "!wbs:CIV"
 [[case]]
 text = "or"  # dangling operator
 expect = ""
+ignored = ["or"]
 
 [[case]]
 text = "critical or"  # dangling operator
 expect = "float:Critical"
+ignored = ["or"]
 
 [[case]]
 text = "not"  # dangling operator
 expect = ""
+ignored = ["not"]
 
 [[case]]
 text = "((critique)"  # unbalanced parentheses
