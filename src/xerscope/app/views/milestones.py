@@ -85,17 +85,17 @@ if hidden := sorted(set(picked) - set(plotted.loc[plotted["forecast"].notna(), "
     st.caption(f"Complete before every status date, nothing to plot: {ui.md_text(', '.join(hidden))}")
 slips = milestone_slips(trend, store)
 if plotted["forecast"].notna().any():
-    last_shift = dict(zip(slips["task_code"], slips["last_week_wd"], strict=True))
     figure = build_mta(
         plotted,
-        last_shift,
+        dict(zip(slips["task_code"], slips["slip_wd"], strict=True)),
+        dict(zip(slips["task_code"], slips["last_week_wd"], strict=True)),
         order=picked,
         bounds=(store.latest.planned_start, store.latest.finish_date),  # the latest update's project
     )
     ui.chart(figure)
     st.caption(
-        "One colour per milestone, as on its tag above. Last point and label = move in the last update: "
-        "red later, green earlier."
+        "One colour per milestone, as on its tag above. Last point and arrow = drift since the first update: "
+        "red later, green earlier, in wd on the label, then the move in the last update (last)."
     )
 
 ui.section("Slippage", "Working days on each milestone's own calendar.")
