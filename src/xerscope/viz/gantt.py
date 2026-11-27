@@ -285,8 +285,8 @@ def gantt_data(
     first-paint estimate for the rows ``open_ids`` show, and the browser then sizes the
     component to the rows it draws, from ``rowPx`` and ``chromePx``. ``open_epoch`` changes
     when the page recomputes which branches are open: the browser then drops the ones it kept.
-    ``open_ids`` are the row ids drawn open (default: the top row). ``span`` (start,
-    finish) sets the month timescale; "week" shows WEEK_WINDOW around the data date.
+    ``open_ids`` are the row ids drawn open (default: the top row). ``span`` (start, finish) sets
+    the month timescale, "week" shows WEEK_WINDOW around the data date; ``projectWindow`` is the span.
     Logic links join the activities drawn, from the predecessor's driving end to the
     successor's driven end. ``columns`` are the grid's columns after the name (default
     ``GRID_COLUMNS``); ``timeline`` False draws the grid alone, the page's full width (the Tasks page);
@@ -294,12 +294,14 @@ def gantt_data(
     """
     link_rows = _drawn_links(rows, relationships) if links else []
     window = _window(rows, timescale, data_date, span)
+    project_window = _window(rows, "month", None, span)  # "Whole project" in the browser, any timescale
     open_rows = open_ids if open_ids is not None else {row["id"] for row in rows[:1]}
     payload = {
         "rows": rows,
         "links": link_rows,
         "dataDate": _iso_text(data_date),
         "window": [_iso_text(window[0]), _iso_text(window[1])],
+        "projectWindow": [_iso_text(project_window[0]), _iso_text(project_window[1])],
         "timescale": timescale,
         "palette": PALETTE,
         "categories": CATEGORY_ORDER,

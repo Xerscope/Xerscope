@@ -62,15 +62,31 @@ export default function (component) {
   host.xsOpen = open;
   const maxDepth = Math.max(0, ...rows.filter((row) => row.kind === "wbs").map((row) => row.depth));
 
-  // --- tree grid width -------------------------------------------------------------------
-  // The grid fits its longest WBS label (indent, toggle, code and name, in bold) and its
-  // columns, so a WBS name is read whole; at least 320 px, at most 60 % of the page so the
-  // timeline keeps its share. An activity's name is still cut, its full text in its tooltip.
-  // Measured on a hidden row with the page's own styles, again once the fonts are loaded.
-  // The viewer can drag the separator between the grid and the timeline, or fit the grid to every
-  // name ("Fit names"); that width stays across reruns, kept on the host as the open branches.
-  const MIN_GRID_PX = 240;
+  // --- view state ------------------------------------------------------------------------
+  // Everything the viewer can change about the view is here, before anything reads it, and
+  // applyView (called by render) is the one place that puts it on the page: the window and
+  // scale the time axis reads, the "whole" class, the "Whole project" button, the grid width.
+  //   the window and scale: the page's, or the project's on the month scale under "Whole project"
+  //   host.xsWhole:      set under "Whole project" (the branches and width to give back); kept on
+  //                      the host across reruns, as the open branches
+  //   host.xsGridPx:     the width the viewer chose by dragging the separator, "Fit names" or
+  //                      "Whole project"; kept across reruns
+  let windowStartMs = timestampMs(payload.window[0]);
+  let windowEndMs = timestampMs(payload.window[1]);
+  let timescale = payload.timescale;
+  const isWhole = () => Boolean(host.xsWhole);
+  let wholeButton = null; // set with the toolbar; none on the grid alone
+
+  // The grid width, in order: the viewer's (a drag, "Fit names", or "Whole project"), else the
+  // grid fitted to its longest WBS label (indent, toggle, code and name, in bold) and the columns
+  // shown, so a WBS name is read whole; at least 320 px, at most 60 % of the page so the timeline
+  // keeps its share. An activity's name is still cut, its full text in its tooltip.
+  // The labels are measured on a hidden row with the page's own styles, once at the start and again
+  // once the fonts are loaded (not at every render: a large schedule has many rows).
+  const MIN_GRID_PX = 240; // the name and its number columns
+  const MIN_NAMES_PX = 120; // the name alone: under "Whole project" and on a narrow page
   const MIN_TIMELINE_PX = 160;
+  const WHOLE_GRID_SHARE = 0.4;
   const labelsWidthPx = (kinds) => {
     const probe = element("div", "row");
     probe.style.cssText = "position: absolute; visibility: hidden; display: block; width: max-content;";
@@ -87,22 +103,76 @@ export default function (component) {
     }
     probe.remove();
     // + 4 px: widths are fractional, and a label 1 px short of its width is cut with an ellipsis
-    return Math.ceil(widest) + 4 + columnsPx;
+    return Math.ceil(widest) + 4;
   };
-  const fitGridWidth = () => {
-    if (host.xsGridPx) return; // the viewer's width wins
-    const gridPx = Math.max(320, labelsWidthPx(["wbs"]));
-    root.style.setProperty("--grid-w", "min(" + gridPx + "px, 60vw)");
+  // The number columns are hidden under "Whole project" and, by gantt.css, on a narrow page: what
+  // the stylesheet does is read from the header, so the breakpoint is written in one place only.
+  const areColumnsShown = () => {
+    if (isWhole() || !columns.length) return false;
+    return getComputedStyle(gridHeader.children[1]).display !== "none";
   };
-  const maxGridPx = () => Math.max(MIN_GRID_PX, root.clientWidth - MIN_TIMELINE_PX);
+  const shownColumnsPx = () => (areColumnsShown() ? columnsPx : 0);
+  const minGridPx = () => (areColumnsShown() ? MIN_GRID_PX : MIN_NAMES_PX);
+  const maxGridPx = () => Math.max(minGridPx(), root.clientWidth - MIN_TIMELINE_PX);
+  const clampGridPx = (px) => Math.round(Math.min(maxGridPx(), Math.max(minGridPx(), px)));
+  // the width that shows every name (WBS and activity) of the view as it is now
+  const namesFitPx = () => labelsWidthPx(["wbs", "task"]) + shownColumnsPx();
+  let wbsLabelsPx = 0;
+  const measureWbsLabels = () => { wbsLabelsPx = labelsWidthPx(["wbs"]); };
+  // the viewer's width, narrowed when the page is: the timeline keeps MIN_TIMELINE_PX
+  const gridWidthCss = () => {
+    if (host.xsGridPx) return Math.min(host.xsGridPx, maxGridPx()) + "px";
+    return "min(" + Math.max(320, wbsLabelsPx + shownColumnsPx()) + "px, 60vw, " + maxGridPx() + "px)";
+  };
+  const showWholeProjectButton = () => {
+    wholeButton.replaceChildren(element("span", null, isWhole() ? "Back to my view" : "Whole project"));
+    wholeButton.setAttribute("aria-pressed", String(isWhole()));
+  };
+  const applyWindow = () => {
+    const shownWindow = isWhole() ? payload.projectWindow : payload.window;
+    windowStartMs = timestampMs(shownWindow[0]);
+    windowEndMs = timestampMs(shownWindow[1]);
+    timescale = isWhole() ? "month" : payload.timescale;
+  };
+  const applyGridWidth = () => {
+    root.classList.toggle("whole", isWhole());
+    root.style.setProperty("--grid-w", gridWidthCss());
+  };
+  const applyView = () => {
+    if (!payload.timeline) return; // the grid alone has no window, timescale or separator
+    applyWindow();
+    applyGridWidth();
+    showWholeProjectButton();
+  };
+
+  const openEverything = () => { for (const id of children.keys()) open.add(id); };
   const setGridPx = (px) => {
-    host.xsGridPx = Math.round(Math.min(maxGridPx(), Math.max(MIN_GRID_PX, px)));
+    host.xsGridPx = clampGridPx(px);
     render();
   };
-  const fitNames = () => setGridPx(labelsWidthPx(["wbs", "task"]));
+  const fitNames = () => setGridPx(namesFitPx());
+  // "Whole project": every branch open, the grid down to the names (no number column), the
+  // timeline over the project's span; a second click brings back the branches and width the
+  // viewer had (the window and timescale follow from isWhole in applyView).
+  const startWholeProject = () => {
+    host.xsWhole = { open: [...open], gridPx: host.xsGridPx };
+    openEverything();
+    host.xsGridPx = clampGridPx(Math.min(namesFitPx(), root.clientWidth * WHOLE_GRID_SHARE));
+  };
+  const stopWholeProject = () => {
+    open.clear();
+    for (const id of host.xsWhole.open) open.add(id);
+    host.xsGridPx = host.xsWhole.gridPx;
+    host.xsWhole = null;
+  };
+  const toggleWholeProject = () => {
+    if (isWhole()) stopWholeProject(); else startWholeProject();
+    render();
+  };
   if (payload.timeline) {
-    fitGridWidth();
-    if (document.fonts) document.fonts.ready.then(() => { fitGridWidth(); render(); });
+    measureWbsLabels();
+    if (isWhole()) openEverything(); // a rerun brings the page's branches back: the view stays whole
+    if (document.fonts) document.fonts.ready.then(() => { measureWbsLabels(); render(); });
   }
 
   const visibleRows = () => {
@@ -127,8 +197,10 @@ export default function (component) {
     return buttonElement;
   };
   button("Collapse all", () => { open.clear(); render(); });
-  button("Expand all", () => { for (const id of children.keys()) open.add(id); render(); });
+  button("Expand all", () => { openEverything(); render(); });
   if (payload.timeline) {
+    wholeButton = button("Whole project", toggleWholeProject);
+    wholeButton.title = "Every branch open, the names only, the timeline over the whole project.";
     button("Fit names", fitNames).title = "Widen the activity columns to the longest name. Drag the separator to set any width.";
   }
   toolbar.append(element("span", "sep"), element("span", "label", "Level"));
@@ -186,7 +258,7 @@ export default function (component) {
     splitter.style.left = scroll.offsetLeft + gridPx + "px";
     splitter.style.top = scroll.offsetTop + "px";
     splitter.style.height = scroll.offsetHeight + "px";
-    splitter.setAttribute("aria-valuemin", String(MIN_GRID_PX));
+    splitter.setAttribute("aria-valuemin", String(minGridPx()));
     splitter.setAttribute("aria-valuemax", String(maxGridPx()));
     splitter.setAttribute("aria-valuenow", String(gridPx));
   };
@@ -213,15 +285,13 @@ export default function (component) {
   splitter.addEventListener("keydown", (event) => {
     const steps = { ArrowLeft: -KEY_STEP_PX, ArrowRight: KEY_STEP_PX };
     if (event.key in steps) setGridPx(gridColumn.offsetWidth + steps[event.key]);
-    else if (event.key === "Home") setGridPx(MIN_GRID_PX);
+    else if (event.key === "Home") setGridPx(minGridPx());
     else if (event.key === "End") fitNames();
     else return;
     event.preventDefault();
   });
 
   // --- time axis -----------------------------------------------------------------------
-  const windowStartMs = timestampMs(payload.window[0]);
-  const windowEndMs = timestampMs(payload.window[1]);
   let width = 1;
   const pixelX = (timeMs) => ((timeMs - windowStartMs) / (windowEndMs - windowStartMs)) * width;
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -253,7 +323,7 @@ export default function (component) {
   const ticks = () => {
     const months = monthStarts();
     const startDate = new Date(windowStartMs);
-    if (payload.timescale === "week") {
+    if (timescale === "week") {
       const top = [{ timeMs: windowStartMs, label: MONTHS[startDate.getUTCMonth()] + " " + startDate.getUTCFullYear() }];
       for (const start of months) top.push({ timeMs: start.timeMs, label: MONTHS[start.month] + " " + start.year });
       return { top, bottom: mondays() };
@@ -457,8 +527,7 @@ export default function (component) {
   };
 
   function render() {
-    // the viewer's width, narrowed when the page is: the timeline keeps MIN_TIMELINE_PX
-    if (host.xsGridPx) root.style.setProperty("--grid-w", Math.min(host.xsGridPx, maxGridPx()) + "px");
+    applyView();
     width = Math.max(1, timelineColumn.clientWidth);
     shown = visibleRows();
     indexById = new Map(shown.map((row, index) => [row.id, index]));

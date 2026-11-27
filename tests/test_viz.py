@@ -1,6 +1,7 @@
 """Chart readability: labels that would print on top of each other, colours that would collide."""
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -390,6 +391,18 @@ def test_gantt_script_writes_every_text_through_one_function():
         assert other_text_write not in script
 
 
+@pytest.mark.oracle("property")
+def test_gantt_sends_the_project_window_whatever_the_timescale():
+    """ "Whole project" draws the project's span in the browser even on the week timescale, whose
+    window is 12 weeks: the payload carries the span, 7 days each side, under every timescale."""
+    s = _wbs_snapshot()
+    rows = _rows(s)
+    span = (pd.Timestamp("2026-03-02"), pd.Timestamp("2026-03-31"))
+    for timescale in ("month", "week"):
+        data = gantt_data(rows, data_date=s.data_date, span=span, timescale=timescale)
+        assert data["projectWindow"] == ["2026-02-23T00:00", "2026-04-07T00:00"], timescale
+
+
 def test_gantt_timescales_and_links():
     s = _wbs_snapshot()
     rows = _rows(s)
@@ -567,13 +580,14 @@ def test_gantt_grid_fits_the_longest_wbs_label_within_bounds():
     most 60 % of the page; a width the viewer chose wins. A static check of the script: the browser
     rendering was checked by hand (a 64-character WBS name read whole at 1400 px)."""
     script = (Path(gantt_module.__file__).parent / "gantt.js").read_text(encoding="utf-8")
-    measure = script[script.index("const labelsWidthPx") : script.index("const fitGridWidth")]
+    measure = script[script.index("const labelsWidthPx") : script.index("// The number columns are hidden")]
     assert "!kinds.includes(row.kind)" in measure and "getBoundingClientRect" in measure
     assert "probe.remove()" in measure
-    fit = script[script.index("const fitGridWidth") : script.index("const maxGridPx")]
-    assert 'labelsWidthPx(["wbs"])' in fit and "if (host.xsGridPx) return;" in fit
-    assert "Math.max(320," in fit and '"min(" + gridPx + "px, 60vw)"' in fit
-    assert "document.fonts.ready.then(() => { fitGridWidth(); render(); })" in script
+    assert 'const measureWbsLabels = () => { wbsLabelsPx = labelsWidthPx(["wbs"]); }' in script
+    css = script[script.index("const gridWidthCss") : script.index("const showWholeProjectButton")]
+    assert "if (host.xsGridPx) return" in css
+    assert '"min(" + Math.max(320, wbsLabelsPx + shownColumnsPx()) + "px, 60vw, " + maxGridPx() + "px)"' in css
+    assert "document.fonts.ready.then(() => { measureWbsLabels(); render(); })" in script
 
 
 @pytest.mark.oracle("property")
@@ -589,8 +603,134 @@ def test_gantt_separator_resizes_the_grid_by_pointer_and_keyboard_and_keeps_the_
     assert "splitter.tabIndex = 0" in script and "setPointerCapture" in script
     for key in ("ArrowLeft", "ArrowRight", '"Home"', '"End"'):
         assert key in script
-    assert 'labelsWidthPx(["wbs", "task"])' in script and 'addEventListener("dblclick", fitNames)' in script
-    assert "root.clientWidth - MIN_TIMELINE_PX" in script and "host.xsGridPx = Math.round(" in script
+    assert 'addEventListener("dblclick", fitNames)' in script
+    assert "root.clientWidth - MIN_TIMELINE_PX" in script and "host.xsGridPx = clampGridPx(px)" in script
     assert "if (payload.timeline) root.append(splitter)" in script  # no separator on the grid alone (Tasks)
     style = (Path(gantt_module.__file__).parent / "gantt.css").read_text(encoding="utf-8")
     assert "cursor: col-resize" in style and "touch-action: none" in style
+
+
+def _gantt_script():
+    return (Path(gantt_module.__file__).parent / "gantt.js").read_text(encoding="utf-8")
+
+
+@pytest.mark.oracle("property")
+def test_gantt_script_writes_the_grid_width_in_one_place():
+    """--grid-w was written by the fit, by render and by the separator, so which width won depended
+    on the order of the calls. One function (applyView) writes it, from gridWidthCss, which holds
+    the order of priority: the viewer's width, else the width fitted to the WBS labels."""
+    script = _gantt_script()
+    assert script.count("--grid-w") == 1 and script.count('setProperty("--grid-w"') == 1
+    assert 'root.style.setProperty("--grid-w", gridWidthCss())' in script
+
+
+@pytest.mark.oracle("property")
+def test_gantt_script_declares_the_view_state_before_any_use():
+    """ "Cannot access 'windowStartMs' before initialization": the window and the timescale are let
+    bindings that a function called early may read. Each one's first mention is its declaration."""
+    script = _gantt_script()
+    for name in ("windowStartMs", "windowEndMs", "timescale", "wbsLabelsPx", "wholeButton"):
+        first_mention = re.search(rf"(?<![.\w]){name}\b", script)
+        assert first_mention and script[first_mention.start() - 4 : first_mention.start()] == "let ", name
+
+
+@pytest.mark.oracle("property")
+def test_gantt_whole_project_toggles_one_state_and_gives_the_old_view_back():
+    """ "Whole project" (browser check with Playwright: Week -> whole -> rerun -> back): the button
+    exists with a timeline only, says its state (aria-pressed), opens every branch, shows the
+    page's project window and hides the number columns (class whole); a second click restores the
+    branches and width kept at the first, and the state survives a rerun on the host element."""
+    script = _gantt_script()
+    assert "if (payload.timeline) {\n    wholeButton = button(" in script  # no button on the grid alone (Tasks)
+    assert 'setAttribute("aria-pressed", String(isWhole()))' in script
+    assert "const shownWindow = isWhole() ? payload.projectWindow : payload.window" in script
+    assert 'root.classList.toggle("whole", isWhole())' in script
+    start = script[script.index("const startWholeProject") : script.index("const stopWholeProject")]
+    assert "host.xsWhole = { open: [...open], gridPx: host.xsGridPx }" in start and "openEverything()" in start
+    stop = script[script.index("const stopWholeProject") : script.index("const toggleWholeProject")]
+    assert "host.xsWhole.open" in stop and "host.xsGridPx = host.xsWhole.gridPx" in stop
+    assert "host.xsWhole = null" in stop
+    assert "if (isWhole()) openEverything()" in script  # a rerun keeps the view whole
+    style = (Path(gantt_module.__file__).parent / "gantt.css").read_text(encoding="utf-8")
+    assert ".whole .row .num" in style and ".whole .cols" in style
+
+
+@pytest.mark.oracle("property")
+def test_gantt_whole_project_shows_the_project_on_the_month_timescale():
+    """The week timescale is a 12-week window: the whole project is drawn on the month timescale
+    (years over months), whatever the page chose, and the page's timescale comes back after."""
+    script = _gantt_script()
+    window = script[script.index("const applyWindow") : script.index("const applyGridWidth")]
+    assert 'timescale = isWhole() ? "month" : payload.timescale' in window
+
+
+@pytest.mark.oracle("property")
+def test_gantt_separator_keys_move_it_in_the_direction_they_point():
+    """ArrowLeft narrows and ArrowRight widens by KEY_STEP_PX, Home goes to the least width, End
+    fits the names (the same as a double click); any other key is left to the browser."""
+    script = _gantt_script()
+    handler = script[script.index('splitter.addEventListener("keydown"') :]
+    handler = handler[: handler.index("event.preventDefault()")]
+    assert "ArrowLeft: -KEY_STEP_PX, ArrowRight: KEY_STEP_PX" in handler
+    assert "setGridPx(gridColumn.offsetWidth + steps[event.key])" in handler
+    assert 'event.key === "Home") setGridPx(minGridPx())' in handler
+    assert 'event.key === "End") fitNames()' in handler
+    assert "else return;" in handler
+
+
+@pytest.mark.oracle("property")
+def test_gantt_one_function_gives_the_width_that_shows_every_name():
+    """Fit names, End, a double click and "Whole project" all want the width that shows every WBS
+    and activity name, plus the number columns only when they are shown: not under "Whole project",
+    nor on a narrow page where gantt.css hides them (read from the header, not a second breakpoint)."""
+    script = _gantt_script()
+    assert 'const namesFitPx = () => labelsWidthPx(["wbs", "task"]) + shownColumnsPx();' in script
+    assert "const fitNames = () => setGridPx(namesFitPx());" in script
+    assert script.count('labelsWidthPx(["wbs", "task"])') == 1  # only namesFitPx measures both kinds
+    start = script[script.index("const startWholeProject") : script.index("const stopWholeProject")]
+    assert "Math.min(namesFitPx(), root.clientWidth * WHOLE_GRID_SHARE)" in start
+    shown = script[script.index("const areColumnsShown") : script.index("const shownColumnsPx")]
+    assert "if (isWhole() || !columns.length) return false;" in shown
+    assert 'getComputedStyle(gridHeader.children[1]).display !== "none"' in shown
+    assert "const minGridPx = () => (areColumnsShown() ? MIN_GRID_PX : MIN_NAMES_PX);" in script
+
+
+@pytest.mark.oracle("property")
+def test_gantt_grid_bounds_have_their_reasons():
+    """MIN_GRID_PX 240: the name and its number columns stay readable. MIN_NAMES_PX 120: a name alone
+    (a 390 px page, where the number columns are hidden, must still let the separator move: with
+    240 it could not, the timeline keeping 118 px). MIN_TIMELINE_PX 160: the least timeline that
+    shows a few months. WHOLE_GRID_SHARE 0.4: the names get 40 % of the page, the project the rest."""
+    script = _gantt_script()
+    for declaration in (
+        "const MIN_GRID_PX = 240;",
+        "const MIN_NAMES_PX = 120;",
+        "const MIN_TIMELINE_PX = 160;",
+        "const WHOLE_GRID_SHARE = 0.4;",
+    ):
+        assert declaration in script
+
+
+@pytest.mark.oracle("property")
+def test_gantt_whole_project_hides_the_number_columns_in_the_stylesheet():
+    style = (Path(gantt_module.__file__).parent / "gantt.css").read_text(encoding="utf-8")
+    rule = style[style.index(".whole .ghead") :]
+    rule = rule[: rule.index("}") + 1]
+    assert ".whole .row .num" in rule and "display: none" in rule
+    assert ".whole .cols { grid-template-columns: 1fr; }" in style
+
+
+@pytest.mark.oracle("property")
+def test_gantt_every_grid_width_stays_between_the_bounds_the_separator_announces():
+    """A width outside [minGridPx, maxGridPx] hid the timeline or the names: every width goes
+    through clampGridPx, whose two bounds are the separator's aria-valuemin / aria-valuemax, and the
+    default width is capped by the same maximum (234 px on a 360 px page held a 200 px maximum
+    until the first drag). The number columns count only while shown. Static check of the script;
+    the browser behaviour was checked with Playwright at 390 and 1440 px."""
+    script = (Path(gantt_module.__file__).parent / "gantt.js").read_text(encoding="utf-8")
+    assert "const clampGridPx = (px) => Math.round(Math.min(maxGridPx(), Math.max(minGridPx(), px)));" in script
+    assert "const shownColumnsPx = () => (areColumnsShown() ? columnsPx : 0);" in script
+    assert 'setAttribute("aria-valuemin", String(minGridPx()))' in script
+    assert 'setAttribute("aria-valuemax", String(maxGridPx()))' in script
+    default_width = script[script.index("const gridWidthCss") : script.index("const gridWidthCss") + 300]
+    assert 'px, 60vw, " + maxGridPx() + "px)"' in default_width

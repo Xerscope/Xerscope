@@ -55,11 +55,11 @@
 .row .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--secondary); }
 .row.wbs { background: var(--band); font-weight: 600; cursor: pointer; }
 /* P6's WBS bands, one shade per level, the top darkest; :where keeps the hover rule below ahead */
-.row.wbs:where(.band0) { background: color-mix(in srgb, var(--Normal) 30%, var(--background)); }
-.row.wbs:where(.band1) { background: color-mix(in srgb, var(--Normal) 22%, var(--background)); }
-.row.wbs:where(.band2) { background: color-mix(in srgb, var(--Normal) 15%, var(--background)); }
-.row.wbs:where(.band3) { background: color-mix(in srgb, var(--Normal) 9%, var(--background)); }
-.row.wbs:where(.band4) { background: color-mix(in srgb, var(--Normal) 5%, var(--background)); }
+.row.wbs:where(.band0), .trow.wbs:where(.band0) { background: color-mix(in srgb, var(--Normal) 30%, var(--background)); }
+.row.wbs:where(.band1), .trow.wbs:where(.band1) { background: color-mix(in srgb, var(--Normal) 22%, var(--background)); }
+.row.wbs:where(.band2), .trow.wbs:where(.band2) { background: color-mix(in srgb, var(--Normal) 15%, var(--background)); }
+.row.wbs:where(.band3), .trow.wbs:where(.band3) { background: color-mix(in srgb, var(--Normal) 9%, var(--background)); }
+.row.wbs:where(.band4), .trow.wbs:where(.band4) { background: color-mix(in srgb, var(--Normal) 5%, var(--background)); }
 .row.task, .trow.task { cursor: pointer; } /* a click opens the activity below the chart */
 .row.sel, .trow.sel { box-shadow: inset 3px 0 0 var(--Normal); }
 .row.hover, .trow.hover { background: color-mix(in srgb, var(--Normal) 8%, transparent); }
@@ -71,11 +71,6 @@
 
 .trow { position: absolute; left: 0; right: 0; border-bottom: 1px solid var(--grid); }
 .trow.wbs { background: var(--band); }
-.trow.wbs:where(.band0) { background: color-mix(in srgb, var(--Normal) 30%, var(--background)); }
-.trow.wbs:where(.band1) { background: color-mix(in srgb, var(--Normal) 22%, var(--background)); }
-.trow.wbs:where(.band2) { background: color-mix(in srgb, var(--Normal) 15%, var(--background)); }
-.trow.wbs:where(.band3) { background: color-mix(in srgb, var(--Normal) 9%, var(--background)); }
-.trow.wbs:where(.band4) { background: color-mix(in srgb, var(--Normal) 5%, var(--background)); }
 .bar, .outline, .summary, .diamond { position: absolute; }
 .bar { top: 7px; height: 12px; border-radius: 3px; }
 .outline { top: 4px; height: 18px; border: 1px solid var(--secondary); border-radius: 3px; }
@@ -114,3 +109,8 @@ svg.links marker path { fill: var(--muted); stroke: none; }
   content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 3px; background: var(--Normal);
 }
 .splitter:focus-visible { outline: none; }
+
+/* "Whole project" (gantt.js): the grid keeps the names, the number columns step aside */
+.whole .cols { grid-template-columns: 1fr; }
+.whole .ghead div:not(:first-child), .whole .row .num { display: none; }
+.toolbar button[aria-pressed="true"] { color: var(--ink); border-color: var(--Normal); }
