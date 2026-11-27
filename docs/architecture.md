@@ -441,7 +441,8 @@ or from the `verify/` modules themselves (`shapes`, `p6_corpus`, `mpxj_reader`).
 - **`diagnostic.py`:** the tables of the Debug page (below), built from the existing results; with
   **`expected_finish_forms.py`** and **`recalculation_departures.py`** (the expected finishes by form,
   and where the recalculation first departs from the dates P6 stored, [formulas.md](formulas.md) 5.3),
-  split out to keep it readable; **`xer_columns.py`** lists the columns the file carries (block 9).
+  split out to keep it readable; **`xer_columns.py`** lists the columns the file carries (block 9) and,
+  for block 15, every field of one file held in the session read by the parser alone (`file_fields_of`).
 - **Import edges** (`APP_EDGES` in `tests/test_architecture.py`: one entry per module of `app/`, its edges
   compared exactly, every import form read): `ui` is the shared look any module may read, and reads only
   `glossary`, `table_filters` and `theme`. `code_picker`, `expected_finish_forms`, `glossary`, `reading`,
