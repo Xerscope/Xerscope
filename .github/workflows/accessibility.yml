@@ -37,3 +37,5 @@ jobs:
       # axe-core is no dependency of the repository: the script refuses any file but the 4.14.0 build
       - run: npm install --no-save --ignore-scripts axe-core@4.14.0
       - run: uv run python scripts/accessibility.py --axe node_modules/axe-core/axe.min.js --markdown "$GITHUB_STEP_SUMMARY"
+      # the Files window as a browser shows it: the counter equals the ticked boxes (scripts/windows_check.py)
+      - run: uv run python scripts/windows_check.py

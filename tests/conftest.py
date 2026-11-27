@@ -103,6 +103,16 @@ def file_boxes(at):
     return [box for box in at.checkbox if box.key and box.key.startswith("read:")]
 
 
+def file_name(box) -> str:
+    """The file a tick box of the window stands for: its key is ``read:<folder>:<name>@<opening>``."""
+    return box.key.rsplit(":", 1)[1].rsplit("@", 1)[0]
+
+
+def baseline_upload(at):
+    """The baseline upload of the window as opened now (its key carries the opening: ``bl_upload:file@n``)."""
+    return next(box for box in at.get("file_uploader") if box.key.startswith("bl_upload"))
+
+
 def open_files(at):
     """Press the sidebar's Files line: the window opens on its Files section."""
     at.button(key="files_button").click()

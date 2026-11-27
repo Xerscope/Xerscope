@@ -52,6 +52,19 @@ DRAFTS = {
 UNDECIDED_DRAFT = "draft_bl_undecided:"  # + file name: the choice for an undecided update (``bl_undecided``)
 
 
+# Widget scopes (``ui.fresh_key``) that start afresh each time the window opens: the tick boxes of the
+# folder's files and the baseline upload. Their values are read as the widgets hold them, and a closed
+# window leaves them in the session (a page stopped by st.stop() skips Streamlit's cleanup) while the
+# browser forgets them.
+FILES_SCOPE = "read"
+BASELINE_UPLOAD_SCOPE = "bl_upload"
+
+
+def _baseline_upload_key() -> str:
+    """Return the key of this opening's baseline upload widget."""
+    return ui.fresh_key(BASELINE_UPLOAD_SCOPE, "file")
+
+
 def _project_draft(source: str) -> str:
     """Return the draft key of the project picked for file ``source`` in the window (its proj_id)."""
     return f"draft_file_project:{source}"
@@ -59,6 +72,8 @@ def _project_draft(source: str) -> str:
 
 def _open_window(section: str) -> None:
     st.session_state.update(files_open=True, window_section=section)
+    for scope in (FILES_SCOPE, BASELINE_UPLOAD_SCOPE):
+        ui.start_afresh(scope)
     # The folder field shows the folder of the last validated choice, else XERSCOPE_DATA. Set here,
     # not as a default of the widget: when the window closes without Done, the browser leaves the
     # field's key in the session state with an empty value, which a default would not fill.
@@ -98,7 +113,7 @@ def _apply_drafts() -> None:
         chosen = st.session_state.get(_project_draft(snapshot.source))
         if chosen is not None and chosen != snapshot.project_id:
             _file_choices()[snapshot.source] = chosen
-    upload = st.session_state.get("bl_upload")
+    upload = st.session_state.get(_baseline_upload_key())
     if upload is not None:
         contents = upload.getvalue()
         st.session_state["bl_file"] = (upload.name, contents)

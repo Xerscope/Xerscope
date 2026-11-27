@@ -5,7 +5,7 @@ import zipfile
 
 import pandas as pd
 import pytest
-from conftest import baseline_box, files_done, pick_project, project_box, read_folder, selection
+from conftest import baseline_box, baseline_upload, files_done, pick_project, project_box, read_folder, selection
 from file_projects import BASELINE_DATE, two_projects
 
 from xerscope.analysis import builtin_standards
@@ -1179,9 +1179,9 @@ def test_an_update_without_baseline_says_where_to_pick_one(tmp_path, monkeypatch
 def test_the_baseline_upload_goes_away_with_another_choice(tmp_path, monkeypatch, key):
     at = _series(tmp_path, monkeypatch)
     baseline_box(at, key).select("Separate baseline file")
-    assert [u.key for u in at.run().get("file_uploader")].count("bl_upload") == 1
+    assert len([u for u in at.run().get("file_uploader") if u.key.startswith("bl_upload:")]) == 1
     baseline_box(at, key).select("None")
-    assert "bl_upload" not in [u.key for u in at.run().get("file_uploader")]
+    assert not [u.key for u in at.run().get("file_uploader") if u.key.startswith("bl_upload")]
 
 
 def test_the_projects_of_a_file_carry_their_data_date_and_which_are_baseline_copies():
@@ -1266,7 +1266,7 @@ def test_the_uploaded_baseline_applies_on_done_and_is_kept_once_the_window_close
     at = _series(tmp_path, monkeypatch)
     baseline_box(at, "bl_fallback").select("Separate baseline file")
     data = (tmp_path / "a.xer").read_bytes()
-    at.file_uploader(key="bl_upload").set_value([("bl.xer", data, "text/plain")]).run()
+    baseline_upload(at).set_value([("bl.xer", data, "text/plain")]).run()
     assert not at.exception and at.session_state["fallback"] is None  # not applied before Done
     files_done(at)
     at.run()

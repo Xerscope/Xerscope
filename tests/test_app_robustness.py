@@ -4,7 +4,7 @@ and what it shows stays true to the files read."""
 from pathlib import Path
 
 import pytest
-from conftest import baseline_box, files_done, open_files, read_folder
+from conftest import baseline_box, baseline_upload, files_done, open_files, read_folder
 from streamlit.testing.v1 import AppTest
 
 import xerscope
@@ -35,7 +35,7 @@ def test_export_offers_a_new_extract_once_a_baseline_file_is_chosen(app, sample_
 
     baseline_box(app).select("Separate baseline file")
     data = sorted(sample_dir.glob("*.xer"))[0].read_bytes()
-    app.file_uploader(key="bl_upload").set_value([("bl.xer", data, "text/plain")]).run()
+    baseline_upload(app).set_value([("bl.xer", data, "text/plain")]).run()
     files_done(app)
     app.switch_page("views/export.py").run()
     _ok(app)
