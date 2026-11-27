@@ -33,6 +33,7 @@ from xerscope.app.code_picker import pick_code_filter
 from xerscope.app.downloads import (
     anonymous_exports,
     built_download,
+    csv_download,
     sources_of,
 )
 from xerscope.app.loading import (
@@ -47,6 +48,7 @@ from xerscope.app.state import (
     snapshot_picker,
     standards,
 )
+from xerscope.app.xer_columns import file_fields_of
 from xerscope.export import zip_frames
 
 store = require_store()
@@ -615,6 +617,25 @@ with st.expander("14 · Ask vocabulary (variants generated per source column)", 
     )
     for error in lexicon_and_errors()[1]:  # curated/ files skipped, refusals that cannot apply
         st.warning(ui.md_text(_where(error)))
+
+
+with st.expander("15 · Fields of a source file (every %T table and %F field, as written)", key="debug_file_fields"):
+    st.caption(
+        "Every field of every table of the file picked, in the order of its %F lines, read by the parser alone: "
+        "whatever the data map says and whatever xerscope reads. rows_with_value: the rows whose cell is not "
+        "blank. Field names and counts only."
+    )
+    held = dict(st.session_state.get("items") or [])
+    picked = st.selectbox(
+        "File",
+        sorted(held),
+        key="debug_15_file",
+        help="One of the files held in this session. Its fields are read again from the file itself, not from "
+        "what xerscope built of it.",
+    )
+    fields, note = file_fields_of(picked, held.get(picked))
+    table(fields, max_height=ui.TABLE_SHORT, key="debug_15_file_fields", reason=note)
+    csv_download(fields, "xer_fields.csv", key="debug_15_download", sources=[picked or ""], sensitive=False)
 
 
 anonymous = anonymous_exports()

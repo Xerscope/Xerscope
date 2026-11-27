@@ -8,7 +8,7 @@ from __future__ import annotations
 import pandas as pd
 
 from xerscope.app.ui import as_dates
-from xerscope.xer import Snapshot
+from xerscope.xer import RawXer, Snapshot, XerError, is_pmxml, parse_bytes
 
 # TASK columns holding a date, and the users who added and last changed the activity, with their labels in
 # the XER Import/Export Data Map Guide (Project) v26, G57491-01, October 2026, table TASK. The guide lists no
@@ -74,3 +74,44 @@ def task_date_columns_table(snapshot: Snapshot) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows, columns=["column", "label", "tasks", "earliest", "latest"])
+
+
+FIELD_COLUMNS = ["table", "position", "column", "rows", "rows_with_value"]
+NO_FILE = "No file held in this session: load the updates from the sidebar."
+XML_FILE = "A P6 XML file: its fields are XML elements, not %T tables. Pick an XER file."
+
+
+def file_fields_of(name: str | None, data: bytes | None) -> tuple[pd.DataFrame, str]:
+    """Return the fields of the file ``name`` (``file_fields_table``) and, when there are none, why."""
+    empty = pd.DataFrame(columns=FIELD_COLUMNS)
+    if name is None or data is None:
+        return empty, NO_FILE
+    if is_pmxml(data):
+        return empty, XML_FILE
+    try:
+        return file_fields_table(parse_bytes(data[:], source=name)), ""
+    except XerError as error:
+        return empty, f"{name} cannot be read: {error}"
+
+
+def file_fields_table(raw: RawXer) -> pd.DataFrame:
+    """Return every field of every table of a file as the parser read it, whatever xerscope makes of it.
+
+    One row per %F field: its table, its place in the %F line (from 1), the table's rows and the rows holding a
+    value in it. The model is not involved: a table or a field it ignores or refuses is listed all the same.
+    Field names only, no cell value.
+    """
+    rows = []
+    for table, frame in raw.tables.items():
+        for position, column in enumerate(frame.columns, start=1):
+            filled = (frame[column].astype("string").str.strip().fillna("") != "").sum()
+            rows.append(
+                {
+                    "table": table,
+                    "position": position,
+                    "column": column,
+                    "rows": len(frame),
+                    "rows_with_value": int(filled),
+                }
+            )
+    return pd.DataFrame(rows, columns=FIELD_COLUMNS)

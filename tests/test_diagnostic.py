@@ -369,6 +369,45 @@ def test_xer_columns_lists_every_column_of_the_file_with_the_rows_holding_a_valu
     assert rows[("PROJECT", "last_recalc_date")] == 1
 
 
+@pytest.mark.oracle("characterization")
+def test_file_fields_lists_every_field_of_the_raw_file_in_its_order_without_the_model():
+    """Read by the parser alone: a TASK of 3 rows whose %F line carries base_start_date and base_end_date,
+    filled on A only, and a table the model never reads (ZZTABLE). By hand: TASK base_end_date is at its
+    place in the %F line, 3 rows, 1 with a value; ZZTABLE zz_field 1 row, 0 with a value."""
+    from xerkit import xer_text
+
+    from xerscope.app.xer_columns import file_fields_table
+    from xerscope.xer import parse_text
+
+    tasks = [todo("A", base_start_date="2026-01-05 08:00", base_end_date="2026-01-09 17:00"), todo("B"), todo("C")]
+    text = xer_text(tasks).replace("%E", "%T\tZZTABLE\n%F\tzz_field\n%R\t \n%E")
+    fields = file_fields_table(parse_text(text, source="x.xer"))
+    task = fields[fields["table"] == "TASK"].reset_index(drop=True)
+    header = next(line for line in text.splitlines() if line.startswith("%F") and "task_code" in line).split("\t")[1:]
+    assert task["column"].tolist() == header
+    row = task[task["column"] == "base_end_date"].iloc[0]
+    assert (row["position"], row["rows"], row["rows_with_value"]) == (header.index("base_end_date") + 1, 3, 1)
+    extra = fields[fields["table"] == "ZZTABLE"].iloc[0]
+    assert (extra["column"], extra["rows"], extra["rows_with_value"]) == ("zz_field", 1, 0)
+
+
+@pytest.mark.oracle("characterization")
+def test_file_fields_of_says_why_a_file_has_no_field():
+    """No file held: NO_FILE. A P6 XML file: XML_FILE. A text without ERMHDR: the parser's refusal, named
+    after the file. A readable XER: its fields and no note."""
+    from xerkit import xer_text
+
+    from xerscope.app.xer_columns import NO_FILE, XML_FILE, file_fields_of
+
+    assert file_fields_of(None, None)[1] == NO_FILE
+    xml = b'<?xml version="1.0"?><APIBusinessObjects xmlns="http://xmlns.oracle.com/Primavera/P6/V8.3/API/BusinessObjects"/>'
+    assert file_fields_of("b.xml", xml)[1] == XML_FILE
+    fields, note = file_fields_of("bad.xer", b"not an export")
+    assert fields.empty and note.startswith("bad.xer cannot be read: ")
+    fields, note = file_fields_of("u.xer", xer_text([todo("A")]).encode())
+    assert note == "" and "TASK" in set(fields["table"])
+
+
 # --- Debug block 11: project settings ----------------------------------------------------------
 
 COUNTS = ["tasks_CP_Phys", "tasks_CP_Drtn", "tasks_CP_Units", "tasks_pct_blank", "tasks_pct_other"]

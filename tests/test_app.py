@@ -1892,7 +1892,7 @@ def test_debug_page_keeps_p6_field_names_and_its_blocks_open(app):
     app.switch_page("views/debug.py").run()
     _ok(app)
     blocks = list(app.main.expander)
-    assert len(blocks) == 14 and all(block.key and block.key.startswith("debug_") for block in blocks)
+    assert len(blocks) == 15 and all(block.key and block.key.startswith("debug_") for block in blocks)
     assert app.main.selectbox(key="debug_snap").label == "Update"
 
 
@@ -2657,7 +2657,7 @@ def test_every_table_of_the_debug_page_has_a_key_of_its_own():
 
     tables = [call for call in calls if isinstance(call.func, ast.Name) and call.func.id == "table"]
     table_keys = keys_of(tables)
-    assert len(tables) == 49 and len(table_keys) == 49 and len(set(table_keys)) == 49
+    assert len(tables) == 50 and len(table_keys) == 50 and len(set(table_keys)) == 50
     assert all(key.startswith("debug_") for key in table_keys)
     other_keys = keys_of(call for call in calls if call not in tables)
     assert not set(table_keys) & set(other_keys)
@@ -3023,7 +3023,7 @@ def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sampl
     at.switch_page("views/debug.py").run()
     _ok(at)
     assert not any("12 · App runtime" in e.label for e in at.expander)
-    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 13
+    assert len([e for e in at.expander if e.key and e.key.startswith("debug_")]) == 14
     assert any("13 · Calendar detail" in e.label for e in at.expander)  # the calendar block stays on a locked instance
     assert any("14 · Ask vocabulary" in e.label for e in at.expander)  # counts only; the download needs exports plain
 
