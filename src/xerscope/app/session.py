@@ -53,11 +53,14 @@ UNDECIDED_DRAFT = "draft_bl_undecided:"  # + file name: the choice for an undeci
 
 
 # Widget scopes (``ui.fresh_key``) that start afresh each time the window opens: the tick boxes of the
-# folder's files and the baseline upload. Their values are read as the widgets hold them, and a closed
-# window leaves them in the session (a page stopped by st.stop() skips Streamlit's cleanup) while the
-# browser forgets them.
+# folder's files, the files upload with the boxes of its files, and the baseline upload. Their values
+# are read as the widgets hold them, and a closed window leaves them in the session (a page stopped by
+# st.stop() skips Streamlit's cleanup) while the browser forgets them.
 FILES_SCOPE = "read"
 BASELINE_UPLOAD_SCOPE = "bl_upload"
+FILES_UPLOAD_SCOPE = "files_upload"
+KEPT_UPLOADS_SCOPE = "keep"
+WINDOW_SCOPES = (FILES_SCOPE, BASELINE_UPLOAD_SCOPE, FILES_UPLOAD_SCOPE, KEPT_UPLOADS_SCOPE)
 
 
 def _baseline_upload_key() -> str:
@@ -72,7 +75,7 @@ def _project_draft(source: str) -> str:
 
 def _open_window(section: str) -> None:
     st.session_state.update(files_open=True, window_section=section)
-    for scope in (FILES_SCOPE, BASELINE_UPLOAD_SCOPE):
+    for scope in WINDOW_SCOPES:
         ui.start_afresh(scope)
     # The folder field shows the folder of the last validated choice, else XERSCOPE_DATA. Set here,
     # not as a default of the widget: when the window closes without Done, the browser leaves the

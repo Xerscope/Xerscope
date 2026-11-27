@@ -113,6 +113,11 @@ def baseline_upload(at):
     return next(box for box in at.get("file_uploader") if box.key.startswith("bl_upload"))
 
 
+def files_upload(at):
+    """The files upload of the window as opened now (its key carries the opening: ``files_upload:files@n``)."""
+    return next(box for box in at.get("file_uploader") if box.key.startswith("files_upload"))
+
+
 def open_files(at):
     """Press the sidebar's Files line: the window opens on its Files section."""
     at.button(key="files_button").click()

@@ -12,7 +12,7 @@ uv run python tests/reference/fetch.py            # pinned third-party XERs (che
 uv run python tests/reference/fetch_p6_heldout.py # P6 23.12.1 held-out corpus (pinned commit, needs git)
 uv sync --locked --extra crosscheck               # optional: MPXJ + jpype, needs a JDK 21 or 25
 uv run python tests/reference/mpxj_cpm.py         # optional: MPXJ's scheduler, pinned commit (git, javac)
-uv sync --locked --group accessibility            # optional: playwright, for scripts/accessibility.py
+uv sync --locked --group accessibility            # optional: playwright, for scripts/accessibility.py and scripts/windows_check.py
 ```
 
 The fetched files land in `tests/reference/data/` (not tracked). A test whose evidence is
@@ -227,7 +227,9 @@ gate no publish. `mutation`: `uv run mutmut run` on the modules of `[tool.mutmut
 tests/mutation_baseline.json`, which fails when a module's share of killed mutants goes
 down. `accessibility`: `uv run python scripts/accessibility.py --axe <axe.min.js>` runs
 axe-core 4.14.0 on every page against WCAG 2.2 A and AA, and fails on a finding outside the
-script's `KNOWN` list (Streamlit's own markup).
+script's `KNOWN` list (Streamlit's own markup). `scripts/windows_check.py` (same
+group, no argument) replays the Files window scenarios in Chromium: the counter and the
+boxes ticked in the page must agree.
 
 **Against P6 on your own file** (locally, never committed):
 `uv run xerscope check FILE.xer --standard P6 --expect p6-summary.csv` and

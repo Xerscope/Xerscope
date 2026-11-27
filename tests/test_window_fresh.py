@@ -16,6 +16,7 @@ from conftest import (
     close_window,
     file_boxes,
     files_line,
+    files_upload,
     is_waiting_for_baseline,
     open_files,
     read_folder,
@@ -87,11 +88,11 @@ def test_done_is_disabled_with_nothing_ticked_on_a_loaded_series_and_says_why(at
         box.uncheck()
     at.run()
     assert at.button(key="files_done").disabled
-    assert any(c.value.startswith("Tick at least one file") for c in at.caption)
+    assert any(c.value.startswith("Tick a file") for c in at.caption)
     file_boxes(at)[0].check()
     at.run()
     assert not at.button(key="files_done").disabled
-    assert not any(c.value.startswith("Tick at least one file") for c in at.caption)
+    assert not any(c.value.startswith("Tick a file") for c in at.caption)
     assert files_line(at) == "Files · 3 files · 1 project"  # nothing was applied meanwhile
 
 
@@ -116,3 +117,42 @@ def test_a_baseline_upload_cancelled_by_esc_is_not_applied_at_the_next_done(at, 
     at.button(key="files_done").click()
     at.run()
     assert "bl_file" not in at.session_state or not at.session_state["bl_file"]
+
+
+@pytest.mark.oracle("property")
+def test_uploads_cancelled_by_esc_are_not_read_at_the_next_done_and_no_keep_key_survives(at, sample_dir):
+    """Nothing is loaded, so the page stops under the window: the files Esc cancelled stay in the
+    upload widget's session state while the browser shows it empty, with their boxes still ticked."""
+    files = sorted(sample_dir.glob("*.xer"))[:2]
+    open_files(at)
+    files_upload(at).set_value([(f.name, f.read_bytes(), "text/plain") for f in files]).run()
+    first = {box.key for box in at.checkbox if box.key.startswith("keep:")}
+    assert len(first) == 2
+    close_window(at)
+    open_files(at)
+    assert not first & {box.key for box in at.checkbox}
+    assert not any(box.key.startswith("keep:") for box in at.checkbox)
+    at.button(key="files_done").click()
+    at.run()
+    assert at.session_state["store"] is None
+
+
+@pytest.mark.oracle("property")
+def test_an_untick_of_an_uploaded_file_cancelled_by_esc_shows_it_ticked_again(at, sample_dir):
+    """The pages wait for the baseline (st.stop): the box a closed window left unticked in the session
+    must not come back unticked while the browser draws it ticked, as the validated choice says."""
+    files = sorted(sample_dir.glob("*.xer"))[:3]
+    open_files(at)
+    files_upload(at).set_value([(f.name, f.read_bytes(), "text/plain") for f in files]).run()
+    at.button(key="files_done").click()
+    at.run()
+    assert is_waiting_for_baseline(at)
+    close_window(at)
+    at.button(key="files_button").click()
+    at.run()
+    next(box for box in at.checkbox if box.key.startswith("keep:")).uncheck()
+    at.run()
+    close_window(at)
+    at.button(key="files_button").click()
+    at.run()
+    assert [box.value for box in at.checkbox if box.key.startswith("keep:")] == [True] * 3

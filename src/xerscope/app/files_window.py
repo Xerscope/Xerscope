@@ -17,6 +17,8 @@ from xerscope.app.session import (
     BASELINE_ASKED,
     BASELINE_SET,
     FILES_SCOPE,
+    FILES_UPLOAD_SCOPE,
+    KEPT_UPLOADS_SCOPE,
     NBSP,
     UPLOAD_TYPES,
     _apply_drafts,
@@ -203,7 +205,10 @@ def _upload_boxes(uploads, kept: tuple[tuple[str, bytes], ...]) -> tuple[tuple[s
     with st.container(key="files_list_upload"):
         for (name, digest), data in files.items():
             if st.checkbox(
-                ui.md_text(name), value=True, key=f"keep:{digest[:12]}:{name}", help=f"{len(data) / 1e6:.1f} MB"
+                ui.md_text(name),
+                value=True,
+                key=ui.fresh_key(KEPT_UPLOADS_SCOPE, f"{digest[:12]}:{name}"),
+                help=f"{len(data) / 1e6:.1f} MB",
             ):
                 picked.append((name, data))
     for name, count in _same_names(picked).items():
@@ -234,7 +239,7 @@ def _files_section(source: tuple, store: SnapshotStore | None) -> tuple | None:
             "Upload .xer files",
             type=UPLOAD_TYPES,
             accept_multiple_files=True,
-            key="files_upload",
+            key=ui.fresh_key(FILES_UPLOAD_SCOPE, "files"),
             help="Reads P6 exports (.xer) kept in this session's memory only; nothing is written to disk. "
             "Use it for files on this computer; a folder path below reads from the server instead.",
         )
@@ -369,9 +374,11 @@ def _window(store: SnapshotStore | None) -> None:
     with st.container(key="files_sheet"):
         choice = _draw_sections(_window_sections(has_series=store is not None), source, store)
         with st.container(key="xd_foot", horizontal=True, vertical_alignment="center"):
-            st.caption("Done applies · Esc cancels")
             clash = choice is not None and choice[0] == "upload" and bool(_same_names(choice[1]))
             unloads = choice is None and store is not None  # Done would unload the series
+            st.caption(
+                "Tick a file: Done with none would unload the series" if unloads else "Done applies · Esc cancels"
+            )
             is_done = st.button(
                 "Done",
                 type="primary",
@@ -382,8 +389,6 @@ def _window(store: SnapshotStore | None) -> None:
                 "of files asks for its baseline once. Use Ctrl+Enter; Esc cancels. Disabled while two uploads "
                 "share a name, or while no file is ticked and a series is loaded.",
             )
-        if unloads:
-            st.caption("Tick at least one file: Done with none would unload the series.")
         if is_done:
             _on_done(choice, store)
 

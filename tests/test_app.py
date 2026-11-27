@@ -22,6 +22,7 @@ from conftest import (
     file_name,
     files_done,
     files_line,
+    files_upload,
     missing,
     open_files,
     pick_project,
@@ -1619,7 +1620,7 @@ def test_uploaded_files_are_read_on_done_and_an_unticked_one_leaves_the_series(s
         monkeypatch.delenv(name, raising=False)
     files = sorted(sample_dir.glob("*.xer"))[:3]
     at = open_files(AppTest.from_file(APP, default_timeout=120).run())
-    at.file_uploader(key="files_upload").set_value([(f.name, f.read_bytes(), "text/plain") for f in files]).run()
+    files_upload(at).set_value([(f.name, f.read_bytes(), "text/plain") for f in files]).run()
     _ok(at)
     keep = [box for box in at.checkbox if box.key.startswith("keep:")]
     assert [_shown(box.label) for box in keep] == [f.name for f in files] and all(box.value for box in keep)
