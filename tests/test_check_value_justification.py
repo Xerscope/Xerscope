@@ -149,6 +149,13 @@ def test_the_command_reads_the_base_commit_and_the_description(tmp_path):
     assert "demo/A_2026-08-31.xer/DCMA/DCMA-01/value: 4.17 -> 8.33 — <source>" in out.stdout
     (tmp_path / FLOORS).write_text(floors_file(H1=0.99))
     assert run("demo/A_2026-08-31.xer/DCMA/DCMA-01/value: 4.17 -> 8.33 — P6 export").returncode == 0
+    # a lowered floor alone fails the command, even with its justification line: "FLOORS only go up"
+    (tmp_path / GOLDEN).write_text(golden(4.17))
+    (tmp_path / FLOORS).write_text(floors_file(H1=0.98))
+    out = run("FLOORS/H1: 0.99 -> 0.98 — reason")
+    assert out.returncode == 1
+    assert "FLOORS/H1: 0.99 -> 0.98 lowered" in out.stdout
+    assert "Every moved value is justified" not in out.stdout
 
 
 FITNESS = cvj.FITNESS

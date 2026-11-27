@@ -672,3 +672,40 @@ def test_a_user_defined_field_value_whose_field_is_not_in_the_file_is_still_coun
     text = _with_tables(xer_text([todo("A")]), values)
     fields = build_snapshot(parse_text(text, source="test.xer")).udf_fields
     assert fields.to_numpy().tolist() == [["7", "", "", "", 1, 1, 0]]
+
+
+@pytest.mark.oracle("property")
+def test_a_missing_predecessor_without_pred_proj_id_is_a_corrupt_link_not_an_external_one():
+    """With TASKPRED.pred_proj_id absent, a predecessor that has no TASK row gets no project: the link is
+    corrupt (warned, ignored), not a link to another project (dropped without a word, counted apart)."""
+    text = drop_column(
+        xer_text([active("A"), active("B")], [("A", "B", "FS", 0), ("99", "B", "FS", 0)]), "TASKPRED", "pred_proj_id"
+    )
+    s = build_snapshot(parse_text(text, source="t.xer"))
+    assert any("1 relationship(s) to a task not in the file" in w for w in s.warnings)
+    assert s.external_links_dropped == 0
+    assert _rels(s) == [["A", "B", "FS", 0, False]]
+
+
+@pytest.mark.oracle("standard")
+def test_a_secondary_hard_constraint_sets_the_hard_constraint_flag():
+    """HARD_CONSTRAINTS (model.py: MSO, MFO, SNLT, FNLT, mandatory start and finish) read on the primary
+    or the secondary constraint: Start on or after (soft) + Finish on or before (hard) is hard."""
+    tasks = [
+        todo("A", cstr_type="CS_MSOA", cstr_type2="CS_MEOB"),  # soft primary, hard secondary
+        todo("B", cstr_type="", cstr_type2="CS_MSOA"),  # soft secondary only
+        todo("C", cstr_type="CS_MSOB", cstr_type2=""),  # hard primary only
+        todo("D", cstr_type="", cstr_type2=""),  # none
+    ]
+    flags = snap(tasks).tasks.set_index("task_code")["has_hard_constraint"]
+    assert flags.to_dict() == {"A": True, "B": False, "C": True, "D": False}
+
+
+@pytest.mark.oracle("property")
+def test_a_completed_task_has_neither_total_nor_free_float():
+    """A finished activity has no float to give; an open one with the same 16 h on the 8 h calendar has 2 days."""
+    float_hours = {"total_float_hr_cnt": "16", "free_float_hr_cnt": "16"}
+    tasks = [done("A", **float_hours), todo("B", **float_hours)]
+    rows = snap(tasks).tasks.set_index("task_code")
+    assert rows.loc["B", "total_float_d"] == 2.0 and rows.loc["B", "free_float_d"] == 2.0
+    assert pd.isna(rows.loc["A", "total_float_d"]) and pd.isna(rows.loc["A", "free_float_d"])

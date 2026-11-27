@@ -71,6 +71,26 @@ def test_leveling_table_lists_the_activities_the_warning_counts():
     assert table.loc[0, "restart_date"] == pd.Timestamp("2026-03-09 08:00")
 
 
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(
+    "scd_end_date, warned",
+    [
+        ("2026-03-14 17:00", False),  # exactly 1 day after the latest finish: not more than 1 day
+        ("2026-03-12 17:00", False),  # exactly 1 day before
+        ("2026-03-14 17:01", True),  # 1 day and 1 minute after
+        ("2026-03-12 16:59", True),  # 1 day and 1 minute before: the difference is an absolute one
+        ("2026-03-15 17:00", True),  # 2 days after
+        ("2026-03-11 17:00", True),  # 2 days before
+    ],
+)
+def test_scd_end_date_is_warned_about_only_beyond_one_day_from_the_latest_task_finish(scd_end_date, warned):
+    """The latest activity finish is 2026-03-13 17:00. PROJECT.scd_end_date is reported (and the tasks
+    used) when it is more than one day away, on either side (xer.model._project_finish)."""
+    s = snap([todo("A", early_end_date="2026-03-13 17:00")], project={"scd_end_date": scd_end_date})
+    assert any("PROJECT.scd_end_date" in w for w in s.warnings) is warned
+    assert s.finish_date == pd.Timestamp("2026-03-13 17:00")
+
+
 def test_finish_table_holds_scd_end_date_and_the_latest_activities():
     """scd_end_date 30 Jul 2027 against activities that end 13 and 20 Mar 2026: the warning,
     and the activities that end last, latest first."""
@@ -406,6 +426,39 @@ def test_file_fields_of_says_why_a_file_has_no_field():
     assert fields.empty and note.startswith("bad.xer cannot be read: ")
     fields, note = file_fields_of("u.xer", xer_text([todo("A")]).encode())
     assert note == "" and "TASK" in set(fields["table"])
+
+
+@pytest.mark.oracle("characterization")
+def test_assignment_dates_count_a_finish_before_the_activity_and_a_remaining_lag():
+    """diagnostic.assignment_dates_table counts a planned finish earlier than the activity's (strictly) and a
+    remaining lag above 0 h. A is planned Mon 2 to Fri 6 March 2026. R1: Mon to Thu 5 (earlier), remaining
+    lag 4 h. R2: Mon to Mon 9 (later), no lag. Nonlabor E1: remaining lag 8 h, left out. By hand: 2 labour
+    assignments, 1 finishing earlier (not 2, not 0), 1 with a remaining lag, nothing else."""
+    from xerscope.app.diagnostic import assignment_dates_table
+
+    tasks = [todo("A", **WEEK, target_start_date=MON, target_end_date=FRI)]
+    resources = [
+        dict(rsrc_id="R1", rsrc_short_name="R1", rsrc_type="RT_Labor", clndr_id="C8"),
+        dict(rsrc_id="R2", rsrc_short_name="R2", rsrc_type="RT_Labor", clndr_id="C8"),
+        dict(rsrc_id="E1", rsrc_short_name="E1", rsrc_type="RT_Equip", clndr_id="C8"),
+    ]
+    assign = [
+        _labor("A", 100, MON, "2026-03-05 17:00", relag_drtn_hr_cnt="4"),
+        {**_labor("A", 60, MON, "2026-03-09 17:00", relag_drtn_hr_cnt="0"), "rsrc_id": "R2"},
+        _labor("A", 20, MON, "2026-03-04 17:00"),
+        dict(task_code="A", rsrc_id="E1", rsrc_type="RT_Equip", target_qty="5", relag_drtn_hr_cnt="8"),
+    ]
+    row = assignment_dates_table(snap(tasks, assign=assign, resources=resources)).iloc[0].to_dict()
+    assert row == {
+        "labor_assignments": 3,
+        "with_original_lag": 0,
+        "with_remaining_lag": 1,
+        "planned_dates_blank": 0,
+        "planned_start_later_than_activity": 0,
+        "planned_finish_earlier_than_activity": 2,
+        "task_dependent_on_other_calendar": 0,
+        "resource_dependent": 0,
+    }
 
 
 # --- Debug block 11: project settings ----------------------------------------------------------
@@ -783,6 +836,8 @@ def test_departures_keep_the_activities_where_the_recalculation_first_differs():
     assert row["early_end_date_recalc"] == pd.Timestamp("2026-03-13 17:00") and row["gap_hr"] == 8
     assert (row["status"], row["type"], row["constraint"]) == ("Not started", "Task dependent", "")
     assert not row["expected_finish"] and not row["resource_dependent"]
+    assert row["early_end_date"] == pd.Timestamp("2026-03-12 17:00")  # the finish B stores, as written above
+    assert row["longest_path"]  # A -> B -> C is the only chain: B is on the longest path
     forms = departure_forms(s)
     assert forms["tasks"].tolist() == [1] and "task_code" not in forms.columns
     steps = [(step.label, len(step.removed), step.left) for step in departure_funnel(s).steps]
@@ -795,6 +850,32 @@ def test_departures_keep_the_activities_where_the_recalculation_first_differs():
     ]
     reproduced = snap([todo("A", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00", **week)])
     assert departures(reproduced).empty and departure_forms(reproduced).empty
+
+
+@pytest.mark.oracle("characterization")
+def test_a_departure_off_the_longest_path_is_not_flagged_as_on_it():
+    """Same calendar and data date as above (Mon 2 March 2026 08:00, Mon-Fri 8 h). A -> B -> C is the chain
+    (C finishes Fri 20), X is a lone 8 h activity: recalculated Mon 2 08:00 to Mon 2 17:00, a stored finish
+    on Tue 3 17:00 differs. X has no predecessor so it is kept, and with a finish days before C's it has
+    float, so it is not on the longest path while B (stored Thu 12 against Fri 13) is."""
+    chain = {"target_drtn_hr_cnt": "40", "remain_drtn_hr_cnt": "40", "total_float_hr_cnt": ""}
+    tasks = [
+        todo("A", early_start_date="2026-03-02 08:00", early_end_date="2026-03-06 17:00", **chain),
+        todo("B", early_start_date="2026-03-09 08:00", early_end_date="2026-03-12 17:00", **chain),
+        todo("C", early_start_date="2026-03-16 08:00", early_end_date="2026-03-20 17:00", **chain),
+        todo(
+            "X",
+            early_start_date="2026-03-02 08:00",
+            early_end_date="2026-03-03 17:00",
+            target_drtn_hr_cnt="8",
+            remain_drtn_hr_cnt="8",
+            total_float_hr_cnt="",
+        ),
+    ]
+    roots = departures(snap(tasks, [("A", "B", "FS", 0), ("B", "C", "FS", 0)])).set_index("task_code")
+    assert roots.index.tolist() == ["B", "X"]
+    assert roots.loc["B", "longest_path"]
+    assert not roots.loc["X", "longest_path"]
 
 
 def test_departure_forms_are_in_the_anonymous_diagnostic_without_codes_or_dates():

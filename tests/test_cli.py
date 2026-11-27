@@ -57,15 +57,24 @@ def test_check_flagged_and_expect(capsys, sample_dir, tmp_path):
     bad.write_text(f"id,found,total\nP6-01,{int(row['found']) + 1},{row['total']}\n")
     assert cli.main(["check", str(first), "--standard", "P6", "--expect", str(bad)]) == 1
     assert "1 difference(s)" in capsys.readouterr().err
+    # Same found, total one higher: the total alone is a difference.
+    total_off = tmp_path / "wrong_total.csv"
+    total_off.write_text(f"id,found,total\nP6-01,{row['found']},{int(row['total']) + 1}\n")
+    assert cli.main(["check", str(first), "--standard", "P6", "--expect", str(total_off)]) == 1
+    assert "1 difference(s)" in capsys.readouterr().err
 
 
+@pytest.mark.oracle("property")
 def test_compare_counts_leaves_untyped_lines_out():
-    got = pd.DataFrame({"id": ["A", "B", "C"], "check": ["a", "b", "c"], "found": [1, 2, None], "total": [9, 9, None]})
+    got = pd.DataFrame(
+        {"id": ["A", "B", "C", "E"], "check": ["a", "b", "c", "e"], "found": [1, 2, None, 4], "total": [9, 9, None, 9]}
+    )
     got[["found", "total"]] = got[["found", "total"]].astype("Int64")
-    typed = pd.DataFrame({"id": ["A", "B", "C", "D"], "found": [1, 3, None, 0], "total": [9, 9, None, 5]})
+    typed = pd.DataFrame({"id": ["A", "B", "C", "D", "E"], "found": [1, 3, None, 0, 4], "total": [9, 9, None, 5, 10]})
     r = compare_counts(got, typed)
-    assert list(r["id"]) == ["A", "B", "D"]  # C: nothing typed, not part of the report
-    assert list(r["match"]) == [True, False, False]  # B: found differs; D: no such check
+    assert list(r["id"]) == ["A", "B", "D", "E"]  # C: nothing typed, not part of the report
+    # B: found differs; D: no such check; E: same found (4 = 4), total differs (10 vs 9)
+    assert list(r["match"]) == [True, False, False, False]
 
 
 def test_check_with_baseline_file(capsys, sample_dir):
@@ -129,6 +138,21 @@ def test_recalc_reproduces_p6_and_writes_csv(capsys, tmp_path, require_reference
 
 
 @pytest.mark.oracle("property")
+def test_recalc_report_prints_the_differences_by_shape_only_when_asked(capsys, tmp_path):
+    """One activity stored on 2020-01-01 while the data date is 2026-03-02. Three stored values are
+    compared (early start, early finish, total float); by hand the two dates cannot be reproduced and the
+    float is, so 2 of 3 are wrong: 67 %, in the one shape of the activity (not started, no links)."""
+    path = tmp_path / "stale.xer"
+    path.write_text(xer_text([todo("A", early_start_date="2020-01-01 08:00", early_end_date="2020-01-01 17:00")]))
+    header = "differences by activity shape (status \u00b7 type \u00b7 constraint \u00b7 links \u00b7 option):"
+    assert header in run(capsys, "recalc", path, "--report")
+    shape = "not started \u00b7 task dependent \u00b7 pred none \u00b7 succ none"
+    row = f"{shape}       3      2   67% early_end_date, early_start_date       A"
+    assert row in run(capsys, "recalc", path, "--report")
+    assert "differences by activity shape" not in run(capsys, "recalc", path)
+
+
+@pytest.mark.oracle("property")
 def test_recalc_of_a_folder_writes_one_csv_per_file(capsys, tmp_path):
     """A folder given alone holds two files: each gets its own CSV, named after it, as with two paths.
     Counting the arguments instead of the files wrote both to the one path, the second over the first."""
@@ -181,6 +205,55 @@ def test_app_stays_on_localhost_and_uses_the_packaged_theme(monkeypatch, sample_
     assert cmd[cmd.index("--server.address") + 1] == "localhost"
     assert (seen["cwd"] / ".streamlit" / "config.toml").is_file()
     assert seen["env"]["XERSCOPE_DATA"] == str(sample_dir.resolve())
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(
+    ("statuses", "fail_on", "exit_code"),
+    [
+        (["pass", "error"], "error", 1),  # an error is what --fail-on error stops on
+        (["pass", "error"], "fail", 1),  # --fail-on fail also stops on an error: the rule did not run
+        (["pass", "fail"], "error", 0),  # a failed check is not an error
+        (["pass", "fail"], "fail", 1),
+        (["error", "fail"], "none", 0),  # none never stops the command
+    ],
+)
+def test_check_exit_code_names_the_statuses_that_stop_it(capsys, statuses, fail_on, exit_code):
+    """cli.FAIL_ON: none stops on nothing, fail on fail and error, error on error only."""
+    assert cli._check_exit_code(pd.DataFrame({"status": statuses}), None, fail_on) == exit_code
+    assert ("result(s) with status" in capsys.readouterr().err) == bool(exit_code)
+
+
+@pytest.mark.oracle("property")
+def test_check_expect_of_several_files_needs_a_file_column(capsys, sample_dir, tmp_path):
+    """Two files checked, one count line without a file: ambiguous, so the command stops (exit 2).
+    With a file column each line is compared with its own file, and one wrong count is one difference."""
+    first, second = sorted(sample_dir.glob("*.xer"))[:2]
+    dest = tmp_path / "out.csv"
+    run(capsys, "check", first, second, "--standard", "P6", "--out", dest)
+    frame = pd.read_csv(dest, keep_default_na=False)
+    frame = frame[frame["id"] == "P6-01"].set_index("file")
+    counts = {name: (frame.loc[name, "found"], frame.loc[name, "total"]) for name in (first.name, second.name)}
+    assert counts[first.name] != counts[second.name]  # so a merge on id alone could not match both
+    no_file = tmp_path / "no_file.csv"
+    no_file.write_text(f"id,found,total\nP6-01,{counts[first.name][0]},{counts[first.name][1]}\n")
+    assert stops("check", str(first), str(second), "--standard", "P6", "--expect", str(no_file))
+    assert "add a 'file' column, 2 files were checked" in capsys.readouterr().err
+
+    def expect_file(second_found: int) -> str:
+        path = tmp_path / f"expect_{second_found}.csv"
+        path.write_text(
+            "file,id,found,total\n"
+            f"{first.name},P6-01,{counts[first.name][0]},{counts[first.name][1]}\n"
+            f"{second.name},P6-01,{second_found},{counts[second.name][1]}\n"
+        )
+        return str(path)
+
+    right = expect_file(int(counts[second.name][0]))
+    assert "all counts match" in run(capsys, "check", first, second, "--standard", "P6", "--expect", right)
+    wrong = expect_file(int(counts[second.name][0]) + 1)
+    assert cli.main(["check", str(first), str(second), "--standard", "P6", "--expect", wrong]) == 1
+    assert "1 difference(s)" in capsys.readouterr().err
 
 
 def test_check_exit_code_follows_fail_on(capsys, sample_dir):

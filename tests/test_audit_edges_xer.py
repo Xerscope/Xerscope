@@ -103,6 +103,18 @@ def test_table_without_field_line_is_skipped_with_a_warning():
     assert raw.warnings == ["table A has rows but no %F field line; skipped"]
 
 
+@pytest.mark.oracle("characterization")
+def test_rows_before_the_field_line_are_skipped_and_counted_in_a_warning():
+    """parser.py (_Table.finish): rows read before the %F line have no columns; the warning gives their number."""
+    raw = parse_text(HEAD + "%T\tA\n%R\t9\n%F\tx\n%R\t1\n%T\tB\n%R\t8\n%R\t9\n%F\ty\n%R\t2\n%E\n")
+    assert raw.table("A").to_dict("records") == [{"x": "1"}]
+    assert raw.table("B").to_dict("records") == [{"y": "2"}]
+    assert raw.warnings == [
+        "table A: 1 row(s) before its %F line; skipped",
+        "table B: 2 row(s) before its %F line; skipped",
+    ]
+
+
 def test_second_field_line_in_a_table_keeps_the_first_columns_and_ignores_the_rows_under_it():
     """AUDIT-XER-01: the rows read under the first %F line kept their columns; the rows under a
     contradicting %F line are left out, and the warning names the table."""
@@ -133,6 +145,14 @@ def test_row_longer_than_its_fields_is_truncated_and_reported_only_when_non_blan
     raw = parse_text(HEAD + "%T\tA\n%F\tx\ty\n%R\t1\t2\t3\n%R\t1\t2\t\n%E\n")
     assert raw.table("A").to_dict("records") == [{"x": "1", "y": "2"}, {"x": "1", "y": "2"}]
     assert raw.warnings == ["table A: 1 row(s) with more fields than its %F line; extra fields dropped"]
+
+
+@pytest.mark.oracle("characterization")
+def test_row_longer_than_its_fields_by_blanks_only_is_not_reported():
+    """parser.py (_Table._values): extra fields that are only blanks (space, empty) do not count."""
+    raw = parse_text(HEAD + "%T\tA\n%F\tx\ty\n%R\t1\t2\t \n%R\t1\t2\t\t\t\n%E\n")
+    assert raw.table("A").to_dict("records") == [{"x": "1", "y": "2"}, {"x": "1", "y": "2"}]
+    assert raw.warnings == []
 
 
 def test_utf8_bom_is_stripped_from_the_header_tag():
@@ -278,9 +298,14 @@ def test_duplicate_project_row_keeps_the_first_and_file_baseline_readable():
     """AUDIT-XER-08: a duplicated PROJECT row is dropped with a warning; the baseline note stays text."""
     lines = xer_text([todo("A")]).splitlines()
     row = lines.index("%T\tPROJECT") + 2
-    lines.insert(row + 1, lines[row])
+    # the repeated row differs from the first one by its short name, so which row is kept shows
+    columns = lines[row - 1].split("\t")
+    repeated = lines[row].split("\t")
+    repeated[columns.index("proj_short_name")] = "SECOND"
+    lines.insert(row + 1, "\t".join(repeated))
     s = build_snapshot(parse_text("\n".join(lines), source="t.xer"))
     assert len(s.file_projects) == 1
+    assert s.file_projects["proj_short_name"].tolist() == ["T"]  # the first row of the file, not the last
     assert "t.xer: 1 PROJECT row(s) repeat a proj_id ['1']; the first row is kept" in s.warnings
     assert "dtype" not in s.file_baseline.note and "dtype" not in s.file_baseline.proj_id
 
@@ -368,6 +393,16 @@ def test_a_timezone_suffixed_date_cell_reads_as_blank_with_a_warning():
     assert to_datetime(pd.Series(["2026-03-02 08:00+02:00", "2026-03-02 08:00"])).isna().tolist() == [True, False]
 
 
+@pytest.mark.oracle("characterization")
+@pytest.mark.parametrize("suffix", ["+02:00", "+0200", "-0530", "Z", "+02:00 "])
+def test_every_iso_offset_spelling_on_a_date_cell_reads_as_blank(suffix):
+    """validate.py: an offset with or without the colon, or "Z", ends a time-zoned cell (trailing blanks allowed)."""
+    s = snap([todo("A", early_start_date="2026-03-02 08:00" + suffix), todo("B")])
+    assert pd.isna(s.tasks.iloc[0]["early_start_date"])
+    assert s.tasks.iloc[1]["early_start_date"] == T("2026-03-02 08:00")
+    assert "test.xer: 1 TASK date cell(s) carry a time zone; read as blank" in s.warnings
+
+
 def test_invalid_data_date_cells_fall_through_to_no_status_date():
     for text in ("03/02/2026", "2026-03-02 24:00", "0000-00-00"):
         s = snap([todo("A")], data_date=text)
@@ -418,19 +453,33 @@ def test_infinite_huge_and_negative_remaining_durations():
 def test_unusable_lag_reads_as_zero_and_an_unknown_link_type_is_kept_and_named():
     """An unknown link type keeps its code in ``relationships`` (#128) and is named once; the
     recalculation ignores it (AUDIT-CPM-06, tests/test_audit_edges_cpm.py)."""
-    links = [("A", "B", "FS", "inf"), ("B", "C", "XX", 0), ("A", "C", "SS", "2e6"), ("B", "C", "FF", 8)]
-    s = snap([todo("A"), todo("B"), todo("C")], links)
+    links = [
+        ("A", "B", "FS", "inf"),
+        ("B", "C", "XX", 0),
+        ("A", "C", "SS", "2e6"),
+        ("B", "C", "FF", 8),
+        ("A", "D", "FS", "-2e6"),  # beyond the bound on the negative side: |-2e6| > 1e6
+        ("B", "D", "SS", "-1e6"),  # on the bound: kept, the comparison is strict
+        ("C", "D", "FF", "-1000001"),  # one hour past the bound
+    ]
+    s = snap([todo("A"), todo("B"), todo("C"), todo("D")], links)
     assert s.relationships[["pred_code", "succ_code", "type", "lag_hr"]].to_dict("records") == [
         {"pred_code": "A", "succ_code": "B", "type": "FS", "lag_hr": 0.0},
         {"pred_code": "B", "succ_code": "C", "type": "PR_XX", "lag_hr": 0.0},
         {"pred_code": "A", "succ_code": "C", "type": "SS", "lag_hr": 0.0},
         {"pred_code": "B", "succ_code": "C", "type": "FF", "lag_hr": 8.0},
+        {"pred_code": "A", "succ_code": "D", "type": "FS", "lag_hr": 0.0},
+        {"pred_code": "B", "succ_code": "D", "type": "SS", "lag_hr": -1000000.0},
+        {"pred_code": "C", "succ_code": "D", "type": "FF", "lag_hr": 0.0},
     ]
     assert [w for w in s.warnings if "pred_type" in w] == [
         "test.xer: TASKPRED.pred_type 'PR_XX' is not a P6 code (1 row): "
         "kept with its code, ignored by the recalculation"
     ]
-    assert "test.xer: 1 relationship lag(s) not finite or above 1e+06 h ['A->C']; read as 0" in s.warnings  # inf: blank
+    # the infinite lag reads as blank before the bound is tested, so A->B is not in the list
+    assert (
+        "test.xer: 3 relationship lag(s) not finite or above 1e+06 h ['A->C', 'A->D', 'C->D']; read as 0" in s.warnings
+    )
 
 
 def test_negative_remaining_duration_reads_as_100_percent_complete():
@@ -498,11 +547,13 @@ def test_wbs_seq_num_beyond_int64_keeps_the_order():
     wbs = [
         wbs_row("10", "A", "1"),
         wbs_row("11", "B", "1e30"),
+        wbs_row("12", "C", "-5"),
     ]  # fmt: skip
-    s = snap([todo("A", wbs_id="10"), todo("B", wbs_id="11")], wbs=wbs)
+    s = snap([todo("A", wbs_id="10"), todo("B", wbs_id="11"), todo("C", wbs_id="12")], wbs=wbs)
     keys = s.tasks.set_index("task_code")["wbs_sort"]
-    assert keys["A"] < keys["B"] == "999999", keys.to_dict()
-    assert "test.xer: 1 PROJWBS seq_num value(s) outside 0..999999; clipped" in s.warnings
+    assert keys["C"] == "000000" and keys["C"] < keys["A"] < keys["B"] == "999999", keys.to_dict()
+    # a value below 0 is clipped to 0 and counted as much as one above the bound
+    assert "test.xer: 2 PROJWBS seq_num value(s) outside 0..999999; clipped" in s.warnings
 
 
 # --- calendar blob -------------------------------------------------------------------------

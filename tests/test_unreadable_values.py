@@ -5,10 +5,12 @@ are each read as blank and named, by table, column, count and Activity ID; a fil
 no such warning; an unreadable status date says where the status date was taken from instead.
 """
 
+import pandas as pd
 import pytest
 from xerkit import todo, xer_text
 
 from xerscope.xer import load_snapshot
+from xerscope.xer.validate import placeholder_clashes
 
 pytestmark = pytest.mark.oracle("property")
 
@@ -55,3 +57,45 @@ def test_an_unreadable_status_date_says_where_the_status_date_comes_from():
         "plan_start_date" in warning
         for warning in snapshot.warnings
     ), snapshot.warnings
+
+
+def test_an_unreadable_status_date_with_no_fallback_says_none_was_read():
+    """last_recalc_date unreadable and no plan_start_date to fall back on (validate.unreadable_status_date:
+    taken_from "" reads "none read"): the warning says no status date was read, not "taken from " nothing."""
+    snapshot = _snapshot([todo("A1")], project={"last_recalc_date": "03/02/2026", "plan_start_date": ""})
+    assert (
+        "a.xer: PROJECT.last_recalc_date '03/02/2026' unreadable or out of range: status date none read"
+        in snapshot.warnings
+    )
+    assert not any(warning.endswith("status date taken from ") for warning in snapshot.warnings)
+
+
+def test_a_blank_only_cell_is_empty_not_unreadable():
+    """validate.unreadable_cells counts a cell only if "the file fills" it: spaces or a tab are blank, so A1's
+    three cells read blank with no warning; A2's "8,5" is the one unreadable value, named alone."""
+    snapshot = _snapshot(
+        [
+            todo("A1", act_start_date="   ", target_drtn_hr_cnt="  ", target_work_qty="\t"),
+            todo("A2", target_drtn_hr_cnt="8,5"),
+        ]
+    )
+    tasks = snapshot.activities.set_index("task_code")
+    assert pd.isna(tasks.loc["A1", "act_start_date"]) and pd.isna(tasks.loc["A1", "target_drtn_hr_cnt"])
+    assert _unreadable(snapshot) == [f"a.xer: TASK.target_drtn_hr_cnt: 1 value(s) {WARNING}, read as blank ['A2']"]
+
+
+def test_a_warning_names_the_first_five_offending_ids_and_counts_all():
+    """Seven activities with a decimal comma: the count is 7, only the first five Activity IDs, in file order,
+    are named (validate.LISTED = 5). The same cap for the Activity IDs that clash with a placeholder name."""
+    snapshot = _snapshot([todo(f"A{number}", target_drtn_hr_cnt="8,5") for number in range(1, 8)])
+    assert _unreadable(snapshot) == [
+        f"a.xer: TASK.target_drtn_hr_cnt: 7 value(s) {WARNING}, read as blank ['A1', 'A2', 'A3', 'A4', 'A5']"
+    ]
+    clashing = pd.Series([f"[ext]{number}" for number in range(1, 8)])
+    warnings: list[str] = []
+    placeholder_clashes(clashing, clashing, "a.xer", warnings)
+    assert len(warnings) == 1
+    assert (
+        "activity ID(s) ['[ext]1', '[ext]2', '[ext]3', '[ext]4', '[ext]5'] are also the placeholder names"
+        in warnings[0]
+    )

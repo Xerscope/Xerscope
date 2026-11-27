@@ -143,6 +143,16 @@ def test_the_search_gives_up_on_what_it_does_not_read_and_the_file_is_parsed_who
     assert index_or_refusal(index_pmxml, data) == index_or_refusal(_index_by_parsing, data)
 
 
+@pytest.mark.oracle("property")
+def test_a_file_whose_root_is_not_apibusinessobjects_is_refused_by_name():
+    """P6 writes an export under APIBusinessObjects: a document rooted at Projects is not one, and
+    the refusal names the root it found (the comparison above does not tell, it runs one function
+    twice once the search has given up)."""
+    data = NOT_PLAIN["another root element"]
+    with pytest.raises(XerError, match=r"export\.xml: not a P6 XML export \(root element Projects\)"):
+        index_pmxml(data, "export.xml")
+
+
 # --- CDATA sections: P6 writes them (the Id and Name of a project in an export of P6 20.12) -----------
 
 
