@@ -45,6 +45,11 @@ UNRESOLVED = {
     # Driving column of the predecessors of corpus H1-01 A1130.
     "driving_held_by_data_date": "a successor whose date no link reaches (the data date or its progress "
     "sets it): MPXJ marks its latest predecessor driving, xerscope none",
+    # Seen on the 3,978-activity network of tests/scale_network.py (2026-11-27). P6 settles how the
+    # neighbour's date is written (P6_SETTLED period_edge), not where this activity then falls.
+    "edge_on_another_calendar": "an activity linked to one whose date is written on a period edge "
+    "(P6_SETTLED period_edge), on a calendar that works between that edge and the other one (a 10 h day past "
+    "an 8 h day's 17:00, 7 days over a weekend): xerscope keeps the written instant, MPXJ takes the other edge",
 }
 
 
@@ -63,7 +68,26 @@ P6_SETTLED = {
     "expected_finish_edge": "an expected finish before the early start or on work with an FF / SF predecessor: "
     "MPXJ ignores it; P6 sets the remaining duration to zero, or lets a later FF / SF bound win "
     "(corpus H1-02 A1170, H4-10 A1040)",
+    # The four below were seen on the network of tests/scale_network.py; each rule is P6's, from
+    # docs/cpm.md (Snapping, forward and backward pass tables, rules taken from the corpus).
+    "period_edge": "a date on a period edge: a late start from a start bound in non-working time is written at "
+    "the previous period end (Fri 17:00), an early finish pushed into non-working time at the next working time; "
+    "MPXJ writes the other edge, the same working minute of the activity (corpus H3-02 A1240; Hotel HCSWB3Z2190)",
+    "second_constraint": "a constraint in the second slot, Finish On or Before excepted (MPXJ applies that one): "
+    "P6 schedules it in both passes, finish on or after the date forward, on or before it backward (Oracle help, "
+    "Types of constraints: Finish On 'can delay an activity's early finish or move forward an activity's late "
+    "finish'), a mandatory one as a Start On / Finish On; MPXJ ignores it (corpus; P6 probes xf-mandatory Q7-Q10)",
+    "constraint_under_way": "work under way: no mandatory date bounds its late dates, and a Start On or Before, "
+    "Mandatory Start or Mandatory Finish in either slot drops both constraints from the backward pass; MPXJ "
+    "applies them (corpus H3-02 A1050, H28-03, H28-04)",
+    "mandatory_before_data_date": "a Mandatory Start or Finish that would put unstarted work before the data date: "
+    "P6 never puts early dates there; MPXJ starts the work at the date (corpus)",
 }
+SECOND_SLOT_AGREED = {"", "CS_MEOB"}  # no second constraint, or one MPXJ applies as P6 does
+DROPPED_UNDER_WAY = {"CS_MSOB", "CS_MANDSTART", "CS_MANDFIN"}
+# the dates of a successor that bound its predecessors through each link type, and the reverse
+LATE_BOUND_TYPES = {"ls": ("FS", "SS"), "lf": ("FF", "SF")}
+EARLY_BOUND_TYPES = {"es": ("SS", "SF"), "ef": ("FS", "FF")}
 
 
 def settled_patterns(snapshot) -> set[str]:
@@ -93,6 +117,79 @@ def settled_patterns(snapshot) -> set[str]:
         if (has_expected_end & (is_ff_sf_successor | ends_before_data_date)).any():
             patterns.add("expected_finish_edge")
     return patterns
+
+
+def settled_activities(snapshot) -> dict[str, set[str]]:
+    """Return the open activities carrying a P6_SETTLED constraint rule, by key.
+
+    Keys: second_constraint, constraint_under_way, mandatory_before_data_date. A difference starts
+    there and reaches the successors' early dates and the predecessors' late dates; nothing else is named.
+    """
+    tasks = snapshot.by_code
+    open_tasks = tasks[~tasks["is_complete"]]
+    first, second = (open_tasks[column].fillna("").astype(str) for column in ("cstr_type", "cstr_type2"))
+    is_under_way = open_tasks["status_code"] == "TK_Active"
+    drops = first.isin(DROPPED_UNDER_WAY) | second.isin(DROPPED_UNDER_WAY)
+    return {
+        "second_constraint": set(open_tasks.index[~second.isin(SECOND_SLOT_AGREED)]),
+        "constraint_under_way": set(open_tasks.index[is_under_way & drops]),
+        "mandatory_before_data_date": _mandatory_before_data_date(snapshot, open_tasks),
+    }
+
+
+def _mandatory_before_data_date(snapshot, open_tasks: pd.DataFrame) -> set[str]:
+    """Return the unstarted tasks a mandatory date would place before the data date.
+
+    A Mandatory Start before the data date, or a Mandatory Finish leaving less working time after the
+    data date than the remaining duration.
+    """
+    if snapshot.data_date is None:
+        return set()
+    unstarted = open_tasks[(open_tasks["status_code"] == "TK_NotStart") & open_tasks["cstr_date"].notna()]
+    found = set(
+        unstarted.index[(unstarted["cstr_type"] == "CS_MANDSTART") & (unstarted["cstr_date"] < snapshot.data_date)]
+    )
+    for code in unstarted.index[unstarted["cstr_type"] == "CS_MANDFIN"]:
+        calendar = snapshot.calendar(unstarted.at[code, "clndr_id"])
+        room_hr = calendar.work_hours(snapshot.data_date, unstarted.at[code, "cstr_date"])
+        if room_hr < float(unstarted.at[code, "remain_drtn_hr_cnt"] or 0):
+            found.add(code)
+    return found
+
+
+def edges_written_apart(comparison: pd.DataFrame) -> pd.DataFrame:
+    """Return the dates both engines place on the same working minute at different instants.
+
+    P6_SETTLED period_edge: no difference for the activity itself, only for a linked one.
+    """
+    is_date = comparison["field"].isin(["es", "ef", "ls", "lf"])
+    return comparison[is_date & comparison["xs_mpxj_work"] & ~comparison["xs_mpxj"]]
+
+
+def edge_on_another_calendar(snapshot, comparison: pd.DataFrame) -> set[str]:
+    """Return the activities UNRESOLVED edge_on_another_calendar names.
+
+    An activity with a differing value, bound by a linked activity's date written apart
+    (``edges_written_apart``: the predecessor of a late date, the successor of an early one), whose own
+    calendar works between the two instants.
+    """
+    differing = set(comparison.loc[~comparison["xs_mpxj_work"], "task_code"])
+    found = set()
+    for row in edges_written_apart(comparison).itertuples():
+        earlier, later = sorted([pd.Timestamp(row.xerscope), pd.Timestamp(row.mpxj)])
+        for code in _bound_by(snapshot.relationships, row.task_code, row.field) & differing:
+            if snapshot.calendar(snapshot.by_code.at[code, "clndr_id"]).work_hours(earlier, later) > 0:
+                found.add(code)
+    return found
+
+
+def _bound_by(links: pd.DataFrame, code: str, field: str) -> set[str]:
+    """Return what ``code``'s date ``field`` bounds: predecessors for a late date, successors for an early one."""
+    if field in LATE_BOUND_TYPES:
+        bound = (links["succ_code"] == code) & links["type"].isin(LATE_BOUND_TYPES[field])
+        return set(links.loc[bound, "pred_code"])
+    bound = (links["pred_code"] == code) & links["type"].isin(EARLY_BOUND_TYPES[field])
+    return set(links.loc[bound, "succ_code"])
 
 
 def unresolved_patterns(snapshot) -> set[str]:

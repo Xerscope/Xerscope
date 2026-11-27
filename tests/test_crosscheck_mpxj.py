@@ -485,6 +485,89 @@ def test_a_resource_dependent_task_on_another_calendar_or_with_a_lag_is_flagged(
     assert case("R1", relag_drtn_hr_cnt="8") == {"assignment_lag"}
 
 
+# --- 6b. the shapes P6 settled per activity, without Java ----------------------------------------
+# settled_activities names the activities a P6_SETTLED constraint rule applies to; the comparison of
+# tests/test_scale_random_network.py excuses only what follows from them. Each case pins one shape and
+# its nearest neighbours that must not be named. Data date: Mon 2 March 2026 08:00, calendar C8.
+
+
+def _settled(task) -> dict[str, set[str]]:
+    from xerkit import snap
+
+    from xerscope.verify import mpxj_cpm
+
+    found = mpxj_cpm.settled_activities(snap([task, todo("Z", **FM)], [("A", "Z", "FS", 0)]))
+    return {key: codes for key, codes in found.items() if codes}
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(
+    ("task", "expected"),
+    [
+        # docs/cpm.md forward and backward passes: a second constraint is scheduled in both passes
+        (todo("A", cstr_type="CS_MSOA", cstr_date="2026-03-03 08:00", cstr_type2="CS_MEO",
+              cstr_date2="2026-03-06 17:00", **hours(16)), {"second_constraint": {"A"}}),
+        (todo("A", cstr_type="CS_MSOB", cstr_date="2026-03-03 08:00", cstr_type2="CS_MEOA",
+              cstr_date2="2026-03-06 17:00", **hours(16)), {"second_constraint": {"A"}}),
+        # Finish On or Before in the second slot: MPXJ applies it as P6 does, nothing named
+        (todo("A", **SECONDARY_CONSTRAINTS), {}),
+        (done("A", cstr_type="CS_MSOA", cstr_date="2026-02-02 08:00", cstr_type2="CS_MEO",
+              cstr_date2="2026-02-13 17:00"), {}),
+        # work under way: a Start On or Before or a mandatory date in either slot leaves the backward pass
+        (active("A", cstr_type="CS_MSOB", cstr_date="2026-03-04 08:00"), {"constraint_under_way": {"A"}}),
+        (active("A", cstr_type="CS_MANDFIN", cstr_date="2026-02-27 17:00"), {"constraint_under_way": {"A"}}),
+        (active("A", cstr_type="CS_MEOB", cstr_date="2026-03-05 17:00"), {}),
+        (todo("A", cstr_type="CS_MSOB", cstr_date="2026-03-04 08:00", **hours(16)), {}),
+        # mandatory dates never put early dates before the data date
+        (todo("A", cstr_type="CS_MANDSTART", cstr_date="2026-02-27 08:00", **hours(16)),
+         {"mandatory_before_data_date": {"A"}}),
+        (todo("A", cstr_type="CS_MANDSTART", cstr_date="2026-03-02 08:00", **hours(16)), {}),
+        (todo("A", cstr_type="CS_MANDFIN", cstr_date="2026-03-03 12:00", **hours(16)),
+         {"mandatory_before_data_date": {"A"}}),  # 11 working hours after the data date, 16 needed
+        (todo("A", cstr_type="CS_MANDFIN", cstr_date="2026-03-03 17:00", **hours(16)), {}),  # exactly 16
+    ],
+    ids=["finish on second", "finish on or after second", "finish on or before second", "complete",
+         "under way start on or before", "under way mandatory finish", "under way finish on or before",
+         "not started start on or before", "mandatory start before", "mandatory start on the data date",
+         "mandatory finish too early", "mandatory finish just fits"],
+)  # fmt: skip
+def test_each_settled_shape_names_its_activity_and_no_neighbour(task, expected):
+    assert _settled(task) == expected
+
+
+def _comparison_row(task_code, field, xerscope, mpxj, same_work) -> dict:
+    return {
+        "task_code": task_code, "field": field, "xerscope": pd.Timestamp(xerscope), "mpxj": pd.Timestamp(mpxj),
+        "xs_mpxj": xerscope == mpxj, "xs_mpxj_work": same_work,
+    }  # fmt: skip
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(
+    ("calendar", "link_type", "expected"),
+    [("C10", "FS", {"A"}), ("C7D", "FS", {"A"}), ("C8", "FS", set()), ("C10", "FF", set())],
+    ids=["10 h predecessor", "7-day predecessor", "same calendar", "link the late start does not bind"],
+)
+def test_edge_on_another_calendar_names_the_predecessor_working_in_the_gap(calendar, link_type, expected):
+    """B (C8) has its late start written Fri 6 March 17:00 by xerscope, Mon 9 March 08:00 by MPXJ: the
+    same working minute of C8 (period_edge). Its predecessor A then differs (Fri 17:00 against Fri
+    18:00 or Sun 16:00). Named only when A's calendar works between the two instants (C10 to 18:00,
+    C7D on the weekend; not C8) and the link binds A to B's late start (FS, not FF)."""
+    from xerkit import snap
+
+    from xerscope.verify import mpxj_cpm
+
+    snapshot = snap([todo("A", clndr_id=calendar, **hours(8)), todo("B", **hours(40))], [("A", "B", link_type, 0)])
+    comparison = pd.DataFrame(
+        [
+            _comparison_row("B", "ls", "2026-03-06 17:00", "2026-03-09 08:00", True),
+            _comparison_row("A", "lf", "2026-03-06 17:00", "2026-03-06 18:00", False),
+        ]
+    )
+    assert list(mpxj_cpm.edges_written_apart(comparison)["task_code"]) == ["B"]
+    assert mpxj_cpm.edge_on_another_calendar(snapshot, comparison) == expected
+
+
 # --- 7. the command's exit code, without Java ---------------------------------------------------
 # MPXJ's answer is replaced by hand-written dates: the command, the detectors and the comparison
 # around it are the real code. The two activities are 40 working hours each on the 8 h calendar C8

@@ -105,7 +105,9 @@ random networks of every kind the two engines agree to the working minute outsid
 cases named in `crosscheck.UNRESOLVED` (no P6 output settles them yet) and
 `crosscheck.P6_SETTLED` (the corpus settled them against MPXJ: an SF from a started
 predecessor, lag into a finished successor, an expected finish before the early start or
-under an FF / SF predecessor). Where MPXJ contradicts itself (`mpxj_inconsistent`) the
+under an FF / SF predecessor; per activity, `settled_activities`: a second constraint, a
+constraint on work under way, a mandatory date before the data date; and a date written on the
+other period edge, `edges_written_apart`). Where MPXJ contradicts itself (`mpxj_inconsistent`) the
 difference is not counted against either engine. MPXJ models a subset of P6's options;
 `mpxj_unsupported` names a file it cannot compare: progressed activities under Actual
 Dates or Progress Override, SS lag from Actual Start, open ends critical, no lag calendar
@@ -122,6 +124,7 @@ ignored, a non-driving assignment on resource-dependent work.
 | `assignment_lag`: assignment lag on a resource-dependent activity | in the activity dates | left out |
 | `free_float_lead`: free float with a lead to a successor | to the successor bound | differs |
 | `free_float_mandatory`: free float of an activity with a mandatory constraint | 0 on unstarted work under a primary Mandatory Start / Finish (corpus), else to the successor bound | differs |
+| `edge_on_another_calendar`: an activity linked to one whose date is written on a period edge, on a calendar that works between the two edges (a 10 h day past an 8 h day's 17:00, 7 days over a weekend) | the written instant (Fri 17:00) | the other edge (Fri 18:00, Sun 16:00, or the evening before for an early date); B0363, C0482, H0417 of `tests/scale_network.py` (seed 2026) for a P6 reading |
 
 To check the engine on your own schedules: export a file after F9 in P6 and run
 `xerscope recalc` on it; every stored date and float is compared to the minute.
