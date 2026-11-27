@@ -215,10 +215,27 @@ def test_no_new_code_holds_an_original_value_whatever_the_key(sample_dir):
         for kind, mapping in anonymizer.codes.items():
             assert len(set(mapping.values())) == len(mapping), (seed, kind)
             for new in mapping.values():
-                assert not anonymizer._holds_original(new), (seed, new)
+                spelled = [value for value in found.secrets_ if len(value) >= 3 and value in new]
+                assert spelled == [], (seed, new)
     for seed in (488, 521, 1562):
         anonymizer = Anonymizer.from_raws(raws, key=seed.to_bytes(32, "big"))
         assert all(_original_codes_left(anonymizer, raw) == [] for raw in raws), seed
+
+
+@pytest.mark.oracle("characterization")
+def test_a_code_spelling_a_three_character_original_is_drawn_again():
+    """Anonymizer.code: the first draw is the first 12 hex digits of HMAC-SHA256(key, "A:E0"), the next
+    ones of "A:E0:<n>", and a draw holding an original of three characters or more is replaced by the
+    next. With the key of seed 216 the first draw is 3A0F33D36614, which spells the original 0F3
+    (found by scanning seeds); the second, D385F543060A, spells no 3-character original."""
+    key = (216).to_bytes(32, "big")
+
+    def draw(message: str) -> str:
+        return hmac.new(key, message.encode(), hashlib.sha256).hexdigest().upper()[:12]
+
+    assert draw("A:E0") == "3A0F33D36614" and draw("A:E0:1") == "D385F543060A"
+    anonymizer = Anonymizer(key=key, secrets_={"0F3": "TASK.task_code"})
+    assert anonymizer.code("A", "E0") == "XAD385F543060A"
 
 
 @pytest.mark.parametrize("name", REFERENCE_FILES)
@@ -739,3 +756,28 @@ def test_every_table_holding_an_original_value_is_named_at_once():
         anonymizer.zip_frames({"01_first": first, "02_fine": pd.DataFrame({"count": [3]}), "03_second": second})
     assert "table 01_first not written" in str(refused.value) and "table 03_second not written" in str(refused.value)
     assert "02_fine" not in str(refused.value)
+
+
+@pytest.mark.oracle("characterization")
+def test_one_original_guid_gets_one_new_guid_and_two_originals_get_two():
+    """anonymize.py docstring: a GUID is replaced by a new random one, the same original always by the same
+    new one (so matching tasks renumbered between two updates by GUID still works on an anonymised series)."""
+    anonymizer = Anonymizer()
+    original = "Xyz123ABCdefGHIjklMNOp"
+    first, second = anonymizer.guid(original), anonymizer.guid(original)
+    assert first == second
+    assert first != original
+    assert anonymizer.guid("another0GUID000000000") != first
+    assert anonymizer.guid("") == ""
+
+
+@pytest.mark.oracle("characterization")
+def test_a_task_guid_shared_by_two_updates_stays_shared_when_anonymised():
+    """Baseline and update both hold the GUID "g2" on a task, under codes B then B2 (renumbered): after one
+    anonymizer has read both tables the two rows still carry the same GUID, and not the original."""
+    anonymizer = Anonymizer()
+    baseline = pd.DataFrame({"task_id": ["1"], "task_code": ["B"], "guid": ["g2"]})
+    update = pd.DataFrame({"task_id": ["1"], "task_code": ["B2"], "guid": ["g2"]})
+    before, after = anonymizer.table("TASK", baseline), anonymizer.table("TASK", update)
+    assert before["guid"].iloc[0] == after["guid"].iloc[0]
+    assert before["guid"].iloc[0] != "g2"

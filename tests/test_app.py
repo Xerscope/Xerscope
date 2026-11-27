@@ -6,11 +6,14 @@ without a browser. It checks that pages run; test_app_parity.py checks that they
 
 import hashlib
 import json
+import platform
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+import streamlit
 from conftest import (
     P6_CORPUS_HINT,
     baseline_box,
@@ -31,12 +34,17 @@ from xerkit import active, hours, todo, with_second_project, xer_text
 
 import xerscope
 from xerscope.analysis import Baseline
+from xerscope.analysis.baseline import DEFAULT_EV_BASIS
+from xerscope.analysis.changelog import category_totals, changelog, summary
 from xerscope.analysis.evm import earned, evm_series
-from xerscope.app import ui
+from xerscope.analysis.progress import ppc_of_week, ppc_series
+from xerscope.app import theme, ui
 from xerscope.app.baseline_file import _picked_folder_baseline
+from xerscope.app.diagnostic import baseline_pointers
 from xerscope.app.downloads import anonymizers_built
 from xerscope.app.session import BL_FILE, BL_PLANNED
 from xerscope.app.theme import font_fallback_css
+from xerscope.app.xml_baselines import with_names
 from xerscope.csv_safe import csv_safe
 from xerscope.store import SnapshotStore
 from xerscope.viz.gantt import CHROME_PX, ROW_PX
@@ -56,6 +64,21 @@ PAGES = [
     "views/ppc.py",
     "views/export.py",
     "views/debug.py",
+]
+
+
+# The ten rows of Debug block 12, in the order src/xerscope/app/ui.py runtime_table lists them.
+RUNTIME_SETTINGS = [
+    "Config read",
+    "Working directory (config is read here)",
+    "theme.font",
+    "theme.fontFaces",
+    "server.enableStaticServing (fonts folder)",
+    "Fonts inlined as fallback",
+    "Style sheet",
+    "Package",
+    "Streamlit",
+    "Python",
 ]
 
 
@@ -98,6 +121,7 @@ def test_widget_keys_do_not_show_the_folder_path(sample_dir, monkeypatch):
     assert keys and not [key for key in keys if str(sample_dir) in key]
 
 
+@pytest.mark.oracle("property")
 def test_milestone_trend_starts_on_finish_milestones_and_keeps_the_picks(app, store):
     """The page opens on the finish milestones of the latest update (critical first, at most six);
     Clear empties it; a pick survives a visit to another page."""
@@ -110,6 +134,15 @@ def test_milestone_trend_starts_on_finish_milestones_and_keeps_the_picks(app, st
     finish = latest[latest["is_milestone"] & ~latest["is_start_milestone"]]
     assert picker.value and set(picker.value) <= set(finish["task_code"]) and len(picker.value) <= 6
     assert len(app.get("plotly_chart")) == 1
+    # "Critical milestones": the critical finish milestones, latest forecast finish first; the sample's
+    # latest update also holds a finish milestone that is not critical (M3099), which the button leaves out
+    critical = finish[finish["is_critical"].astype(bool)].sort_values("finish", ascending=False)
+    assert "M3099" in set(finish["task_code"]) - set(critical["task_code"])
+    app.button(key="mta_critical").click().run()
+    _ok(app)
+    assert app.multiselect(key="mta_pick").value == critical["task_code"].tolist() == ["M9999", "X4050"]
+    app.button(key="mta_finish").click().run()
+    assert "M3099" in app.multiselect(key="mta_pick").value
     app.button(key="mta_clear").click().run()
     _ok(app)
     assert app.multiselect(key="mta_pick").value == [] and not app.get("plotly_chart")
@@ -238,7 +271,8 @@ def test_gantt_payload_carries_the_row_size_the_height_cap_and_an_epoch_that_fol
     assert _gantt_data(app)["openEpoch"] not in (start, typed, reworded)
 
 
-def test_gantt_wbs_choice_filters_and_options(app):
+@pytest.mark.oracle("characterization")
+def test_gantt_wbs_choice_filters_and_options(app, store):
     app.switch_page("views/gantt.py").run()
     _ok(app)
     data = _gantt_data(app)
@@ -302,6 +336,25 @@ def test_gantt_wbs_choice_filters_and_options(app):
     _group(app, "gantt_timescale").set_value("Week").run()
     assert _gantt_data(app)["timescale"] == "week"
     app.selectbox(key="gantt_cmp").set_value("Baseline (BL)").run()
+    # the baseline outline is the file's planned dates (target_start_date, target_end_date), start before finish
+    data = _gantt_data(app)
+    assert data["compareLabel"] == "baseline"
+    planned = store.by_label(app.selectbox(key="gantt_snap").value).activities.set_index("task_code")
+    outlined = [r for r in data["rows"] if r["kind"] == "task" and r["cmp_start"] is not None]
+    assert outlined
+    for row in outlined:
+        task = planned.loc[row["code"]]
+        assert row["cmp_start"] == task["target_start_date"].strftime("%Y-%m-%dT%H:%M")
+        assert row["cmp_finish"] == task["target_end_date"].strftime("%Y-%m-%dT%H:%M")
+        if not row[
+            "milestone"
+        ]:  # a finish milestone is planned at the end of a day: P6 puts its start after its finish
+            assert row["cmp_start"] <= row["cmp_finish"]
+    # C3010 is planned 2026-08-31 08:00 to 2026-09-04 16:00 and finishes 2026-10-21: 47 days later on its
+    # seven-day calendar. The finish shift is comparison finish minus finish, negative when late (viz/gantt.py)
+    late = next(r for r in outlined if r["code"] == "C3010")
+    assert (late["cmp_start"], late["cmp_finish"]) == ("2026-08-31T08:00", "2026-09-04T16:00")
+    assert late["finish"] == "2026-10-21T16:00" and late["shift_wd"] == -47.0
     first = app.selectbox(key="gantt_snap").options[0]
     app.selectbox(key="gantt_snap").set_value(first).run()
     _ok(app)
@@ -585,10 +638,14 @@ def test_earned_value_shows_the_cpi_beside_ev_per_ac_on_baselined_work(app):
     assert "not a P6 column" in table.loc["EV / AC (baselined work)", "P6 column"]
 
 
-def test_ev_calculation_rows_add_up_as_shown(app):
+@pytest.mark.oracle("property")
+def test_ev_calculation_rows_add_up_as_shown(app, store):
     """The operands shown, one decimal, give the result shown to the last digit: an
-    independently rounded pair could otherwise read 186,420 − 186,110 = +311."""
+    independently rounded pair could otherwise read 186,420 − 186,110 = +311. The BAC, PV, EV, AC
+    and ETC rows are read against the series of the planned dates of the first update (the
+    default baseline of the origin of the series); the BAC is the same in every update here."""
     app.switch_page("views/earned_value.py").run()
+    series = evm_series(store, Baseline.planned(store.first, DEFAULT_EV_BASIS))
     for label in app.selectbox(key="ev_snap").options:
         app.selectbox(key="ev_snap").set_value(label).run()
         table = next(d.value for d in app.dataframe if "measure" in d.value.columns).set_index("measure")
@@ -597,6 +654,17 @@ def test_ev_calculation_rows_add_up_as_shown(app):
             measure: [float(n.replace(",", "")) for n in re.findall(r"[+-]?[\d,]+\.\d+", text)]
             for measure, text in shown.items()
         }
+        point = series.iloc[store.labels.index(label)]
+        assert numbers["BAC"] == [8040.0], label  # the baseline hours of the fixture's tasks, 6 WBS
+        assert numbers["PV"] == [pytest.approx(point["pv_hr"], abs=0.05), pytest.approx(point["pv_pct"], abs=0.05)], (
+            label
+        )
+        assert numbers["EV"] == [pytest.approx(point["ev_hr"], abs=0.05), pytest.approx(point["ev_pct"], abs=0.05)], (
+            label
+        )
+        assert numbers["AC"] == [pytest.approx(point["ac_hr"], abs=0.05)], label
+        assert numbers["ETC"] == [numbers["EAC"][1]], label
+        assert numbers["AC"] == [numbers["EAC"][0]], label
         ev, pv, sv = numbers["SV"]
         assert sv == pytest.approx(ev - pv, abs=0.1 + 1e-9), label
         ac, etc, eac = numbers["EAC"]
@@ -608,15 +676,41 @@ def test_ev_calculation_rows_add_up_as_shown(app):
         assert spi == pytest.approx(ev / pv, abs=0.005), label
 
 
-def test_changelog_and_ppc_pick_weeks(app):
+@pytest.mark.oracle("property")
+def test_changelog_and_ppc_pick_weeks(app, store):
+    """The Changelog compares the two picked updates, not the default pair or the first update; the
+    PPC page reads the week picked, not the last one. Expected tables come from the analysis layer
+    called on the picked snapshots, and must differ from what the default pick would show."""
     app.switch_page("views/changelog.py").run()
-    labels = app.selectbox(key="cl_new").options
-    app.selectbox(key="cl_old").set_value(labels[3]).run()
+    labels = store.labels  # To lists labels[1:], From the updates before To (#369)
     app.selectbox(key="cl_new").set_value(labels[4]).run()
+    app.selectbox(key="cl_old").set_value(labels[1]).run()
     _ok(app)
+
+    def categories_between(old_index: int, new_index: int) -> pd.DataFrame:
+        log = changelog(store.by_label(labels[old_index]), store.by_label(labels[new_index]))
+        return category_totals(summary(log))
+
+    expected = categories_between(1, 4)
+    assert not expected.equals(categories_between(3, 4)), "the previous update must read differently"
+    assert not expected.equals(categories_between(0, 4)), "the first update must read differently"
+    page_categories = next(d.value for d in app.dataframe if list(d.value.columns) == ["category", "total", "kinds"])
+    pd.testing.assert_frame_equal(
+        page_categories.reset_index(drop=True), expected.reset_index(drop=True), check_dtype=False
+    )
+
     app.switch_page("views/ppc.py").run()
-    app.selectbox(key="ppc_week").set_value(app.selectbox(key="ppc_week").options[2]).run()
+    picked = app.selectbox(key="ppc_week").options[2]
+    app.selectbox(key="ppc_week").set_value(picked).run()
     _ok(app)
+    weeks = ppc_series(store, True, None)
+    picked_week = ppc_of_week(weeks, store.labels.index(picked))
+    last_week = ppc_of_week(weeks, len(store) - 1)
+    assert ui.fmt_number(picked_week["ppc_week"], "{:.0f} %") != ui.fmt_number(last_week["ppc_week"], "{:.0f} %")
+    shown = {metric.label: metric.value for metric in app.metric}
+    assert shown["PPC W/W−1"] == ui.fmt_number(picked_week["ppc_week"], "{:.0f} %")
+    assert shown["Starts kept"] == f"{picked_week['starts_kept']} / {picked_week['starts_committed']}"
+    assert shown["Finishes kept"] == f"{picked_week['finishes_kept']} / {picked_week['finishes_committed']}"
 
 
 def test_the_app_skips_a_file_without_a_status_date(tmp_path, monkeypatch):
@@ -1261,6 +1355,45 @@ def test_a_p6_xml_baseline_file_replaced_in_the_folder_is_read_again(tmp_path, m
     assert at.session_state["baseline"].bac_hours == 120.0
 
 
+@pytest.mark.oracle("property")
+def test_baseline_names_to_look_for_come_from_the_loaded_projects(tmp_path):
+    """A Project Baseline pointer is named from what the loaded files hold (xml_baselines.with_names):
+    a loaded update's project by "name (Project ID)", another project of a file by its code. w1 is
+    project 10, code T, named Tower; w2 (project 20, code U) points to 10, and w3 to project 30, which
+    only w3's PROJECT table holds, as BL-OLD."""
+    tower = {
+        "wbs_id": "W10", "proj_id": "10", "wbs_short_name": "Tower", "wbs_name": "Tower",
+        "proj_node_flag": "Y", "parent_wbs_id": "", "seq_num": "1",
+    }  # fmt: skip
+    plain = xer_text(
+        [todo("A", proj_id="20")], project={"proj_id": "20", "proj_short_name": "U", "sum_base_proj_id": "10"}
+    )
+    (tmp_path / "w1.xer").write_text(
+        xer_text([todo("A", proj_id="10")], project={"proj_id": "10", "proj_short_name": "T"}, wbs=[tower],
+                 data_date="2026-03-02 08:00"),
+        encoding="utf-8",
+    )  # fmt: skip
+    (tmp_path / "w2.xer").write_text(plain.replace("2026-03-02", "2026-03-09"), encoding="utf-8")
+    third = xer_text(
+        [todo("A", proj_id="20")],
+        project={"proj_id": "20", "proj_short_name": "U", "sum_base_proj_id": "30"},
+        data_date="2026-03-16 08:00",
+    )
+    lines = third.split("\n")
+    fields = lines[lines.index("%T\tPROJECT") + 1].split("\t")[1:]
+    row = {"proj_id": "30", "proj_short_name": "BL-OLD"}
+    first_row = lines.index("%T\tPROJECT") + 2
+    lines.insert(first_row + 1, "%R\t" + "\t".join(row.get(field, "") for field in fields))
+    (tmp_path / "w3.xer").write_text("\n".join(lines), encoding="utf-8")
+    store = SnapshotStore.from_folder(tmp_path)
+    named = with_names(baseline_pointers(store), store, None)
+    assert named[["file", "sum_base_proj_id", "baseline_name"]].values.tolist() == [
+        ["w1.xer", "", ""],
+        ["w2.xer", "10", "Tower (T)"],
+        ["w3.xer", "30", "BL-OLD"],
+    ]
+
+
 def test_debug_holds_the_baselines_of_the_p6_xml_file_against_what_each_update_names(tmp_path, monkeypatch):
     """w1 names no baseline, w2 names baseline 370; the export holds 370 and 371. The Debug page says,
     update by update, whether the export holds the baseline named, and lists both baselines with the
@@ -1763,6 +1896,28 @@ def test_flagged_lists_and_xer_leave_the_app_anonymised_only(app, store, downloa
         assert not [value for value in originals if len(value) >= 4 and value in text], name
     latest = load_snapshot(files[max(files)], name="latest.xer")
     assert set(codes) <= set(latest.activities["task_code"])
+
+
+@pytest.mark.oracle("property")
+def test_export_says_what_the_anonymized_extract_left_out(tmp_path, monkeypatch):
+    """A memo table and a resource e-mail cannot leave the file (anonymize.py KEEP): the page names the
+    table and the column emptied, sorted, in one caption; a file with nothing to drop has none."""
+    resource = {"rsrc_id": "R1", "rsrc_short_name": "JDOE", "rsrc_name": "John Doe"}
+    memo = "%T\tTASKMEMO\n%F\tmemo_id\ttask_id\ttask_memo\n%R\t1\t1\tbudget overrun\n"
+
+    def left_out(extra_table: str, email: str) -> list[str]:
+        folder = tmp_path / ("with" if extra_table else "without")
+        folder.mkdir()
+        text = xer_text([todo("A1")], rsrc=("A1",), resources=({**resource, "email_addr": email},))
+        (folder / "w1.xer").write_text(text.replace("%E", extra_table + "%E"), encoding="utf-8")
+        at = _run(folder, monkeypatch)
+        at.switch_page("views/export.py").run()
+        next(b for b in at.button if b.label == "Build anonymized extract").click().run()
+        _ok(at)
+        return [c.value for c in at.caption if c.value.startswith("Left out")]
+
+    assert left_out(memo, "j@x.io") == ["Left out: tables TASKMEMO; columns emptied RSRC.email_addr."]
+    assert left_out("", "") == []
 
 
 HELD_OUT_CASE = (
@@ -2734,6 +2889,33 @@ def test_table_column_filters_keep_the_matching_rows(app):
     assert len(task_table()) == len(everything)
 
 
+@pytest.mark.oracle("property")
+def test_status_filter_keeps_only_the_rows_of_the_statuses_picked(app):
+    """The status column's filter is a choice among its labels: the rows kept are those whose status
+    is picked (ui._filtered), all the rows when none is picked."""
+    app.switch_page("views/health.py").run()
+    _ok(app)
+
+    def results():
+        return next(d.value for d in app.dataframe if {"status", "id"} <= set(d.value.columns))
+
+    before = results()
+    present = set(before["status"])
+    assert {"Pass", "Fail"} <= present  # the sample has both, so a filter on one drops rows
+    picker = "filter:health_results:status"
+    app.multiselect(key=picker).set_value(["Pass"]).run()
+    _ok(app)
+    after = results()
+    assert set(after["status"]) == {"Pass"}
+    assert set(after["id"]) == set(before.loc[before["status"] == "Pass", "id"])
+    assert 0 < len(after) < len(before)
+    assert any(caption.value == f"{len(after)} of {len(before)} rows" for caption in app.caption)
+    app.multiselect(key=picker).set_value(["Pass", "Fail"]).run()
+    assert set(results()["id"]) == set(before.loc[before["status"].isin(["Pass", "Fail"]), "id"])
+    app.multiselect(key=picker).set_value([]).run()
+    assert len(results()) == len(before)
+
+
 def test_gantt_panel_keeps_the_picked_activity_when_the_filters_hide_it(app, store):
     app.switch_page("views/gantt.py").run()
     _ok(app)
@@ -2942,15 +3124,25 @@ def test_score_cards_include_a_standard_of_the_standards_folder(sample_dir, tmp_
     assert len(cards) == 5 and cards[-1] == "My standard score"
 
 
-def test_runtime_block_names_what_the_app_read(app):
-    """Debug block 12: the fonts, the config and the package that runs, for a page that looks old."""
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(
+    ("config_loaded", "config_read", "fonts_inlined"),
+    [(True, "yes", "no"), (False, "no — start with `xerscope app`", "yes")],
+)
+def test_runtime_block_names_what_the_app_read(app, monkeypatch, config_loaded, config_read, fonts_inlined):
+    """Debug block 12, read from the table the page draws: the ten settings in order, the config
+    read and the fonts inlined as fallback opposite to each other, the package that runs."""
+    monkeypatch.setattr(ui, "theme_loaded", lambda: config_loaded)
     app.switch_page("views/debug.py").run()
     _ok(app)
-    table = ui.runtime_table()
-    assert list(table["setting"])[:2] == ["Config read", "Working directory (config is read here)"]
     assert any("12 · App runtime" in e.label for e in app.expander)
-    assert table.set_index("setting").loc["Config read", "value"] in ("yes", "no — start with `xerscope app`")
-    assert table.set_index("setting").loc["Package", "value"] == str(Path(ui.__file__).parents[1])
+    page_table = next(d.value for d in app.dataframe if list(d.value.get("setting", [])) == RUNTIME_SETTINGS)
+    values = page_table.set_index("setting")["value"]
+    assert values["Config read"] == config_read
+    assert values["Fonts inlined as fallback"] == fonts_inlined
+    assert values["Package"] == str((Path(__file__).parents[1] / "src" / "xerscope").resolve())
+    assert values["Streamlit"] == streamlit.__version__
+    assert values["Python"] == platform.python_version()
 
 
 def test_font_fallback_inlines_both_faces():
@@ -2958,6 +3150,41 @@ def test_font_fallback_inlines_both_faces():
     css = font_fallback_css()
     assert css.count("data:font/woff2;base64,") == 2
     assert all(f'font-family: "{family}"' in css for family in ("Onest", "JetBrains Mono"))
+
+
+@pytest.mark.oracle("characterization")
+@pytest.mark.parametrize("config_loaded", [True, False])
+def test_apply_style_writes_the_colour_variables_the_style_sheet_reads(monkeypatch, config_loaded):
+    """apply_style sends one `:root` block (accent, --s1 to --s6 from viz/charts.py SERIES, one
+    --status-<name> per STATUS entry), the fonts as data: URLs only without the config, then style.css.
+    Colours are written here as in viz/charts.py."""
+    sent = []
+    monkeypatch.setattr(theme.st, "html", sent.append)
+    monkeypatch.setattr(theme, "theme_loaded", lambda: config_loaded)
+    theme.apply_style()
+    (html,) = sent
+    root = html.split("}", 1)[0]
+    series = ["#3478e6", "#d0652a", "#2f9e8f", "#a27f1f", "#c0509a", "#7c5ce6"]
+    status = {
+        "critical": "#c0392b",
+        "warning": "#a15c00",
+        "good": "#2e7d32",
+        "complete": "#818e9f",
+        "info": "#1d6a73",
+        "muted": "#5b6b82",
+    }
+    assert "--accent: light-dark(#1d6a73, #6cc0c9);" in root
+    for number, colour in enumerate(series, start=1):
+        assert f"--s{number}: {colour};" in root
+    assert "--s0:" not in root and "--s7:" not in root
+    for name, colour in status.items():
+        assert f"--status-{name}: {colour};" in root
+    # every series and status variable the style sheet reads is defined in the block
+    sheet = theme.STYLE.read_text(encoding="utf-8")
+    for used in set(re.findall(r"var\(--(s\d|status-[a-z]+)", sheet)):
+        assert f"--{used}: #" in root, used
+    assert html.endswith(sheet + "</style>")
+    assert html.count("data:font/woff2;base64,") == (0 if config_loaded else 2)
 
 
 def test_the_update_picked_on_one_page_is_the_update_of_every_page(app, store):
@@ -3008,6 +3235,24 @@ def test_a_table_with_task_ids_offers_to_open_the_gantt(app):
     app.switch_page("views/milestones.py").run()
     _ok(app)
     assert any(c.value.startswith("Select a row to open its task in the Gantt") for c in app.caption)
+
+
+@pytest.mark.oracle("property")
+def test_the_open_in_gantt_button_opens_the_task_of_the_selected_row(monkeypatch):
+    """The button of a table opens the Gantt on the row selected (index 1 -> A200), not the first
+    row; with no row selected the table shows the invitation and opens nothing."""
+    frame = pd.DataFrame({"task_code": ["A100", "A200", "A300"]})
+    opened, labels, captions = [], [], []
+    monkeypatch.setattr(ui.st, "button", lambda label, **kwargs: labels.append(label) or True)
+    monkeypatch.setattr(ui.st, "caption", captions.append)
+    selected_second_row = SimpleNamespace(selection=SimpleNamespace(rows=[1]))
+    ui._open_in_gantt_button(selected_second_row, frame, "demo", opened.append)
+    assert opened == ["A200"]
+    assert len(labels) == 1 and "A200" in labels[0] and not captions
+    for nothing_selected in (None, SimpleNamespace(selection=SimpleNamespace(rows=[]))):
+        ui._open_in_gantt_button(nothing_selected, frame, "demo", opened.append)
+    assert opened == ["A200"] and len(labels) == 1
+    assert captions == ["Select a row to open its task in the Gantt."] * 2
 
 
 def test_debug_page_and_runtime_block_are_not_shown_on_a_locked_deployment(sample_dir, monkeypatch):
@@ -3247,6 +3492,27 @@ def test_changelog_offset_buttons_are_drawn_as_buttons(app):
     _ok(app)
     for text in ("Previous", "4 back", "First"):
         assert app.button(key=f"cl_from_{text}").proto.type == "secondary"
+
+
+@pytest.mark.oracle("property")
+def test_changelog_offset_buttons_set_from_by_counting_back_from_to(app, store):
+    """From = To minus 1 (Previous), minus 4 (4 back) or the first update, never before the first
+    (changelog.py `_from`: labels[0 if back is None else max(index - back, 0)]). The 8 updates of the
+    sample give labels[0..7]: To = labels[5] reads from labels[4], labels[1] and labels[0]; To = labels[2]
+    clamps 4 back to labels[0]."""
+    app.switch_page("views/changelog.py").run()
+    labels = store.labels
+    assert len(labels) == 8
+    assert app.selectbox(key="cl_new").options == labels[1:]  # the first update has nothing before it
+    app.selectbox(key="cl_new").set_value(labels[5]).run()
+    for button, expected_from in (("Previous", labels[4]), ("4 back", labels[1]), ("First", labels[0])):
+        app.button(key=f"cl_from_{button}").click().run()
+        _ok(app)
+        assert app.selectbox(key="cl_old").value == expected_from, button
+    app.selectbox(key="cl_new").set_value(labels[2]).run()
+    app.button(key="cl_from_4 back").click().run()
+    _ok(app)
+    assert app.selectbox(key="cl_old").value == labels[0]
 
 
 def test_milestone_page_title_is_the_navigation_entry(app):

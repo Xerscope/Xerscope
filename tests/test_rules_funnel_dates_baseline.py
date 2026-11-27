@@ -343,6 +343,7 @@ def test_bei_from_the_baseline_keeps_no_funnel():
 
     assert (result.numerator, result.denominator) == (2, 5)
     assert result.funnel is None
+    assert result.note == "2 completed / 5 due in the baseline; 1 of them no longer in the schedule"  # GONE
 
 
 @pytest.mark.oracle("standard")

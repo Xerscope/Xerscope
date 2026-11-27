@@ -13,6 +13,7 @@ Hand cases use xerkit's calendars: C8 = Mon-Fri 08-12 / 13-17 with Good Friday
 (2026-04-03) off, C7D = 7 days 08-16. Data date Monday 2026-03-02 08:00.
 """
 
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -23,12 +24,14 @@ from xerkit import FM, SECONDARY_CONSTRAINTS, SM, active, done, hours, snap, tod
 from xerscope.analysis.cpm import (
     FIELDS,
     CycleError,
+    _cmp_row,
     compare_assignments,
     compare_with_stored,
     critical_path_test,
     schedule,
 )
 from xerscope.xer import load_snapshot
+from xerscope.xer.calendar import TimeAxis, WorkCalendar
 
 T = pd.Timestamp
 REF = Path(__file__).parent / "reference" / "data"
@@ -677,17 +680,23 @@ def _asg(code, rsrc, qty, lag=0, driving="Y"):
     }
 
 
-def test_resource_dependent_activity_runs_on_its_resources_calendars():
+@pytest.mark.parametrize("driving", ["Y", ""], ids=["flag_Y", "flag_blank"])
+def test_resource_dependent_activity_runs_on_its_resources_calendars(driving):
     """Oracle: "Resource dependent activities are scheduled according to the calendars for
     the resources. If multiple resources are assigned [...], the latest finish date of all
     driving resources is used for the early finish date of the activity." The crane works
-    7 days (C7D 08-16): 56 h end Sun 8 16:00. The fitter (C8) starts after an 8 h lag."""
+    7 days (C7D 08-16): 56 h end Sun 8 16:00. The fitter (C8) starts after an 8 h lag.
+    A blank rollup_dates_flag (as in a TASKRSRC built from P6 XML) drives like "Y": only "N" does not."""
     tasks = [todo("A", task_type="TT_Rsrc", **hours(56)), todo("B", **hours(8))]
     s = snap(
         tasks,
         [("A", "B", "FS", 0)],
         resources=RSRCS,
-        assign=[_asg("A", "R7", 56), _asg("A", "R8", 16, lag=8), _asg("A", "R8", 400, driving="N")],
+        assign=[
+            _asg("A", "R7", 56, driving=driving),
+            _asg("A", "R8", 16, lag=8, driving=driving),
+            _asg("A", "R8", 400, driving="N"),
+        ],
     )
     sch = schedule(s)
     a = sch.frame.loc["A"]
@@ -836,3 +845,54 @@ def test_a_caller_changing_its_comparison_leaves_the_next_one_intact():
     first["agree"] = False
     first.iloc[0, 0] = "ZZ"
     pd.testing.assert_frame_equal(compare_with_stored(s), expected)
+
+
+# --- the comparison rule, the Progress Override trace and the finished LOE, each by hand -------
+
+
+@pytest.mark.oracle("property")
+def test_the_same_working_instant_at_a_different_clock_time_is_a_disagreement():
+    """Wednesday 17:00 and Thursday 08:00 are 0 working minutes apart on a Mon-Fri 08-12 / 13-17
+    calendar, but P6 shows two different times: ``agree`` needs the exact clock time."""
+    day = ((480, 720), (780, 1020))
+    calendar = WorkCalendar("W", "Mon-Fri 08-12 13-17", 8.0, (day, day, day, day, day, (), ()), {}, from_data=True)
+    axis = TimeAxis(calendar, date(2026, 3, 2), date(2026, 3, 13))
+    shown_differently = _cmp_row(axis, "A", "early_end_date", T("2026-03-04 17:00"), T("2026-03-05 08:00"), hours=False)
+    assert shown_differently["gap_hr"] == 0
+    assert shown_differently["agree"] is False
+    identical = _cmp_row(axis, "A", "early_end_date", T("2026-03-04 17:00"), T("2026-03-04 17:00"), hours=False)
+    assert identical["agree"] is True
+
+
+@pytest.mark.oracle("standard")
+def test_progress_override_drops_the_links_into_work_under_way_from_the_longest_path():
+    """A (8 h, not started) SS-linked to B (under way, 40 h). Data date Monday 2026-03-02 08:00:
+    A starts at 08:00 and B's remaining work starts at 08:00 whatever the link, so the SS link
+    ties with B's start. Retained Logic keeps the link as driving (A and B on the path); Progress
+    Override ignores the logic of work under way (Oracle), so only B is on the path."""
+    tasks = [todo("A", **hours(8)), active("B", **hours(40))]
+    links = [("A", "B", "SS", 0)]
+    retained = snap(tasks, links, sched={"sched_retained_logic": "Y", "sched_progress_override": "N"})
+    override = snap(tasks, links, sched={"sched_retained_logic": "N", "sched_progress_override": "Y"})
+    assert schedule(retained).frame["longest_path"].to_dict() == {"A": True, "B": True}
+    assert schedule(override).frame["longest_path"].to_dict() == {"A": False, "B": True}
+
+
+@pytest.mark.oracle("standard")
+@pytest.mark.parametrize(
+    ("actual_finish", "lag_hr"),
+    [("2026-03-02 08:00", 0), ("2026-02-13 17:00", 80)],
+    ids=["finished_at_the_data_date", "finished_earlier_with_a_lag"],
+)
+def test_a_finished_level_of_effort_is_not_on_the_longest_path(actual_finish, lag_hr):
+    """The longest path holds unfinished activities. L (LOE, finished) feeds C (40 h, the only
+    open activity, so on the path) with an FS link whose bound equals C's start: Monday
+    2026-03-02 08:00 (actual finish 03-02 08:00 with lag 0; 02-13 17:00 plus 80 working hours is
+    the same Monday morning). Only its finished status keeps L off the path."""
+    tasks = [
+        done("L", task_type="TT_LOE", act_start_date="2026-02-02 08:00", act_end_date=actual_finish),
+        todo("C", **hours(40)),
+    ]
+    frame = schedule(snap(tasks, [("L", "C", "FS", lag_hr)])).frame
+    assert bool(frame.at["C", "longest_path"]) is True
+    assert bool(frame.at["L", "longest_path"]) is False

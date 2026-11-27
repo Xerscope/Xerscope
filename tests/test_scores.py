@@ -9,6 +9,7 @@ from xerscope.analysis.checks import (
     compare_counts,
     flagged_codes,
     flagged_trail,
+    fmt_value,
     mismatch_count,
     report_counts,
     results_frame,
@@ -166,12 +167,12 @@ def test_report_counts_hold_one_line_per_check_filled_where_the_report_names_it(
 
 
 def test_mismatch_count_counts_the_checks_that_differ_from_the_report():
-    """xerscope: A 1 of 9, B 2 of 9. The report: A 1 of 9 (same), B 3 of 9 (found differs), D 0 of 5
-    (no such check). Two differ."""
-    got = pd.DataFrame({"id": ["A", "B"], "check": ["a", "b"], "found": [1, 2], "total": [9, 9]})
+    """xerscope: A 1 of 9, B 2 of 9, E 4 of 9. The report: A 1 of 9 (same), B 3 of 9 (found differs),
+    D 0 of 5 (no such check), E 4 of 10 (only the total differs). Three differ."""
+    got = pd.DataFrame({"id": ["A", "B", "E"], "check": ["a", "b", "e"], "found": [1, 2, 4], "total": [9, 9, 9]})
     got[["found", "total"]] = got[["found", "total"]].astype("Int64")
-    typed = pd.DataFrame({"id": ["A", "B", "D"], "found": [1, 3, 0], "total": [9, 9, 5]})
-    assert mismatch_count(compare_counts(got, typed)) == 2
+    typed = pd.DataFrame({"id": ["A", "B", "D", "E"], "found": [1, 3, 0, 4], "total": [9, 9, 5, 10]})
+    assert mismatch_count(compare_counts(got, typed)) == 3
 
 
 # --- items: a standard scored by the criteria of its source, not by its metrics -----------------
@@ -231,3 +232,25 @@ def test_p6_invalid_progress_dates_is_one_check_of_the_dialog():
     p6 = builtin_standards()["P6"]
     assert p6["P6-10a"].item == "P6-10" == p6["P6-10b"].item
     assert len({metric.item or metric.id for metric in p6.metrics}) == 17
+
+
+@pytest.mark.oracle("standard")
+def test_a_pass_fail_check_passes_at_exactly_one():
+    """Unit pass/fail: the value is 1 when the check passes and 0 when it fails (the boundary is
+    `value >= 1`); no value shows a dash."""
+    assert fmt_value(1.0, "pass/fail") == "pass"
+    assert fmt_value(0.0, "pass/fail") == "fail"
+    assert fmt_value(None, "pass/fail") == "–"
+
+
+@pytest.mark.oracle("standard")
+def test_a_check_that_errored_shows_a_dash_not_its_value():
+    """An error or n/a result carries no reading, whatever value it holds; a passing result shows 5.0 %."""
+
+    def shown(status: str) -> str:
+        metric = Metric(id="A", name="check A", standard="T", rule="p6_01_logic", unit="%")
+        return results_frame([CheckResult(metric, status, value=5.0, flagged=pd.DataFrame())])["result"].iloc[0]
+
+    assert shown("pass") == "5.0 %"
+    assert shown("error") == "–"
+    assert shown("n/a") == "–"

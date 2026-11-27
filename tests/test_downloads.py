@@ -13,6 +13,7 @@ import pytest
 from xerkit import todo, xer_text
 
 from xerscope.anonymize import LeakError
+from xerscope.app import downloads
 from xerscope.app.downloads import anonymizer, anonymizers_built, downloads_ready, fetch, held, hold
 
 NAMES = {"A": "Pump house", "B": "Boiler room"}
@@ -53,14 +54,25 @@ def test_switch_on_is_the_default_and_never_runs_the_plain_build():
     assert any(cell.startswith("XA") for cell in cells)
 
 
-def test_the_anonymizer_reads_only_the_sources_and_one_for_more_files_serves_fewer():
+def test_the_anonymizer_reads_only_the_sources_and_one_for_more_files_serves_fewer(monkeypatch):
+    read = []
+    real = downloads.source_raws
+
+    def recording(name, data):
+        read.append(name)
+        return real(name, data)
+
+    monkeypatch.setattr(downloads, "source_raws", recording)
     session = _session()
     assert not downloads_ready(["a.xer"], session)
     anonymizer(prepare=True, sources=["a.xer"], session=session)
     assert list(anonymizers_built(session)) == [frozenset({"a.xer"})]
+    assert read == ["a.xer"]  # b.xer, loaded in the session but not asked for, was never parsed
     assert downloads_ready(["a.xer"], session) and not downloads_ready(["b.xer"], session)
+    read.clear()
     anonymizer(prepare=True, session=session)
     assert len(anonymizers_built(session)) == 2
+    assert sorted(read) == ["a.xer", "b.xer"]  # no sources named: every loaded file, once
     assert downloads_ready(["b.xer"], session)
 
 

@@ -486,6 +486,29 @@ def test_relationship_checks_say_which_external_links_they_hold():
     assert not run(P6, "P6-08", snap([todo("A"), todo("B")], [("A", "B", "FS", 0)])).note
 
 
+@pytest.mark.oracle("characterization")
+@pytest.mark.parametrize(
+    ("pred_type", "expected_type"),
+    [("PR_FS", "FS"), ("PR_SS", "SS"), ("PR_FF", "FF"), ("PR_SF", "SF")],  # REL_TYPE (xer/model.py)
+)
+def test_an_outbound_external_link_keeps_its_relationship_type_as_fs_ss_ff_sf(pred_type, expected_type):
+    """A link from A of project T into X9 of project 2 (X9 in the file): REL_TYPE turns the XER code
+    (PR_SS) into the short type the inbound links already carry."""
+    text = with_second_project(xer_text([todo("A"), todo("B")], [("A", "B", "FS", 0)]), "P2", ["X9"], DD)
+    lines = text.splitlines()
+    at = lines.index("%T\tTASKPRED")
+    header = lines[at + 1].split("\t")[1:]
+    row = dict.fromkeys(header, "")
+    row.update(task_pred_id="9", task_id="100", pred_task_id="1", proj_id="2", pred_proj_id="1")
+    row.update(pred_type=pred_type, lag_hr_cnt="0")
+    lines.insert(at + 2, "%R\t" + "\t".join(row[column] for column in header))
+    snapshot = build_snapshot(parse_text("\n".join(lines) + "\n", source="t.xer"), "T")
+    links = snapshot.external_links[["pred_code", "succ_code", "type", "lag_hr", "direction"]]
+    assert links.to_dict("records") == [
+        {"pred_code": "A", "succ_code": "[ext]100", "type": expected_type, "lag_hr": 0.0, "direction": "out"}
+    ]
+
+
 def _with_params(metric_id, **params):
     return {metric_id: dataclasses.replace(P6[metric_id], params={**P6[metric_id].params, **params})}
 

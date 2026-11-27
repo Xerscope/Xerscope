@@ -156,9 +156,19 @@ def test_without_a_date_to_compare_no_version_is_kept(status_date, project_added
 # --- copies of one baseline have the same content, whatever ids P6 gave them ----------------------------
 
 
-def _baseline_copy(object_id: str, first_task_id: int, calendar_id: str, hours: int = 40, holiday: str = ""):
+def _baseline_copy(
+    object_id: str,
+    first_task_id: int,
+    calendar_id: str,
+    hours: int = 40,
+    holiday: str = "",
+    assigned_units: int | None = None,
+    expense_cost: int | None = None,
+    data_date: str = "2026-02-23T08:00:00",
+):
     """A baseline of two activities on a calendar of its own, as P6 stores one copy of it: ``object_id``,
-    the ids of its activities and of its calendar belong to the copy; its code follows its version."""
+    the ids of its activities and of its calendar belong to the copy; its code follows its version.
+    ``assigned_units`` (default: ``hours``) is A's planned units; ``expense_cost`` adds an expense to A."""
     work_week = calendar(calendar_id, "Site calendar")
     if holiday:
         work_week = work_week.replace("2026-04-03", holiday)
@@ -168,11 +178,16 @@ def _baseline_copy(object_id: str, first_task_id: int, calendar_id: str, hours: 
     second = activity(
         "B", str(first_task_id + 1), "2026-03-09T08:00:00", "2026-03-13T17:00:00", 40, CalendarObjectId=calendar_id
     )
+    units = hours if assigned_units is None else assigned_units
     crew = {"ObjectId": first_task_id + 100, "ActivityObjectId": first_task_id, "ResourceObjectId": "3"}
     assignment = (
-        f"<ResourceAssignment>{_fields({**crew, 'ResourceType': 'Labor', 'PlannedUnits': hours})}</ResourceAssignment>"
+        f"<ResourceAssignment>{_fields({**crew, 'ResourceType': 'Labor', 'PlannedUnits': units})}</ResourceAssignment>"
     )
-    body = baseline(object_id, f"V{object_id} - B1", [work_week, first, second, assignment])
+    parts = [work_week, first, second, assignment]
+    if expense_cost is not None:
+        expense = {"ObjectId": first_task_id + 200, "ActivityObjectId": first_task_id, "PlannedCost": expense_cost}
+        parts.append(f"<ActivityExpense>{_fields(expense)}</ActivityExpense>")
+    body = baseline(object_id, f"V{object_id} - B1", parts, data_date)
     export = f'<?xml version="1.0"?><APIBusinessObjects xmlns="{NAMESPACE}">{body}</APIBusinessObjects>'
     return load_snapshot(export.encode(), name="export.xml", project_id=object_id)
 
@@ -203,3 +218,46 @@ def test_any_change_of_what_is_measured_changes_the_digest():
     other_holiday = _baseline_copy("601", first_task_id=9011, calendar_id="31", holiday="2026-03-04")
     assert content_digest(more_hours) != reference
     assert content_digest(other_holiday) != reference
+
+
+@pytest.mark.oracle("property")
+def test_each_part_of_what_is_measured_changes_the_digest_on_its_own():
+    """content_digest reads the status date, the assignments and the expenses besides the activities:
+    one copy per part, everything else equal to the reference, and the copy ids alone change nothing."""
+    expensed = {"expense_cost": 1000}
+    reference = content_digest(_baseline_copy("501", first_task_id=11, calendar_id="21", **expensed))
+    same_content_other_ids = _baseline_copy("601", first_task_id=9011, calendar_id="31", **expensed)
+    assert content_digest(same_content_other_ids) == reference
+    other_status_date = _baseline_copy("601", 9011, "31", data_date="2026-03-02T08:00:00", **expensed)
+    other_units = _baseline_copy("601", 9011, "31", assigned_units=48, **expensed)
+    other_expense = _baseline_copy("601", 9011, "31", expense_cost=1500)
+    no_expense = _baseline_copy("601", 9011, "31")
+    assert content_digest(other_status_date) != reference
+    assert content_digest(other_units) != reference
+    assert content_digest(other_expense) != reference
+    assert content_digest(no_expense) != reference
+
+
+def _update_pointing_to(source: str, project_id: str, pointer: str):
+    """A one-activity update of project ``project_id`` whose Project Baseline is ``pointer``."""
+    from xerkit import xer_text
+
+    from xerscope.xer import build_snapshot, parse_text
+
+    project = {"proj_id": project_id, "sum_base_proj_id": pointer}
+    text = xer_text([{"task_code": "A1", "proj_id": project_id}], project=project)
+    return build_snapshot(parse_text(text, source=source))
+
+
+@pytest.mark.oracle("characterization")
+def test_an_update_naming_its_own_project_is_not_measured_against_a_loaded_update():
+    """resolutions() docstring: a pointer to an update's own project names the update itself, so
+    that project is not among the updates it can be measured against. Update A (project 150)
+    points to 150 and finds nothing; update B (project 300) points to 150, a loaded update."""
+    from xerscope.analysis.baseline_resolution import resolutions
+
+    own = _update_pointing_to("a.xer", "150", "150")
+    other = _update_pointing_to("b.xer", "300", "150")
+    found = resolutions([own, other], export=None)
+    assert found[0] == Resolution(NOT_FOUND, note="no P6 XML export of baselines")
+    assert found[1] == Resolution(LOADED_UPDATE, "150")

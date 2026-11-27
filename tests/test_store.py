@@ -1,6 +1,8 @@
 import pytest
+from xerkit import active, done, snap, todo
 
 from xerscope.export import write_tables, zip_tables
+from xerscope.store import SnapshotStore
 from xerscope.xer import load_snapshot, xer_files
 
 
@@ -8,7 +10,24 @@ def test_sorted_by_data_date(store):
     dates = [s.data_date for s in store]
     assert dates == sorted(dates)
     assert len(store) == 8
-    assert store.warnings == []
+    assert store.warnings == []  # one project, one status per day: nothing to warn about
+
+
+@pytest.mark.oracle("property")
+def test_two_project_codes_warn_with_both_codes_sorted():
+    """store.py: more than one project code across the snapshots is a warning listing the sorted codes."""
+    old = snap([todo("A")], data_date="2026-03-02 08:00", project={"proj_short_name": "OLD"})
+    new = snap([todo("A")], data_date="2026-03-09 08:00", project={"proj_short_name": "NEW"})
+    warnings = SnapshotStore([old, new]).warnings
+    assert warnings == ["project code differs across snapshots (renamed or other project): ['NEW', 'OLD']"]
+
+
+@pytest.mark.oracle("property")
+def test_two_updates_on_one_day_warn_once_naming_the_day():
+    morning = snap([todo("A")], data_date="2026-03-02 08:00")
+    evening = snap([todo("A")], data_date="2026-03-02 17:00")
+    warnings = SnapshotStore([evening, morning]).warnings
+    assert warnings == ["several updates on 2026-03-02 at other hours: test.xer, test.xer"]
 
 
 def test_task_ids_change_but_codes_join(store):
@@ -30,6 +49,23 @@ def test_summary_tracks_slip(store):
     assert s.loc[5, "finish_shift_wd"] < 0  # vendor delay week: the finish goes later, days lost
     assert str(s.loc[2, "finish_shift_wd"]) == "0.0"  # a week without a move: 0.0, never -0.0
     assert s["complete"].iloc[-1] > s["complete"].iloc[0]
+
+
+@pytest.mark.oracle("property")
+def test_summary_counts_activities_by_status_and_links():
+    """Hand-made, two updates. Week 1: D1, D2 complete, A1 in progress, N1, N2 not started; 3 links.
+    Week 2: N1 finished too. The columns of dim_snapshot, by hand: complete / in progress / not started
+    2 / 1 / 2 then 3 / 1 / 1 (they add up to the 5 activities); percent complete by count 40.0 then 60.0."""
+    links = [("D1", "A1", "FS", 0), ("A1", "N1", "FS", 0), ("N1", "N2", "FS", 0)]
+    week_1 = snap([done("D1"), done("D2"), active("A1"), todo("N1"), todo("N2")], links, data_date="2026-03-02 08:00")
+    week_2 = snap([done("D1"), done("D2"), active("A1"), done("N1"), todo("N2")], links, data_date="2026-03-09 08:00")
+    summary = SnapshotStore([week_1, week_2]).summary
+    assert summary["activities"].tolist() == [5, 5]
+    assert summary["complete"].tolist() == [2, 3]
+    assert summary["in_progress"].tolist() == [1, 1]
+    assert summary["not_started"].tolist() == [2, 1]
+    assert summary["relationships"].tolist() == [3, 3]
+    assert summary["pct_complete_count"].tolist() == [40.0, 60.0]
 
 
 def test_previous(store):

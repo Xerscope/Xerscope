@@ -425,3 +425,162 @@ def test_driving_links_agree_with_mpxj_on_the_p6_corpus(xc, name):
             continue
         compared, unexplained = _driving_unexplained(xc, path)
         assert compared > 0 and unexplained.empty, (path.name, unexplained.head(10).to_string())
+
+
+# --- 6. the pattern detectors, without Java -------------------------------------------------------
+# unexplained() above drops every difference of a network that carries a pattern, so a detector that
+# fires everywhere would silence the whole comparison. The detectors are pinned alone, on networks
+# whose patterns follow by hand from the rules written in verify/mpxj_cpm.py.
+
+
+def _patterns(tasks, links, **kw) -> tuple[set[str], set[str]]:
+    from xerkit import snap
+
+    from xerscope.verify import mpxj_cpm
+
+    snapshot = snap(tasks, links, **kw)
+    return mpxj_cpm.unresolved_patterns(snapshot), mpxj_cpm.settled_patterns(snapshot)
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize("seed", range(40))
+def test_a_network_with_no_started_work_and_no_assignment_has_no_pattern(seed):
+    """Every pattern needs a started or finished task, or an assignment (UNRESOLVED and P6_SETTLED
+    rules); the "unstarted" kind has none, whatever its links."""
+    tasks, links, kw = network("unstarted", seed)
+    assert all(task.get("status_code", "TK_NotStart") == "TK_NotStart" for task in tasks)
+    assert _patterns(tasks, links, **kw) == (set(), set())
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(
+    ("tasks", "links", "unresolved", "settled"),
+    [
+        ([done("A"), todo("B")], [("A", "B", "FF", 8)], {"ff_sf_lag_from_finished"}, set()),
+        ([todo("A"), active("B")], [("A", "B", "SF", 0)], {"sf_progressed"}, set()),
+        ([done("A"), todo("B")], [("A", "B", "FS", -8)], {"lead_from_progressed"}, set()),
+        ([done("A"), active("B")], [("A", "B", "SS", 0)], {"finished_into_started"}, set()),
+        ([active("A"), todo("B")], [("A", "B", "SF", 0)], set(), {"sf_from_started"}),
+        ([todo("A"), done("B")], [("A", "B", "FS", 8)], set(), {"lag_to_finished_successor"}),
+        ([todo("A"), todo("B")], [("A", "B", "FS", 0)], set(), set()),
+    ],
+    ids=["ff lag", "sf progressed", "lead", "finished into started", "sf from started", "lag to finished", "none"],
+)
+def test_each_pattern_is_found_on_the_two_task_network_that_shows_it(tasks, links, unresolved, settled):
+    assert _patterns(tasks, links) == (unresolved, settled)
+
+
+@pytest.mark.oracle("property")
+def test_a_resource_dependent_task_on_another_calendar_or_with_a_lag_is_flagged():
+    """A driving assignment of a resource-dependent task: the resource's calendar (R2: C7D) differs from
+    the task's (C8) -> rsrc_calendar; a relag_drtn_hr_cnt of 8 -> assignment_lag."""
+    from xerkit import labour_assignment
+
+    def case(resource_id: str, **assignment):
+        row = {**labour_assignment("A", resource_id, 8), **assignment}
+        return _patterns([todo("A", task_type="TT_Rsrc")], [], resources=RESOURCES, assign=[row])[0]
+
+    assert case("R2") == {"rsrc_calendar"}
+    assert case("R1") == set()  # same calendar (C8), no lag
+    assert case("R1", relag_drtn_hr_cnt="8") == {"assignment_lag"}
+
+
+# --- 7. the command's exit code, without Java ---------------------------------------------------
+# MPXJ's answer is replaced by hand-written dates: the command, the detectors and the comparison
+# around it are the real code. The two activities are 40 working hours each on the 8 h calendar C8
+# (Monday to Friday, 08:00 to 17:00), A -> B Finish to Start, no lag: A runs Mon 2 to Fri 6 March
+# 2026, B Mon 9 to Fri 13 March, both with no float.
+
+
+def _dates(early_start, early_finish, late_start, late_finish) -> dict:
+    return {"es": pd.Timestamp(early_start), "ef": pd.Timestamp(early_finish),
+            "ls": pd.Timestamp(late_start), "lf": pd.Timestamp(late_finish)}  # fmt: skip
+
+
+HAND_DATES = {
+    "A": _dates("2026-03-02 08:00", "2026-03-06 17:00", "2026-03-02 08:00", "2026-03-06 17:00"),
+    "B": _dates("2026-03-09 08:00", "2026-03-13 17:00", "2026-03-09 08:00", "2026-03-13 17:00"),
+}
+# B one working day late (Tue 10 to Mon 16 March): still 40 h long, still after A, so MPXJ does not
+# contradict itself and nothing excuses the four dates that differ.
+B_A_DAY_LATE = _dates("2026-03-10 08:00", "2026-03-16 17:00", "2026-03-10 08:00", "2026-03-16 17:00")
+
+
+def _fake_mpxj(monkeypatch, dates_of_b):
+    from xerscope import crosscheck
+    from xerscope.verify import mpxj_cpm
+
+    rows = {"A": {**HAND_DATES["A"], "tf_hr": 0, "ff_hr": 0}, "B": {**dates_of_b, "tf_hr": 0, "ff_hr": 0}}
+    frame = pd.DataFrame.from_dict(rows, orient="index").rename_axis("task_code")
+    monkeypatch.setattr(mpxj_cpm, "mpxj_schedule", lambda path, project_code=None: frame)
+    monkeypatch.setattr(crosscheck, "mpxj_scheduler_source", lambda: "file:/mpxj-cpm-test.jar")
+
+
+def _two_activity_file(tmp_path, **kw):
+    path = tmp_path / "two.xer"
+    path.write_text(xer_text([todo("A", **hours(40)), todo("B", **hours(40))], [("A", "B", "FS", 0)], **kw))
+    return path
+
+
+@pytest.mark.oracle("property")
+def test_the_command_exits_1_and_counts_a_difference_no_cause_explains(tmp_path, capsys, monkeypatch):
+    from xerscope.cli import main
+
+    _fake_mpxj(monkeypatch, B_A_DAY_LATE)
+    path = _two_activity_file(tmp_path, sched=LAG_PRED)
+    assert main(["crosscheck", "--cpm", str(path)]) == 1
+    printed = capsys.readouterr().out
+    assert "4 difference(s) no listed cause explains" in printed
+
+
+@pytest.mark.oracle("property")
+def test_the_command_exits_0_when_a_listed_cause_explains_the_file(tmp_path, capsys, monkeypatch):
+    """The same four differences on a file whose scheduling options MPXJ does not model (no lag
+    calendar stated): the cause is listed, the count is 0."""
+    from xerscope.cli import main
+
+    _fake_mpxj(monkeypatch, B_A_DAY_LATE)
+    path = _two_activity_file(tmp_path)
+    assert main(["crosscheck", "--cpm", str(path)]) == 0
+    printed = capsys.readouterr().out
+    assert "option MPXJ does not model: no lag calendar stated" in printed
+    assert "0 difference(s) no listed cause explains" in printed
+
+
+@pytest.mark.oracle("property")
+def test_the_command_exits_0_when_mpxj_agrees(tmp_path, capsys, monkeypatch):
+    from xerscope.cli import main
+
+    _fake_mpxj(monkeypatch, HAND_DATES["B"])
+    path = _two_activity_file(tmp_path, sched=LAG_PRED)
+    assert main(["crosscheck", "--cpm", str(path)]) == 0
+    assert "0 difference(s) no listed cause explains" in capsys.readouterr().out
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(("agrees", "exit_code"), [([True, True], 0), ([True, False], 1)])
+def test_the_reader_comparison_exits_1_on_a_disagreement(tmp_path, monkeypatch, capsys, agrees, exit_code):
+    from xerscope import crosscheck
+    from xerscope.cli import main
+
+    path = _two_activity_file(tmp_path)
+    checks = pd.DataFrame({"file": path.name, "field": ["tasks", "links"], "agree": agrees})
+    monkeypatch.setattr(crosscheck, "compare_paths", lambda paths: checks)
+    assert main(["crosscheck", str(path)]) == exit_code
+    assert f"{agrees.count(False)} disagreement(s) out of 2 checks" in capsys.readouterr().out
+
+
+@pytest.mark.oracle("property")
+@pytest.mark.parametrize(("agrees", "exit_code"), [([True, True], 0), ([True, False], 1)])
+def test_the_p6_comparison_exits_1_on_a_disagreement(tmp_path, monkeypatch, capsys, agrees, exit_code):
+    from xerscope import crosscheck
+    from xerscope.cli import main
+
+    scores = pd.DataFrame(
+        {
+            "set": "H1", "case": "c1", "task_code": ["A", "B"], "status": "TK_NotStart",
+            "field": "early_start", "p6": "x", "xerscope": "x", "agree": agrees, "resource_dependent": False,
+        }
+    )  # fmt: skip
+    monkeypatch.setattr(crosscheck, "p6_heldout_score", lambda folder: scores)
+    assert main(["crosscheck", "--p6", str(tmp_path)]) == exit_code

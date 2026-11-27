@@ -104,3 +104,15 @@ def test_known_codes_keep_their_results(code, state, pct):
     row = earned(snap([a], wbs=_wbs(code)), baseline).loc["A"]
     assert row["perf_pct"] == pct and row["ev_hr"] == pytest.approx(80 * pct / 100)
     assert ev_point(snap([a], wbs=_wbs(code)), baseline).not_modelled == []
+
+
+@pytest.mark.oracle("characterization")
+def test_wbs_milestones_technique_earns_like_activity_and_is_listed_as_not_modelled():
+    """EC_WBS_pct (WBS milestones) is not modelled: its activity earns on its own % complete (25 % of
+    80 h = 20 h, as EC_Cmp_pct) and is named in not_modelled (evm.py NOT_MODELLED_TECHNIQUES)."""
+    a = active("A", wbs_id="W1", target_work_qty="80", phys_complete_pct="25", complete_pct_type="CP_Phys")
+    baseline = Baseline.from_snapshot(snap([todo("A", **DATES)]))
+    update = snap([a], wbs=_wbs("EC_WBS_pct"))
+    row = earned(update, baseline).loc["A"]
+    assert row["perf_pct"] == 25 and row["ev_hr"] == pytest.approx(80 * 25 / 100)
+    assert ev_point(update, baseline).not_modelled == ["A"]
