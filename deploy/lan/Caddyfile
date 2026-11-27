@@ -8,6 +8,12 @@
     auto_https disable_redirects                # no listener on port 80: nothing is published there
     skip_install_trust                          # the authority is trusted by the visitors, not by this container
     default_sni {$XERSCOPE_LAN_IP}              # a browser sends no server name for an IP address
+    servers {
+        listener_wrappers {
+            http_redirect                       # an address typed without https:// reaches this port in clear:
+            tls                                 # answered by a redirect to https, not by Go's 400 "client sent
+        }                                       # an HTTP request to an HTTPS server"
+    }
     log {                                       # default logger: proxy errors print the request too
         format filter {
             wrap json

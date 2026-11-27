@@ -902,6 +902,8 @@ def test_lan_stack_reaches_nothing_and_is_reached_from_the_nas_address_only():
     assert "https://{$XERSCOPE_LAN_IP}:8443 {" in caddy  # the site answers to that address, not to any Host
     assert "tls internal" in caddy and "default_sni {$XERSCOPE_LAN_IP}" in caddy  # no ACME, no request out
     assert "admin off" in caddy and "auto_https disable_redirects" in caddy
+    # the same port answers an address typed without https:// by a redirect; http_redirect comes before tls
+    assert re.search(r"listener_wrappers \{\s+http_redirect\s[^}]*\btls\b", caddy)
     assert caddy.index("rate_limit {") < caddy.index("basic_auth {") < caddy.index("reverse_proxy app:8501")
     assert "XERSCOPE_PATH" not in caddy and "XERSCOPE_PATH" not in lan  # no secret prefix: nothing public to hide from
     env = (ROOT / "deploy" / "lan" / ".env.example").read_text()
