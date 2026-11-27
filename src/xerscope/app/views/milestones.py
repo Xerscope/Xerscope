@@ -95,7 +95,8 @@ if plotted["forecast"].notna().any():
     ui.chart(figure)
     st.caption(
         "One colour per milestone, as on its tag above. Last point and arrow = drift since the first update: "
-        "red later, green earlier, in wd on the label, then the move in the last update (last)."
+        "red later, green earlier, grey when the date did not move in the last update; in wd on the label, "
+        "then the move in the last update (last)."
     )
 
 ui.section("Slippage", "Working days on each milestone's own calendar.")

@@ -12,7 +12,7 @@ from xerkit import snap, todo
 from xerscope.analysis.wbs import rollup
 from xerscope.viz import build_finish_trend, categorise, gantt_assets, gantt_data, gantt_rows
 from xerscope.viz import gantt as gantt_module
-from xerscope.viz.charts import SERIES, STATUS, build_activity_dates, build_mta, build_ppc, build_scurve
+from xerscope.viz.charts import NEUTRAL, SERIES, STATUS, build_activity_dates, build_mta, build_ppc, build_scurve
 
 
 def _mta_frame(lines: dict[str, list[str]]) -> pd.DataFrame:
@@ -749,3 +749,33 @@ def test_a_wbs_bar_starts_at_the_earliest_start_of_the_activities_below_it():
     assert starts["__project__"] == pd.Timestamp("2026-03-02 08:00")
     bar = next(r for r in _rows(s) if r["id"] == "w:W1")
     assert bar["start"] == "2026-03-02T08:00"
+
+
+@pytest.mark.oracle("property")
+def test_mta_grey_when_the_date_did_not_move_in_the_last_update_even_after_a_drift():
+    """Decision table on (drift since the first update, move in the last update), in wd, later =
+    negative: drift and a last move keep red; drift and no last move is grey (last point and arrow),
+    still bigger as the end of a drifting line; no drift stays the line colour; a missing last move
+    (milestone deleted) keeps the drift colour."""
+    lines = {
+        "STILL": ["2026-06-01"] * 3,
+        "MOVED": ["2026-07-01"] * 3,
+        "FLAT": ["2026-08-01"] * 3,
+        "GONE": ["2026-09-01"] * 3,
+    }
+    total = {"STILL": -18.0, "MOVED": -18.0, "FLAT": 0.0, "GONE": -3.0}
+    last = {"STILL": 0.0, "MOVED": 7.0, "FLAT": 0.0, "GONE": float("nan")}
+    fig = build_mta(_mta_frame(lines), total, last)
+    traces = {t.name.split()[0]: t for t in fig.data if t.name and t.name.split()[0] in lines}
+    red, grey = STATUS["critical"], NEUTRAL
+    assert list(traces["STILL"].marker.color) == [SERIES[0]] * 2 + [grey]
+    assert list(traces["MOVED"].marker.color) == [SERIES[1]] * 2 + [red]
+    assert list(traces["FLAT"].marker.color) == [SERIES[2]] * 3
+    assert list(traces["GONE"].marker.color) == [SERIES[3]] * 2 + [red]
+    assert list(traces["STILL"].marker.size) == [9, 9, 13]
+    assert list(traces["FLAT"].marker.size) == [9, 9, 9]
+    texts = {a.text for a in fig.layout.annotations}
+    assert f'<span style="color:{grey}">▲</span> STILL (-18.0 wd · last +0.0)' in texts
+    assert f'<span style="color:{red}">▲</span> MOVED (-18.0 wd · last +7.0)' in texts
+    assert "FLAT" in texts
+    assert f'<span style="color:{red}">▲</span> GONE (-3.0 wd)' in texts
