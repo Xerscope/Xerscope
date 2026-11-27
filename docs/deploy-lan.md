@@ -57,11 +57,11 @@ Le kit à remettre, sur une clé USB ou un partage :
 
 ## Partie B. Installer sur le NAS (dans DSM)
 
-Le NAS porte déjà l'installation distante de `docs/deploy.md` : le dossier
-`docker/xerscope`, le dossier partagé des exports (`xerscope-data`), le compte de
-l'application et le dossier du lexique. Tout cela est repris tel quel ; seuls deux fichiers
-et quelques lignes de `.env` changent. Sur un NAS neuf, faire d'abord les sections 4 et 5
-de `docs/deploy.md` (dossiers, compte, uid), puis reprendre ici.
+Le NAS porte déjà l'installation distante de `docs/deploy.md`. Le dossier partagé des
+exports (`xerscope-data`), le compte de l'application et le dossier du lexique sont repris
+tels quels. L'installation locale va dans un dossier neuf, `docker/xerscope-app` ; l'ancien
+dossier `docker/xerscope` n'est pas modifié. Sur un NAS neuf, faire d'abord les sections 4
+et 5 de `docs/deploy.md` (dossiers, compte, uid), puis reprendre ici.
 
 À faire avec un compte administrateur de DSM. Compter un quart d'heure.
 
@@ -74,23 +74,24 @@ Cette adresse ne doit plus changer : la réserver dans la box (bail DHCP statiqu
 fixer dans ce même écran (Modifier → Configuration manuelle). Si elle change, le projet ne
 démarre plus tant que `.env` n'est pas corrigé.
 
-### B2. Retirer l'ancien projet
+### B2. Arrêter l'ancien projet
 
-Container Manager → **Projet** → `xerscope` → Action → **Arrêter**, puis Action →
-**Supprimer**. Les fichiers de `docker/xerscope` et les plannings ne sont pas touchés.
+Container Manager → **Projet** → `xerscope` → Action → **Arrêter**. Rien n'est supprimé :
+les fichiers de `docker/xerscope` et les plannings restent.
 
-L'accès distant s'arrête là. Pour qu'il ne puisse pas revenir, la personne qui gère le
-compte Tailscale supprime la machine `xerscope` dans sa console d'administration.
+L'accès distant s'arrête là. Tant que ce projet reste arrêté, le NAS n'est plus joignable
+de l'extérieur ; le redémarrer rouvre cet accès. Pour qu'il ne puisse pas revenir, la
+personne qui gère le compte Tailscale supprime la machine `xerscope` dans sa console
+d'administration.
 
-### B3. Remplacer deux fichiers
+### B3. Créer le dossier de l'installation locale
 
-Dans **File Station**, dossier `docker/xerscope` :
+Dans **File Station** :
 
-1. Télécharger `.env` sur l'ordinateur (il sert à l'étape suivante).
-2. Déposer `compose.yaml` et `Caddyfile` du kit, en acceptant de **remplacer** les anciens.
-3. Supprimer `tailscale-serve.json` : il ne sert plus.
-
-Le dossier `lexicon` reste en place.
+1. Dans `docker`, créer le dossier `xerscope-app`.
+2. Y déposer `compose.yaml` et `Caddyfile` du kit.
+3. Ouvrir `docker/xerscope`, télécharger son `.env` sur l'ordinateur (il sert à l'étape
+   suivante). Ne rien changer d'autre dans ce dossier.
 
 ### B4. Adapter `.env`
 
@@ -110,14 +111,14 @@ XERSCOPE_PASSWORD_HASH='$2a$10$...'             # inchangé, garder les apostrop
 XERSCOPE_EXPORTS=/volume1/xerscope-data         # inchangé
 XERSCOPE_UID=1028                               # inchangé
 XERSCOPE_GID=100                                # inchangé
-XERSCOPE_LEXICON_DIR=/volume1/docker/xerscope/lexicon   # inchangé
+XERSCOPE_LEXICON_DIR=/volume1/docker/xerscope/lexicon   # inchangé : le lexique reste dans l'ancien dossier
 ```
 
 S'il existe déjà une ligne `XERSCOPE_IMAGE=` ou `XERSCOPE_CADDY_IMAGE=` (elle commence par
 `ghcr.io/...`), la remplacer par celles ci-dessus au lieu d'en ajouter une seconde.
 
-Enregistrer (type « Tous les fichiers », nom `".env"` avec les guillemets), puis redéposer
-le fichier dans `docker/xerscope` en remplaçant l'ancien.
+Enregistrer (type « Tous les fichiers », nom `".env"` avec les guillemets), puis déposer
+le fichier dans `docker/xerscope-app`. Le `.env` de `docker/xerscope` reste tel qu'il était.
 
 ### B5. Importer les deux images
 
@@ -127,21 +128,21 @@ choisir `xerscope.tar`. Recommencer avec `xerscope-caddy.tar`.
 Attendre que les deux lignes `xerscope` et `xerscope-caddy`, étiquette `custom`,
 apparaissent dans la liste (une à deux minutes chacune).
 
-### B6. Recréer le projet
+### B6. Créer le projet
 
 Container Manager → **Projet** → Créer :
 
-1. Nom du projet : `xerscope`.
-2. Chemin : `/docker/xerscope`.
+1. Nom du projet : `xerscope-app`.
+2. Chemin : `/docker/xerscope-app`.
 3. Source : **Utiliser le docker-compose.yml existant** (il trouve `compose.yaml`).
 4. Suivant. Ne rien cocher à l'étape du portail web. Suivant → Effectué.
 
 Laisser vides les champs « Environnement » : seuls ceux de `.env` comptent.
 
 Après une quarantaine de secondes, Container Manager → **Conteneur** affiche deux
-conteneurs en cours d'exécution, `xerscope-caddy-1` et `xerscope-xerscope-1`, ce dernier
-marqué « sain ». Il n'y a plus de conteneur `tailscale`. Un troisième, `lexicon-init`,
-n'est pas démarré : c'est voulu.
+conteneurs en cours d'exécution, `xerscope-app-caddy-1` et `xerscope-app-xerscope-1`, ce
+dernier marqué « sain ». Un troisième, `lexicon-init`, n'est pas démarré : c'est voulu.
+Les conteneurs de l'ancien projet `xerscope` restent arrêtés.
 
 ### B7. Ouvrir l'application
 
@@ -158,18 +159,20 @@ L'ancienne adresse en `.ts.net` ne répond plus.
 Si le pare-feu de DSM est activé (Panneau de configuration → Sécurité → Pare-feu),
 ajouter une règle : port TCP `8443`, source : le sous-réseau local, Autoriser.
 
-### B8. Ménage (facultatif)
+### B8. Ménage (facultatif, une fois l'installation locale validée)
 
-Container Manager → **Image** : supprimer les anciennes images `ghcr.io/xerscope/...` et
-`tailscale/tailscale`. Container Manager → **Volume** : supprimer `xerscope_tailscale-state`.
+Container Manager → **Projet** → `xerscope` → Action → **Supprimer**. Puis **Image** :
+supprimer les anciennes images `ghcr.io/xerscope/...` et `tailscale/tailscale` ; **Volume** :
+supprimer `xerscope_tailscale-state`. Garder le dossier `docker/xerscope` : il contient le
+lexique.
 
 ## Au quotidien
 
 | Besoin | Geste |
 |---|---|
 | Ajouter une semaine | déposer le `.xer` dans `xerscope-data`, comme avant, recharger la page |
-| Arrêter, redémarrer | Container Manager → Projet → `xerscope` → Action → Arrêter / Démarrer |
-| Nouvelle version | importer les nouveaux `.tar` (B5), puis Projet → `xerscope` → Action → **Créer** (reconstruire) |
+| Arrêter, redémarrer | Container Manager → Projet → `xerscope-app` → Action → Arrêter / Démarrer |
+| Nouvelle version | importer les nouveaux `.tar` (B5), puis Projet → `xerscope-app` → Action → **Créer** (reconstruire) |
 | Changer le mot de passe | nouvelle empreinte (partie A) dans `.env`, puis Action → Créer |
 | Lire les journaux | Container Manager → Conteneur → le conteneur → onglet Journal |
 
