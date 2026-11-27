@@ -11,6 +11,17 @@ def test_shape_names_status_type_links_and_option(require_reference):
     assert len(s) == len(snap.activities)
     assert s["EW-030"] == "in progress · task dependent · pred FS · succ FS · progress override"
     assert s["MS-010"].startswith("complete · start milestone")
+    # By hand from the XER (TASKPRED lag_hr_cnt, TASK cstr_type; CS_MEOB = finish on or before):
+    # ST-010 is active, its successors MEP-030 and MEP-040 carry a 40 h lag; MEP-080 has a SS (lag 40) and a FS
+    # predecessor; CX-040 and MS-030 carry CS_MEOB; MS-030, a finish milestone, has no successor.
+    assert s["ST-010"] == "in progress · task dependent · pred FS · succ FS · lag · progress override"
+    assert s["MEP-080"] == "not started · task dependent · pred FS+SS · succ FS · lag"
+    assert s["CX-040"] == "not started · task dependent · finish on or before · pred FS · succ FS"
+    assert s["MS-030"] == "not started · finish milestone · finish on or before · pred FS · succ none"
+    # Four lagged links join 7 activities (ST-010, MEP-030, MEP-040, MEP-060, MEP-080, FIT-010, FIT-020);
+    # two activities hold a constraint.
+    assert sum("lag" in label.split(" · ") for label in s) == 7
+    assert sum("finish on or before" in label.split(" · ") for label in s) == 2
 
 
 def test_report_groups_the_known_xerlock_difference(require_reference):

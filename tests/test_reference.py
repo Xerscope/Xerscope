@@ -239,6 +239,39 @@ def test_mpxj_reads_every_reference_file_like_xerscope():
     df = compare_paths(sorted(DATA.glob("*/*.xer")))
     bad = df[~df["agree"]]
     assert len(df) > 500 and bad.empty, bad.to_string()
+    # each reader gave a value for every field it is compared on (None == None must not pass as agreement)
+    for field, values in df.groupby("field"):
+        assert values["xerscope"].notna().any() and values["mpxj"].notna().any(), field
+
+
+@pytest.mark.oracle("mpxj")
+def test_the_comparison_with_mpxj_reports_the_values_that_differ(monkeypatch):
+    """Negative control of compare_file on a one-activity P6 export: xerscope's side is given another name
+    ("Renamed" for "Test") and 8 more remaining hours (8.0 for 0.0). Exactly those two rows disagree."""
+    from dataclasses import replace
+
+    mpxj_or_skip()
+    from xerscope.verify import mpxj_reader
+
+    real_build = mpxj_reader.build_snapshot
+
+    def with_other_name_and_remaining_hours(raw):
+        snapshot = real_build(raw)
+        tasks = snapshot.tasks.copy()
+        tasks["task_name"] = "Renamed"
+        tasks["remain_drtn_hr_cnt"] = tasks["remain_drtn_hr_cnt"] + 8.0
+        return replace(snapshot, tasks=tasks)
+
+    path = DATA / "mpxj" / "PredecessorCalendar.xer"
+    assert mpxj_reader.compare_file(path)["agree"].all()
+    monkeypatch.setattr(mpxj_reader, "build_snapshot", with_other_name_and_remaining_hours)
+    df = mpxj_reader.compare_file(path)
+    differ = df[~df["agree"]]
+    assert list(zip(differ["code"], differ["field"], differ["xerscope"], differ["mpxj"], strict=True)) == [
+        ("A1000", "name", "Renamed", "Test"),
+        ("A1000", "remaining_hr", 8.0, 0.0),
+    ]
+    assert df["agree"].sum() == len(df) - 2
 
 
 @pytest.mark.parametrize("name", ["p6viewer/Hotel Project.xer", "p6viewer/TERMINAL BUILDING-AIRPORT.xer"])

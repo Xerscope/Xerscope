@@ -31,6 +31,7 @@ import pytest
 from xerkit import hours, snap, todo
 
 from xerscope.analysis.cpm import schedule
+from xerscope.xer.calendar import TimeAxis
 
 pytestmark = pytest.mark.oracle("p6")
 
@@ -77,3 +78,24 @@ def test_option_off_the_constraint_holds(constraint_type):
     row = row_of_a(constraint_type, OPTION_OFF)
     assert row["es"] == pd.Timestamp("2026-03-10 08:00")
     assert row["ef"] == pd.Timestamp("2026-03-11 17:00")
+
+
+def test_an_expected_finish_equal_to_the_finish_bound_still_sets_the_remaining_work():
+    """is_expected_finish_applied docstring: the expected finish applies when it is after the
+    assignment's start "and not before the finish bound", so a tie applies. Tuesday 3 Mar
+    08:00 to Thursday 5 Mar 17:00 on C8 (Mon-Fri 08:00-12:00 / 13:00-17:00) is 3 working
+    days = 24 h = 1440 minutes, against a base duration of 40 h (2400 minutes) that is kept
+    when the expected finish does not apply."""
+    from xerscope.analysis.resource_placement import Assignment, is_expected_finish_applied, sized_minutes
+
+    start = pd.Timestamp("2026-03-03 08:00")
+    thursday = pd.Timestamp("2026-03-05 17:00")
+    assert is_expected_finish_applied(thursday, start, thursday)
+    assert not is_expected_finish_applied(thursday, start, thursday + pd.Timedelta(minutes=1))
+
+    snapshot = snap([todo("A", **hours(40))], [])
+    axis = TimeAxis(snapshot.calendar(None), start.date(), pd.Timestamp("2026-03-13").date())
+    assignment = Assignment("R1", "RS", axis, 0.0, 2400.0, True)
+    durations, expected_applies = sized_minutes([assignment], {"R1": 2400.0}, start, thursday, thursday)
+    assert expected_applies
+    assert durations == {"R1": 1440.0}

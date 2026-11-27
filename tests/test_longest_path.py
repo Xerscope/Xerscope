@@ -16,6 +16,7 @@ from xerscope.analysis.longest_path import (
     RECALCULATED,
     STAYED,
     SWITCHED,
+    UNKNOWN,
     change_counts,
     longest_path,
     longest_path_funnel,
@@ -143,3 +144,30 @@ def test_the_same_file_twice_changes_nothing_on_the_path():
         DELETED: 0,
         STAYED: 2,
     }
+
+
+@pytest.mark.oracle("standard")
+def test_a_file_that_flags_nothing_and_cannot_be_scheduled_has_no_known_path():
+    """A -> B -> A is a loop of the logic: the recalculation refuses it (cpm.CycleError), and no
+    activity is flagged, so the update has no path and says its source is unknown (docstring of
+    longest_path: UNKNOWN with no code)."""
+    snapshot = snap([todo("A"), todo("B")], [("A", "B", "FS", 0), ("B", "A", "FS", 0)])
+    assert longest_path(snapshot) == ([], UNKNOWN)
+    assert UNKNOWN == "none"
+
+
+@pytest.mark.oracle("standard")
+def test_a_deleted_activity_of_the_path_is_neither_a_kept_nor_a_missed_commitment():
+    """As the commitments test above, plus D: on the path, due Mon 2 to Fri 13 March, absent from the
+    later update. A deleted activity is a scope change, not a miss (longest_path.path_commitments;
+    progress.committed): the path's rows are still A and B, 2 kept of 4, and the week's PPC is still
+    4 kept of 6; counted, D would make 2 of 6 and 4 of 8."""
+    in_time = {"act_start_date": "2026-03-02 08:00", "act_end_date": "2026-03-13 17:00"}
+    earlier = snap([todo("A", **ON_PATH), todo("B", **ON_PATH), todo("C"), todo("D", **ON_PATH)])
+    later = snap(
+        [done("A", **in_time, **ON_PATH), todo("B", **ON_PATH), done("C", **in_time)], data_date="2026-03-16 08:00"
+    )
+    assert sorted(path_commitments(earlier, later)["task_code"].unique()) == ["A", "B"]
+    row = path_churn(SnapshotStore([earlier, later])).iloc[0]
+    assert (row["path_committed"], row["path_kept"], row["ppc_path"]) == (4, 2, 50.0)
+    assert round(row["ppc_week"], 1) == 66.7
