@@ -1,4 +1,4 @@
-"""Data loading shared by every page: sidebar inputs -> SnapshotStore in session state."""
+"""What every page draws around its content: header, context banner, baseline warnings, pickers."""
 
 from __future__ import annotations
 

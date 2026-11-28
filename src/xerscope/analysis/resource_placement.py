@@ -84,27 +84,6 @@ def is_expected_finish_applied(
     )
 
 
-def activity_start_given_by(
-    assignment: Assignment,
-    assignment_start: pd.Timestamp,
-    duration_minutes: float,
-    finish_bound: pd.Timestamp | None,
-) -> pd.Timestamp:
-    """Start one driving assignment gives the activity: the assignment's start less its lag.
-
-    An assignment that would finish before the finish bound is first moved to finish at the bound, or
-    at the next working time of its calendar, and starts its duration before; with no work left, it
-    starts at that finish.
-    """
-    assignment_finish = finish_run_from(assignment, assignment_start, duration_minutes)
-    if finish_bound is not None and assignment_finish < finish_bound:
-        assignment_finish = assignment.axis.keep_or_next(finish_bound)
-        assignment_start = assignment_finish
-        if duration_minutes:
-            assignment_start = assignment.axis.add(assignment_finish, -duration_minutes, finish=False)
-    return shift(assignment.axis, assignment_start, -assignment.lag_minutes)
-
-
 def place_forward(
     axis: TimeAxis,
     assignments: list[Assignment],

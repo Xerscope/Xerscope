@@ -15,8 +15,8 @@ from xerscope.analysis import builtin_standards
 from xerscope.analysis.audit import sheet
 
 PACKAGE = Path(xerscope.__file__).parent
-MODEL = (PACKAGE / "xer" / "model.py").read_text(encoding="utf-8")
-TESTS = "\n".join(path.read_text(encoding="utf-8") for path in Path(__file__).parent.glob("test_*.py"))
+MODEL = "\n".join(path.read_text(encoding="utf-8") for path in sorted((PACKAGE / "xer").glob("*.py")))
+TESTS = "\n".join(path.read_text(encoding="utf-8") for path in Path(__file__).parent.rglob("test_*.py"))
 WITH_SHEETS = ["P6"]
 SOURCES = {"docs.oracle.com", "tensix.com"}
 METRICS = [(standard_id, metric) for standard_id in WITH_SHEETS for metric in builtin_standards()[standard_id].metrics]

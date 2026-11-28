@@ -43,6 +43,7 @@ jobs:
       - run: uv sync --locked
       - run: uvx ruff@0.17.4 check src tests scripts
       - run: uvx ruff@0.17.4 format --check src tests scripts
+      - run: uvx vulture@2.14.0 src tests/vulture_whitelist.py  # dead code; known false positives: pyproject.toml, the whitelist
       - name: No schedule or data export is tracked (the repository is public)
         run: "! git ls-files | grep -iE '\\.(xer|parquet|xlsx?|csv)$'"
 

@@ -106,8 +106,8 @@ APP_EDGES = {  # module -> exactly the app modules it imports
     "loading": {"baseline_warnings", "files_window", "reading", "session", "ui"},
     "downloads": {"baseline_file", "session"},
     "sets": {"downloads", "ui"},
-    "xer_columns": {"ui"},
-    "diagnostic": {"expected_finish_forms", "recalculation_departures", "ui", "xer_columns"},
+    "xer_columns": {"table_filters"},
+    "diagnostic": {"expected_finish_forms", "recalculation_departures", "table_filters", "xer_columns"},
     "state": {
         "baseline_export",
         "baseline_warnings",
@@ -123,16 +123,35 @@ APP_EDGES = {  # module -> exactly the app modules it imports
 BASELINE_DOMAIN = {"baseline_file", "baseline_export", "baselines", "baseline_window", "baseline_warnings"}
 
 
-def app_modules(names):
-    """The app module each absolute imported name lies in: ``xerscope.app.ui.table`` and
-    ``xerscope.app.ui`` both give ``ui``."""
-    return {name.split(".")[2] for name in names if name.startswith("xerscope.app.")}
+def subpackages():
+    """The sub-packages of app/: its folders that hold an ``__init__.py`` (``views`` holds none)."""
+    return {path.parent.name for path in APP.glob("*/__init__.py")}
 
 
-def app_imports(path):
+def app_module(name, packages):
+    """The app module an absolute imported name lies in, dotted below app/: ``xerscope.app.ui.table``
+    gives ``ui``; ``xerscope.app.baseline.baselines.kind_of`` gives ``baseline.baselines`` when
+    ``baseline`` is one of ``packages``."""
+    parts = name.split(".")[2:]
+    if parts[0] in packages and len(parts) > 1:
+        return ".".join(parts[:2])
+    return parts[0]
+
+
+def app_modules(names, packages=frozenset()):
+    """The app modules the absolute imported names lie in (``app_module``)."""
+    return {app_module(name, packages) for name in names if name.startswith("xerscope.app.")}
+
+
+def module_key(path):
+    """A module of app/ as APP_EDGES names it: ``ui``, or ``baseline.baselines`` in a sub-package."""
+    return ".".join(path.relative_to(APP).with_suffix("").parts)
+
+
+def app_imports(path, packages=frozenset()):
     """The app modules ``path`` imports, in every form (``from xerscope.app import ui``,
     ``from xerscope.app.ui import table``, ``import xerscope.app.ui``, relative), itself left out."""
-    return app_modules(imports(path)) - {path.stem}
+    return app_modules(imports(path), packages) - {module_key(path)}
 
 
 def test_every_form_of_an_import_of_an_app_module_is_read():
@@ -151,11 +170,34 @@ def test_every_form_of_an_import_of_an_app_module_is_read():
     assert app_modules(names) == {"ui", "theme", "session", "cache", "downloads"}
 
 
+def test_an_import_from_an_app_sub_package_reads_as_its_dotted_module():
+    """A module in a sub-package of app/ is named with its package, in every form, relative included."""
+    source = "\n".join(
+        [
+            "from xerscope.app.baseline import baselines",
+            "from xerscope.app.baseline.baseline_file import read",
+            "from .baseline_export import resolutions",
+            "from xerscope.app import ui",
+        ]
+    )
+    names = imported_names(source, ["xerscope", "app", "baseline"])
+    assert app_modules(names, {"baseline"}) == {
+        "baseline.baselines",
+        "baseline.baseline_file",
+        "baseline.baseline_export",
+        "ui",
+    }
+    assert module_key(APP / "baseline" / "baselines.py") == "baseline.baselines"
+    assert module_key(APP / "ui.py") == "ui"
+
+
 def test_the_app_modules_import_one_way_and_the_pages_read_each_name_from_its_module():
     """The import graph of app/*.py: the edges written above, exactly, for every module; the baseline
     domain reading none of the pages' machinery (state, loading, downloads, cache); state.py imported by
     the pages only; no module importing a page and no page importing another; no cycle."""
-    graph = {path.stem: app_imports(path) for path in APP.glob("*.py")}
+    packages = subpackages()
+    modules = [*APP.glob("*.py"), *(path for package in packages for path in (APP / package).glob("*.py"))]
+    graph = {module_key(path): app_imports(path, packages) for path in modules}
     assert set(graph) == set(APP_EDGES), sorted(set(graph) ^ set(APP_EDGES))
     for module, allowed in APP_EDGES.items():
         edges = {target for target in graph[module] if target in graph}

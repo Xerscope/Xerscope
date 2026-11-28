@@ -21,7 +21,6 @@ LISTED = 5  # how many offending ids a warning names
 # such cell among naive ones makes pandas refuse the whole column ("Mixed timezones").
 TIMEZONE_SUFFIX = re.compile(r"(?:Z|[+-]\d{2}:?\d{2})\s*$")
 NAIVE_DATE_LENGTH = 16  # "YYYY-MM-DD HH:MM": only a longer cell can carry an offset (checked with the regex)
-RELATIONSHIP_TYPES = frozenset({"PR_FS", "PR_SS", "PR_FF", "PR_SF"})
 
 
 def _listed(values) -> list[str]:

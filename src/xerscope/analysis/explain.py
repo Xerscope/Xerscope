@@ -475,7 +475,7 @@ FUNNEL_READING = Reading(
         "= counted. The denominator is the last step's left."
     ),
     source=(
-        "`populations.STEP_SOURCES` (docs/formulas.md:127-128: Oracle P6 help 101248 and 46282, R1, Ten Six, PAM "
+        "`populations.STEP_SOURCES` (docs/formulas.md §1.5: Oracle P6 help 101248 and 46282, R1, Ten Six, PAM "
         "200.1, DECM 8.0, xerscope)"
     ),
 )
@@ -508,8 +508,8 @@ READINGS: dict[str, Reading] = {
             "x = calendar dates, y = labour hours or % of BAC (toggle). PV (baseline) is a line through every day "
             "of the plan; EV and AC are one point per update (circles, squares); the dashed line continues AC with "
             "the remaining hours to the EAC label; the BAC label ends the PV curve. A dashed vertical line marks "
-            "the status date (`_mark_data_date`, `charts.py:70-83`); at it a vertical mark joins PV and EV, "
-            "labelled SV, green when EV ≥ PV, red when behind (`charts.py:210-240`)."
+            "the status date (`charts._mark_data_date`); at it a vertical mark joins PV and EV, "
+            "labelled SV, green when EV ≥ PV, red when behind (`charts._add_schedule_variance`)."
         ),
         meaning=(
             "EV under PV at the status date is work planned and not earned; AC above EV is hours spent for less "
@@ -525,17 +525,17 @@ READINGS: dict[str, Reading] = {
         how=(
             "x = status dates, y = a ratio; one line per index (SPI labour units, SPI 4 weeks, BEI DCMA, EV / AC, "
             "and SPI cost when costs are on); a grey line at 1.0, a red dotted line at 0.95 labelled; end labels "
-            "give the last value (three decimals for SPI, `charts.py:248`)."
+            "give the last value (three decimals for SPI, `charts.build_index_trend`)."
         ),
         meaning=(
             "1.0 = on plan; SPI < 1 = less earned than planned to date; SPI (4 weeks) = the last month alone "
-            f"(`SPI_WINDOW_READING`, `explain.py:296`); BEI = tasks completed / tasks due. {ORIGIN_BASELINE} "
+            f"(`SPI_WINDOW_READING`); BEI = tasks completed / tasks due. {ORIGIN_BASELINE} "
             "The BEI, a check, is computed against the baseline assigned in each update."
         ),
         conclude=(
-            "BEI < 0.95 is flagged by DCMA 14-Point (PAM 200.1 §3.1.2.4, `dcma.toml:141`) and by P6 Check Schedule "
-            "(> 0.95, `p6.toml:164`); for SPI and EV / AC the 0.95 line is xerscope's alert (`charts.py:39`), no "
-            "standard in the repository fixes it."
+            "BEI < 0.95 is flagged by DCMA 14-Point (PAM 200.1 §3.1.2.4, DCMA-14 in `dcma.toml`) and by P6 Check "
+            "Schedule (> 0.95, P6-13 in `p6.toml`); for SPI and EV / AC the 0.95 line is xerscope's alert "
+            "(`charts.INDEX_ALERT`), no standard in the repository fixes it."
         ),
         source=(
             "DCMA 14-Point Assessment, item 14 (BEI); P6 Professional Check Schedule report (BEI); EVMS EIA-748 for "
@@ -580,8 +580,8 @@ READINGS: dict[str, Reading] = {
             "it. A predecessor whose float falls with the task's is likely what pushes it."
         ),
         conclude=(
-            "a slip with float falling to 0 puts the task on the critical path; ≤ 0 d is critical (`config.py:12`; "
-            "P6 Define critical activities, read by `explain.critical_definition`)."
+            "a slip with float falling to 0 puts the task on the critical path; ≤ 0 d is critical "
+            "(`Settings.critical_float_days`; P6 Define critical activities, read by `explain.critical_definition`)."
         ),
         source="xerscope (`store.history`, `activity_trail.logic_by_update`); P6 TASK and TASKPRED of each update.",
     ),
@@ -612,9 +612,9 @@ READINGS: dict[str, Reading] = {
             "with the task's is likely what pushes it."
         ),
         conclude=(
-            "≤ 0 d is critical (`config.py:12`; P6 Define critical activities, read by "
-            "`explain.critical_definition`); > 44 wd is high float for DCMA 14-Point, item 6 (`dcma.toml:70`), and "
-            "P6 Check Schedule Large Float (`p6.toml:86`)."
+            "≤ 0 d is critical (`Settings.critical_float_days`; P6 Define critical activities, read by "
+            "`explain.critical_definition`); > 44 wd is high float for DCMA 14-Point, item 6 (DCMA-06 in "
+            "`dcma.toml`), and P6 Check Schedule Large Float (P6-06 in `p6.toml`)."
         ),
         source=(
             "DCMA 14-Point Assessment, items 6 and 7; P6 Professional Check Schedule report (Large Float, Negative "
@@ -628,7 +628,7 @@ READINGS: dict[str, Reading] = {
         ),
         meaning=(
             "a rising line is the end date slipping; the shift is working days on the newer update's project "
-            "calendar, later = negative (`store.py:231-236`)."
+            "calendar, later = negative (`SnapshotStore.summary`, `finish_shift_wd`)."
         ),
         conclude=(
             'a finish that holds while the half-step "finish before replanning" slips (Delay analysis) is a delay '
@@ -645,11 +645,11 @@ READINGS: dict[str, Reading] = {
         ),
         meaning=(
             "the share of what W−1 promised to start or finish by W's status date that W reports done "
-            "(docs/formulas.md:368-378); milestones and LOE are left out."
+            "(docs/formulas.md §4, PPC); milestones and LOE are left out."
         ),
         conclude=(
             "under the target line, commitments are not kept; the Commitments table names which. 80 % is xerscope's "
-            "default target (`charts.py:40`); the repository names no PPC threshold from the Last Planner System."
+            "default target (`charts.PPC_TARGET`); the repository names no PPC threshold from the Last Planner System."
         ),
         source="Last Planner System (PPC); docs/formulas.md §4.",
     ),
@@ -680,9 +680,9 @@ READINGS: dict[str, Reading] = {
             "(analysis/forensics.py); each bar is what that kind did to the finish."
         ),
         conclude=(
-            "a progress bar deeper than the period (warning `forensics.py:124-129`) points to a revision hidden in "
-            "the half-step or to a non-working stretch; a residual (`130-134`) means a change the changelog does "
-            "not list moved the finish."
+            "a progress bar deeper than the period (warning `HalfStep.is_slip_beyond_period`) points to a revision "
+            "hidden in the half-step or to a non-working stretch; a residual (`HalfStep.residual_wd`) means a change "
+            "the changelog does not list moved the finish."
         ),
         source="AACE RP 29R-03 MIP 3.4 (observational, dynamic, contemporaneous, half-step; docs/formulas.md §5.1).",
     ),
@@ -703,7 +703,7 @@ READINGS: dict[str, Reading] = {
             "a tree grid on the left (Activity / WBS, % complete, float) and the timeline on the right, one row "
             "each, in P6 Activities-view order (WBS node, its activities, its child nodes). Bar colour = float "
             "category: Critical (red, P6 critical), Near critical (amber, total float ≤ 10 wd), Normal (blue), "
-            "Complete (grey) (`PALETTE`, `gantt.py:29-35`; `categorise` 43-50). Diamonds = milestones; a dark thin "
+            "Complete (grey) (`gantt.PALETTE`, `gantt.categorise`). Diamonds = milestones; a dark thin "
             "bar = WBS summary; a hollow outline behind a bar = the same activity in the comparison update or "
             'baseline (legend item with the comparison label); a dashed vertical line = data date. Hover: "Finish '
             'vs <comparison>" in wd, or "Finish vs BL (baselined tasks)".'
@@ -728,7 +728,7 @@ READINGS: dict[str, Reading] = {
             "counts of tasks by status, critical, relationships, % complete by count. A finish shift < 0 week after "
             "week is a slipping project."
         ),
-        source="xerscope `store.summary` (`store.py:209-238`)",
+        source="xerscope `SnapshotStore.summary`",
     ),
     "health_results": Reading(
         how=(
@@ -738,7 +738,7 @@ READINGS: dict[str, Reading] = {
             "against; probable is a copy found by its content. Fail = result on the wrong side of the target; info "
             f"and n/a are not scored. {CHECKS_BASELINE}"
         ),
-        source="The standard's TOML `source` per check; `SCORE_HELP` (`ui.py:400-405`) for the score",
+        source="The standard's TOML `source` per check; `ui.SCORE_HELP` for the score",
     ),
     "check_parameters": Reading(
         how="parameter, value, set by (standard or default): the effective settings of the check.",
@@ -788,7 +788,7 @@ READINGS: dict[str, Reading] = {
             "(category, change) rows, one column per week: counts. A kind that repeats every week is a habit of the "
             "updating, not an event."
         ),
-        source="`changelog.weekly_change_matrix` (`493-499`)",
+        source="`changelog.weekly_change_matrix`",
     ),
     "forensics_steps": Reading(
         how="step, finish once applied, shift (wd), changes applied: the table of the half-step bars.",
@@ -800,7 +800,7 @@ READINGS: dict[str, Reading] = {
             "finish before replanning, slip, replanning, residual, period (wd), recalculated vs file (wd), longest "
             "path float (d), matched / added / deleted, note."
         ),
-        source="AACE RP 29R-03 MIP 3.4; `FINISH_CASES` text (`forensics.py:20-25`)",
+        source="AACE RP 29R-03 MIP 3.4; `forensics.CASE_TEXT` text (app/views/forensics.py)",
     ),
     "forensics_horizon": Reading(
         how=(
@@ -965,10 +965,7 @@ READINGS: dict[str, Reading] = {
     "export_tables": EXPORT_TABLES_READING,
     "export_fact_activity": EXPORT_TABLES_READING,
     "debug": Reading(
-        how=(
-            "Raw readings for comparison with P6; no reading beyond each block's caption (`debug.py:379-381, "
-            "419-423, 469-472`)."
-        ),
+        how=("Raw readings for comparison with P6; no reading beyond each block's caption (`app/views/debug.py`)."),
         source="Oracle P6 EPPM 26 help, Schedule Project Log; P6 XER data map",
     ),
 }
